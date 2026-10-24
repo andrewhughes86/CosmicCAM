@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#INK" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="9,19 18,23.5" stroke="#INK"/>
+  <polyline points="9,19 18,14.5" stroke="#INK"/>
+  <polyline points="9,19 9,6" stroke="#INK"/>
+  <polyline points="14.8,23.3 18,23.5 16.8,26" stroke="#INK"/>
+  <polyline points="14.8,14.7 18,14.5 16.8,12" stroke="#INK"/>
+  <polyline points="6.8,8.4 9,6 11.2,8.4" stroke="#INK"/>
+  <circle cx="9" cy="19" r="2.6" fill="#ACCENT" stroke="#BG" stroke-width="1.5"/>
+  <circle cx="25" cy="25" r="6" fill="#ACCENT" stroke="#BG" stroke-width="1.5"/>
+  <path d="M25 22v6M22 25h6" fill="none" stroke="#BG"/>
+</svg>

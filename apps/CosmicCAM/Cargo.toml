@@ -1,0 +1,18 @@
+[package]
+name = "CosmicCAM"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "CosmicCAM"
+path = "src/main.rs"
+
+[dependencies]
+CosmicCAM-ui-egui = { workspace = true }
+eframe = { workspace = true, features = ["accesskit", "default_fonts", "wgpu", "wayland", "x11"] }
+env_logger = { workspace = true }

@@ -1,0 +1,7 @@
+/target*/
+/plan/
+*.png
+!assets/**/*.png
+__pycache__/
+*.egg-info/
+!docs/images/*.png

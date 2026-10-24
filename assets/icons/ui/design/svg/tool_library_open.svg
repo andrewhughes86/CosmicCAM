@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#INK" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 5h26v4H3z" fill="#SHADE" stroke="#INK"/>
+  <path d="M6.5 6h3v5h-3z" fill="#SHADE" stroke="#INK"/>
+  <path d="M5.5 11h5v14h-5z" fill="#FACE" stroke="#INK"/>
+  <polyline points="6,15.9 10,13.1" stroke="#INK"/>
+  <polyline points="6,21.5 10,18.7" stroke="#INK"/>
+  <path d="M14.5 6h3v5h-3z" fill="#SHADE" stroke="#INK"/>
+  <path d="M13.5 11h5v11.5a2.5 2.5 0 0 1 -5 0z" fill="#FACE" stroke="#INK"/>
+  <polyline points="14,15.9 18,13.1" stroke="#INK"/>
+  <polyline points="14,21.5 18,18.7" stroke="#INK"/>
+  <path d="M22.5 6h3v5h-3z" fill="#SHADE" stroke="#INK"/>
+  <path d="M21.5 11h5v10l-2.5 4l-2.5 -4z" fill="#FACE" stroke="#INK"/>
+  <polyline points="22,15.9 26,13.1" stroke="#INK"/>
+  <polyline points="22,21.5 26,18.7" stroke="#INK"/>
+</svg>

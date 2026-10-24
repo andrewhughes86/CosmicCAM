@@ -1,0 +1,54 @@
+[workspace]
+resolver = "3"
+members = [
+    "apps/CosmicCAM",
+    "crates/engine",
+    "crates/geom",
+    "crates/render",
+    "crates/ui-egui",
+    "xtask",
+]
+default-members = ["apps/CosmicCAM"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/tangency-labs/CosmicCAM"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unimplemented = "deny"
+todo = "deny"
+unreachable = "deny"
+
+[workspace.dependencies]
+CosmicCAM-engine = { path = "crates/engine" }
+CosmicCAM-geom = { path = "crates/geom" }
+CosmicCAM-render = { path = "crates/render" }
+CosmicCAM-ui-egui = { path = "crates/ui-egui" }
+
+bytemuck = { version = "1.25", features = ["derive"] }
+eframe = { version = "0.36.2", default-features = false }
+egui = "0.36.2"
+egui-wgpu = "0.36.2"
+egui_dock = "0.21.1"
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
+getrandom = "0.4"
+glam = "0.30"
+log = "0.4"
+resvg = { version = "=0.48.1", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+png = "0.18"
+thiserror = "2"
+wgpu = { version = "30", default-features = false }
+
+[profile.release]
+debug = "line-tables-only"

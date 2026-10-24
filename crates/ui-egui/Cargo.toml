@@ -1,0 +1,25 @@
+[package]
+name = "CosmicCAM-ui-egui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+CosmicCAM-engine = { workspace = true }
+CosmicCAM-geom = { workspace = true }
+CosmicCAM-render = { workspace = true }
+bytemuck = { workspace = true }
+eframe = { workspace = true, features = ["accesskit", "default_fonts", "wgpu", "wayland", "x11"] }
+egui = { workspace = true }
+egui-wgpu = { workspace = true }
+egui_dock = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }
+wgpu = { workspace = true, features = ["wgsl"] }
+png = { workspace = true }
+getrandom = { workspace = true }
+resvg = { workspace = true }

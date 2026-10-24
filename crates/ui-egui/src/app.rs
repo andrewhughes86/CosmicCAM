@@ -1,0 +1,360 @@
+//! The desktop application shell.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use CosmicCAM_engine::{Session, Theme, UiRequest, cmd};
+use egui::{Event, Key, KeyboardShortcut, Modifiers, RichText, Ui, UserData, ViewportCommand, vec2};
+use egui_dock::{DockArea, DockState, Style};
+use egui_wgpu::RenderState;
+use serde_json::{Value, json};
+
+use crate::Request;
+use crate::automation::{self, Automation};
+use crate::control::{ControlServer, Incoming, PROTOCOL_VERSION};
+use crate::dock::{self, Tab};
+use crate::panes::ConsoleState;
+use crate::ribbon;
+use crate::theme::{self, Tokens};
+use crate::ui_kit::{Panel, Surface};
+use crate::viewport::Viewport;
+
+/// How the app was launched.
+#[derive(Default)]
+pub struct LaunchOptions {
+    pub automation: Automation,
+    /// Open the control channel on this port (0 picks a free one).
+    pub control_port: Option<u16>,
+}
+
+/// A window capture waiting for the next frame.
+struct Capture {
+    path: PathBuf,
+    reply: Option<Incoming>,
+    then_quit: bool,
+}
+
+pub struct CosmicApp {
+    session: Session,
+    dock: DockState<Tab>,
+    layout_generation: u64,
+    viewport: Viewport,
+    console: ConsoleState,
+    render_state: Option<RenderState>,
+    applied_theme: Option<Theme>,
+    /// Last command failure, shown in the status bar.
+    status: Option<String>,
+    shortcuts: Vec<(KeyboardShortcut, &'static str)>,
+    automation: Automation,
+    control: Option<ControlServer>,
+    captures: Vec<Capture>,
+    capture_requested: bool,
+    /// Frames a pending capture has waited for the view to settle.
+    capture_wait: u32,
+}
+
+impl CosmicApp {
+    pub fn new(cc: &eframe::CreationContext<'_>, mut session: Session, options: LaunchOptions) -> Self {
+        let LaunchOptions { automation, control_port } = options;
+        let layout_generation = session.view.layout_generation;
+        if let Some(tab) = &automation.ribbon_tab {
+            let _ = session.execute("ui.ribbon.tab.set", &json!({ "tab": tab.to_lowercase() }));
+        }
+        let control = control_port.and_then(|port| {
+            let ctx = cc.egui_ctx.clone();
+            match ControlServer::start(port, move || ctx.request_repaint()) {
+                Ok(server) => {
+                    // Scripts launching the app read the port from this line.
+                    println!("CosmicCAM control channel listening on 127.0.0.1:{}", server.port());
+                    use std::io::Write as _;
+                    let _ = std::io::stdout().flush();
+                    Some(server)
+                }
+                Err(e) => {
+                    eprintln!("CosmicCAM: control channel not started: {e}");
+                    None
+                }
+            }
+        });
+        Self {
+            session,
+            dock: dock::default_layout(),
+            layout_generation,
+            viewport: Viewport::new(),
+            console: ConsoleState::default(),
+            render_state: cc.wgpu_render_state.clone(),
+            applied_theme: None,
+            status: None,
+            shortcuts: cmd::all().filter_map(|c| Some((parse_shortcut(c.shortcut?)?, c.id))).collect(),
+            automation,
+            control,
+            captures: Vec::new(),
+            capture_requested: false,
+            capture_wait: 0,
+        }
+    }
+
+    /// Runs a command; failures go to the status bar (and the console log).
+    pub fn run(&mut self, id: &str, params: &Value) {
+        match self.session.execute(id, params) {
+            Ok(_) => self.status = None,
+            Err(e) => self.status = Some(e.to_string()),
+        }
+    }
+
+    /// Answers one control-channel request. See `docs/control-protocol.md`.
+    fn answer(&mut self, ctx: &egui::Context, incoming: Incoming) {
+        let p = incoming.params.clone();
+        match incoming.method.as_str() {
+            "app.ping" => incoming.ok(json!({
+                "name": "CosmicCAM",
+                "version": env!("CARGO_PKG_VERSION"),
+                "protocol": PROTOCOL_VERSION,
+            })),
+            "engine.execute" => {
+                let Some(command) = p.get("command").and_then(Value::as_str) else {
+                    return incoming.err("invalid_request", "`params.command` must be a command id");
+                };
+                let params = p.get("params").cloned().unwrap_or(Value::Null);
+                match self.session.execute(command, &params) {
+                    Ok(result) => {
+                        self.status = None;
+                        incoming.ok(result);
+                    }
+                    Err(e) => {
+                        self.status = Some(e.to_string());
+                        incoming.err(e.kind(), e.to_string());
+                    }
+                }
+                ctx.request_repaint();
+            }
+            "engine.commands" => incoming.ok(json!(
+                cmd::all().filter(|c| !c.id.starts_with("test.")).map(|c| c.to_json(&self.session)).collect::<Vec<_>>()
+            )),
+            "engine.state" => incoming.ok(self.session.state_json()),
+            "ui.screenshot" => match p.get("path").and_then(Value::as_str) {
+                Some(path) if path.to_ascii_lowercase().ends_with(".png") => {
+                    self.captures.push(Capture { path: PathBuf::from(path), reply: Some(incoming), then_quit: false });
+                    ctx.request_repaint();
+                }
+                _ => incoming.err("invalid_params", "`path` must be a file path ending in .png"),
+            },
+            "ui.start" => {
+                incoming.err("not_supported", "no interactive tools exist yet; run commands with engine.execute")
+            }
+            other => {
+                let other = other.to_owned();
+                incoming.err("unknown_method", format!("unknown method `{other}`"));
+            }
+        }
+    }
+
+    /// Carries out window and pane changes queued by commands.
+    fn apply_ui_requests(&mut self, ctx: &egui::Context) {
+        for request in self.session.take_ui_requests() {
+            match request {
+                UiRequest::ShowPane(p) => dock::show(&mut self.dock, p),
+                UiRequest::HidePane(p) => dock::hide(&mut self.dock, p),
+                UiRequest::FocusPane(p) => dock::focus(&mut self.dock, p),
+                UiRequest::WindowSize { width, height } => {
+                    ctx.send_viewport_cmd(ViewportCommand::InnerSize(vec2(width, height)));
+                }
+                UiRequest::Fullscreen(on) => ctx.send_viewport_cmd(ViewportCommand::Fullscreen(on)),
+                UiRequest::Maximized(on) => ctx.send_viewport_cmd(ViewportCommand::Maximized(on)),
+                UiRequest::Quit => ctx.send_viewport_cmd(ViewportCommand::Close),
+            }
+        }
+        self.session.set_open_panes(dock::open_panes(&self.dock));
+    }
+
+    /// Requests a capture while any is pending and saves it when the image arrives.
+    fn service_captures(&mut self, ctx: &egui::Context) {
+        if self.captures.is_empty() {
+            return;
+        }
+        ctx.request_repaint();
+        if !self.capture_requested {
+            // Let camera moves and window changes finish first (at most ~2 s).
+            const MAX_WAIT_FRAMES: u32 = 120;
+            self.capture_wait += 1;
+            if (self.viewport.is_animating() || self.capture_wait < 3) && self.capture_wait < MAX_WAIT_FRAMES {
+                return;
+            }
+            self.capture_wait = 0;
+            self.capture_requested = true;
+            ctx.send_viewport_cmd(ViewportCommand::Screenshot(UserData::default()));
+            return;
+        }
+        let image = ctx.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                Event::Screenshot { image, .. } => Some(Arc::clone(image)),
+                _ => None,
+            })
+        });
+        let Some(image) = image else {
+            return;
+        };
+        self.capture_requested = false;
+        let mut quit = false;
+        for capture in std::mem::take(&mut self.captures) {
+            let result = automation::save_png(&image, &capture.path);
+            match (&result, capture.reply) {
+                (Ok(()), Some(reply)) => reply.ok(json!({
+                    "path": capture.path.display().to_string(),
+                    "width": image.size[0],
+                    "height": image.size[1],
+                })),
+                (Err(e), Some(reply)) => reply.err("io", format!("could not save {}: {e}", capture.path.display())),
+                (Ok(()), None) => println!("screenshot saved to {}", capture.path.display()),
+                (Err(e), None) => eprintln!("could not save screenshot {}: {e}", capture.path.display()),
+            }
+            quit |= capture.then_quit;
+        }
+        if quit {
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+    }
+
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) -> Vec<Request> {
+        if ctx.egui_wants_keyboard_input() {
+            return Vec::new();
+        }
+        let mut fired = Vec::new();
+        ctx.input_mut(|i| {
+            for (shortcut, id) in &self.shortcuts {
+                if i.consume_shortcut(shortcut) {
+                    fired.push(((*id).to_owned(), Value::Null));
+                }
+            }
+        });
+        fired
+    }
+}
+
+impl eframe::App for CosmicApp {
+    /// Runs every frame and also while the window is hidden, so the API keeps answering.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let incoming = self.control.as_ref().map(ControlServer::poll).unwrap_or_default();
+        for request in incoming {
+            self.answer(ctx, request);
+        }
+        self.apply_ui_requests(ctx);
+    }
+
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        let tokens: &'static Tokens = Tokens::for_theme(self.session.prefs.theme);
+        if self.applied_theme != Some(self.session.prefs.theme) {
+            theme::apply(&ctx, tokens);
+            self.applied_theme = Some(self.session.prefs.theme);
+        }
+        if self.layout_generation != self.session.view.layout_generation {
+            self.dock = dock::default_layout();
+            self.layout_generation = self.session.view.layout_generation;
+        }
+
+        let mut requests = self.handle_shortcuts(&ctx);
+        let step = self.automation.tick(&ctx);
+        requests.extend(step.requests);
+        if let Some(path) = step.capture {
+            self.captures.push(Capture { path, reply: None, then_quit: true });
+        }
+        self.service_captures(&ctx);
+        ribbon::show(ui, &self.session, tokens, &mut requests);
+
+        let status = self.status.clone();
+        let fps = self.viewport.fps();
+        Panel::bottom("status", Surface::StatusBar).show(ui, tokens, |ui| {
+            ui.horizontal(|ui| {
+                match &status {
+                    Some(msg) => ui.label(RichText::new(msg).color(tokens.error)),
+                    None => ui.label(RichText::new("Ready").color(tokens.text_muted)),
+                };
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        RichText::new(format!(
+                            "{} theme  ·  mm  ·  Z up  ·  {fps:.0} fps",
+                            match self.session.prefs.theme {
+                                Theme::Dark => "Dark",
+                                Theme::Light => "Light",
+                            }
+                        ))
+                        .color(tokens.text_muted),
+                    );
+                });
+            });
+        });
+
+        Panel::central(Surface::Workspace).show(ui, tokens, |ui| {
+            let mut style = Style::from_egui(ui.style());
+            style.tab_bar.bg_fill = tokens.raised_bg;
+            style.tab.active.bg_fill = tokens.panel_bg;
+            style.tab.focused.bg_fill = tokens.panel_bg;
+            style.tab.active.text_color = tokens.text;
+            style.tab.focused.text_color = tokens.accent;
+            style.tab.inactive.text_color = tokens.text_muted;
+            style.tab.tab_body.bg_fill = tokens.panel_bg;
+            style.tab.tab_body.stroke = egui::Stroke::new(1.0, tokens.border);
+            style.separator.color_idle = tokens.border;
+            style.separator.color_hovered = tokens.accent;
+            style.separator.color_dragged = tokens.accent;
+            style.overlay.selection_color = tokens.accent.gamma_multiply(0.35);
+            let mut viewer = dock::Viewer {
+                session: &mut self.session,
+                tokens,
+                viewport: &mut self.viewport,
+                render_state: self.render_state.as_ref(),
+                console: &mut self.console,
+                requests: &mut requests,
+            };
+            DockArea::new(&mut self.dock)
+                .id(egui::Id::new("workspace-dock"))
+                .style(style)
+                .show_leaf_collapse_buttons(false)
+                .show_inside(ui, &mut viewer);
+        });
+
+        for (id, params) in requests {
+            self.run(&id, &params);
+        }
+    }
+}
+
+/// Parses "Ctrl+Shift+T", "F" or "7" style shortcuts.
+fn parse_shortcut(text: &str) -> Option<KeyboardShortcut> {
+    let mut modifiers = Modifiers::NONE;
+    let mut key = None;
+    for part in text.split('+') {
+        match part {
+            "Ctrl" | "Cmd" => modifiers |= Modifiers::COMMAND,
+            "Shift" => modifiers |= Modifiers::SHIFT,
+            "Alt" => modifiers |= Modifiers::ALT,
+            other => key = Key::from_name(other),
+        }
+    }
+    Some(KeyboardShortcut::new(modifiers, key?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_registered_shortcut_parses() {
+        for spec in cmd::all() {
+            if let Some(s) = spec.shortcut {
+                assert!(parse_shortcut(s).is_some(), "{}: {s}", spec.id);
+            }
+        }
+    }
+
+    #[test]
+    fn shortcuts_are_unique() {
+        let mut seen = std::collections::HashSet::new();
+        for spec in cmd::all() {
+            if let Some(s) = spec.shortcut {
+                assert!(seen.insert(s), "{s} is bound twice");
+            }
+        }
+    }
+}
