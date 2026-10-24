@@ -33,26 +33,35 @@ pub struct FrameParams {
     pub bg_bottom: [f32; 4],
 }
 
+/// Uploaded geometry. Large buffers are split into chunks the device accepts.
 struct Mesh {
-    triangles: Option<(wgpu::Buffer, u32)>,
-    lines: Option<(wgpu::Buffer, u32)>,
+    triangles: Vec<(wgpu::Buffer, u32)>,
+    lines: Vec<(wgpu::Buffer, u32)>,
 }
 
+/// Most vertices in one buffer, whatever the device allows (a multiple of 2 and 3).
+const MAX_CHUNK_VERTICES: usize = 6 << 20;
+
 impl Mesh {
+    const EMPTY: Self = Self { triangles: Vec::new(), lines: Vec::new() };
+
     fn upload(device: &wgpu::Device, label: &str, g: &SceneGeometry) -> Self {
-        let buffer = |data: &[Vertex], kind: &str| {
-            if data.is_empty() {
-                return None;
-            }
-            let count = u32::try_from(data.len()).ok()?;
-            let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&format!("{label} {kind}")),
-                contents: bytemuck::cast_slice(data),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-            Some((buf, count))
+        let by_limit = device.limits().max_buffer_size / std::mem::size_of::<Vertex>() as u64;
+        let chunk = (usize::try_from(by_limit).unwrap_or(usize::MAX).min(MAX_CHUNK_VERTICES) / 6 * 6).max(6);
+        let buffers = |data: &[Vertex], kind: &str| -> Vec<(wgpu::Buffer, u32)> {
+            data.chunks(chunk)
+                .filter_map(|part| {
+                    let count = u32::try_from(part.len()).ok()?;
+                    let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some(&format!("{label} {kind}")),
+                        contents: bytemuck::cast_slice(part),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                    Some((buf, count))
+                })
+                .collect()
         };
-        Self { triangles: buffer(&g.triangles, "triangles"), lines: buffer(&g.lines, "lines") }
+        Self { triangles: buffers(&g.triangles, "triangles"), lines: buffers(&g.lines, "lines") }
     }
 }
 
@@ -196,8 +205,8 @@ impl ViewportGpu {
             background,
             triangles,
             lines,
-            scene: Mesh { triangles: None, lines: None },
-            overlay: Mesh { triangles: None, lines: None },
+            scene: Mesh::EMPTY,
+            overlay: Mesh::EMPTY,
             targets: None,
             texture_id: None,
         }
@@ -309,15 +318,14 @@ impl ViewportGpu {
                 rp.set_pipeline(&self.background);
                 rp.draw(0..3, 0..1);
             }
-            if let Some((buf, n)) = &mesh.triangles {
-                rp.set_pipeline(&self.triangles);
-                rp.set_vertex_buffer(0, buf.slice(..));
-                rp.draw(0..*n, 0..1);
-            }
-            if let Some((buf, n)) = &mesh.lines {
-                rp.set_pipeline(&self.lines);
-                rp.set_vertex_buffer(0, buf.slice(..));
-                rp.draw(0..*n, 0..1);
+            for (pipeline, chunks) in [(&self.triangles, &mesh.triangles), (&self.lines, &mesh.lines)] {
+                if !chunks.is_empty() {
+                    rp.set_pipeline(pipeline);
+                }
+                for (buf, n) in chunks {
+                    rp.set_vertex_buffer(0, buf.slice(..));
+                    rp.draw(0..*n, 0..1);
+                }
             }
         };
         pass(&mut encoder, true, &self.scene, true);

@@ -21,7 +21,8 @@ pub struct Viewport {
     gpu_error: Option<String>,
     /// The camera on screen; eases towards the session's camera.
     shown: OrbitCamera,
-    scene_key: Option<(Theme, bool, Display)>,
+    /// Theme, job geometry revision and display flags the uploaded scene was built for.
+    scene_key: Option<(Theme, u64, Display)>,
     scene_bounds: Aabb,
     fit_pending: bool,
     last_render_time: Option<f64>,
@@ -146,7 +147,7 @@ impl Viewport {
 
     fn rebuild_scene_if_needed(&mut self, session: &mut Session, tokens: &Tokens) {
         let display = session.prefs.display;
-        let key = (session.prefs.theme, session.job.sample_loaded, display);
+        let key = (session.prefs.theme, session.job.revision, display);
         if self.scene_key == Some(key) {
             return;
         }
@@ -154,6 +155,10 @@ impl Viewport {
         let mut content = SceneGeometry::default();
         if session.job.sample_loaded {
             content = scene::sample_part(&palette, display.edges, display.stock);
+        }
+        let edge = display.edges.then_some(palette.part_edge);
+        for model in &session.job.models {
+            content.push_mesh(&model.mesh, palette.part, edge);
         }
         let mut world = if display.grid { scene::grid(&content.bounds, &palette) } else { SceneGeometry::default() };
         world.triangles.extend_from_slice(&content.triangles);

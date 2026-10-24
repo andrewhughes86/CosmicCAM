@@ -47,8 +47,27 @@ values raise `CosmicCAMError(kind="invalid_params")` without changing anything.
 | `unknown_command` | No command has that id |
 | `disabled` | The command exists but cannot run now (e.g. a planned feature) |
 | `not_supported` | The feature is not implemented yet |
+| `import` | A model file could not be read or parsed (the message names the line) |
 | `internal` | The command failed unexpectedly; the app restored its state |
 | `unauthorized`, `timeout`, `disconnected` | Connection problems |
+
+## Importing models
+
+CosmicCAM imports STL (binary and ASCII) and Wavefront OBJ meshes. Neither format stores units,
+so say which unit the file was drawn in (`mm` by default); the job is always in millimetres.
+
+```python
+part = cc.model_import(path="parts/bracket.stl")              # {'id': 'model.1', 'triangles': ..., 'bounds': ...}
+cc.model_import(path="parts/fixture.obj", units="in", name="Vice jaws")
+for m in cc.model_list():
+    print(m["id"], m["name"], m["bounds"])
+cc.selection_set(id=part["id"])     # models appear under Models in the job outline
+cc.model_remove(id="model.2")
+```
+
+The first import replaces the built-in sample part. A file that cannot be read raises
+`CosmicCAMError(kind="import")` and leaves the job unchanged. `cc.start("model.import")` opens
+the file dialog instead, as the ribbon button does; files dropped on the window are imported too.
 
 ## State, screenshots and the log
 

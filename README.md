@@ -7,18 +7,19 @@ Python.
 
 ![CosmicCAM showing the sample part in the dark theme](docs/images/cosmiccam-current.png)
 
-*Current state: the desktop shell with ribbon, dockable panes and the wgpu 3D viewport. The
-part is a built-in placeholder until model import lands.*
+*Current state: the desktop shell with ribbon, dockable panes and the wgpu 3D viewport, showing
+the built-in sample part. STL and OBJ models can now be imported.*
 
 ## Where the project is
 
-**Early development.** Phase 1 of 9 is complete. CosmicCAM can't machine anything yet: there is
-no model import, tooling, toolpath generation or G-code output so far.
+**Early development.** Phase 1 of 9 is complete and Phase 2 has started. CosmicCAM can't machine
+anything yet: it imports STL and OBJ models, but there is no tooling, toolpath generation or
+G-code output so far.
 
 | Phase | Milestone | Status |
 | --- | --- | --- |
 | 1 | Desktop UI & theme engine | **Done** |
-| 2 | Model import & geometry ingestion (STL/OBJ, STEP/IGES) | **Next** |
+| 2 | Model import & geometry ingestion (STL/OBJ, STEP/IGES) | **In progress** (STL/OBJ done) |
 | 3 | Work coordinate system (WCS) creation | Planned |
 | 4 | Tool library & management | Planned |
 | 5 | Stock setup & material definition | Planned |
@@ -32,13 +33,16 @@ no model import, tooling, toolpath generation or G-code output so far.
   - A ribbon with Home, Setup, Tooling, Toolpaths, Simulation and Export tabs, and 40 original icons.
   - Viewport, Explorer, Inspector and Console panes you can drag, stack and resize.
   - A dark theme (default) and a high-contrast light theme.
+- **Model import:** binary and ASCII STL and Wavefront OBJ, from the Import model button
+  (Ctrl+I), drag-and-drop onto the window or `model.import` in scripts. Files are read in mm,
+  cm, m or inches.
 - **3D viewport:**
-  - Shaded model with edges, stock outline, ground grid and a WCS marker.
+  - Shaded models with feature edges, stock outline, ground grid and a WCS marker.
   - A clickable view cube and a corner orientation marker.
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 77 commands. Each command has a typed parameter schema that the engine checks before
+  the same 79 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.
@@ -48,7 +52,7 @@ no model import, tooling, toolpath generation or G-code output so far.
   - There is no `unwrap`/`panic` in production code.
 
 ### Placeholders
-Commands for later phases (import, WCS, stock, tools, toolpaths, simulation, post-processing)
+Commands for later phases (WCS, stock, tools, toolpaths, simulation, post-processing)
 already appear in the ribbon and the API. They are disabled and report "not available yet" so the
 full surface is visible and scriptable ahead of time.
 

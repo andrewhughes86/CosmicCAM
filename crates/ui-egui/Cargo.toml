@@ -23,3 +23,6 @@ wgpu = { workspace = true, features = ["wgsl"] }
 png = { workspace = true }
 getrandom = { workspace = true }
 resvg = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rfd = { workspace = true }

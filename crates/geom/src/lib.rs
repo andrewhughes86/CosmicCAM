@@ -12,7 +12,10 @@
 )]
 #![allow(non_snake_case)]
 
+pub mod mesh;
+
 pub use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
+pub use mesh::{Mesh, MeshError};
 
 /// World up axis. CosmicCAM is Z-up everywhere.
 pub const UP: Vec3 = Vec3::Z;

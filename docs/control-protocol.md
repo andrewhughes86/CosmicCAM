@@ -39,7 +39,7 @@ One JSON object per line in each direction. Requests are answered in order.
 | `engine.commands` | — | Every command: `{id, label, tooltip, shortcut, enabled, params, returns, ribbon}` |
 | `engine.state` | — | Same as the `session.state.get` command |
 | `ui.screenshot` | `{path}` (ends in `.png`) | `{path, width, height}` once the next settled frame is saved; the window must be visible |
-| `ui.start` | `{command}` | Starts a command's interactive tool; none exist yet (`not_supported`) |
+| `ui.start` | `{command}` | `{started}`: starts a command's interactive tool as a toolbar click would. `model.import` opens the file dialog and imports the chosen file. Other commands: `not_supported`; a dialog already open: `busy` |
 
 Programmatic calls never open dialogs: `engine.execute` runs the command directly. Window and
 pane commands (`ui.*`, `app.quit`) are carried out on the app's next frame. Requests are also
@@ -48,7 +48,7 @@ answered while the window is minimised.
 ## Error kinds
 
 `unauthorized`, `invalid_request` (not JSON, no method), `unknown_method`, `unknown_command`,
-`invalid_params`, `disabled`, `not_supported`, `internal` (the command failed and the session was
+`invalid_params`, `disabled`, `not_supported`, `import` (a model file could not be read or parsed), `busy` (`ui.start` while a dialog is open), `internal` (the command failed and the session was
 restored), `io` (screenshot could not be written), `timeout` (no answer within 60 s),
 `unavailable` (too many connections or shutting down).
 

@@ -16,6 +16,7 @@ use crate::dock::{self, Tab};
 use crate::panes::ConsoleState;
 use crate::ribbon;
 use crate::theme::{self, Tokens};
+use crate::tools::{self, Tools};
 use crate::ui_kit::{Panel, Surface};
 use crate::viewport::Viewport;
 
@@ -40,6 +41,7 @@ pub struct CosmicApp {
     layout_generation: u64,
     viewport: Viewport,
     console: ConsoleState,
+    tools: Tools,
     render_state: Option<RenderState>,
     applied_theme: Option<Theme>,
     /// Last command failure, shown in the status bar.
@@ -82,6 +84,7 @@ impl CosmicApp {
             layout_generation,
             viewport: Viewport::new(),
             console: ConsoleState::default(),
+            tools: Tools::default(),
             render_state: cc.wgpu_render_state.clone(),
             applied_theme: None,
             status: None,
@@ -94,8 +97,14 @@ impl CosmicApp {
         }
     }
 
-    /// Runs a command; failures go to the status bar (and the console log).
+    /// Runs a command; failures go to the status bar (and the console log). A command
+    /// with an interactive tool, run without parameters (a toolbar click or shortcut),
+    /// starts that tool instead.
     pub fn run(&mut self, id: &str, params: &Value) {
+        if params.is_null() && tools::has_start(id) {
+            self.status = self.tools.start(id).err();
+            return;
+        }
         match self.session.execute(id, params) {
             Ok(_) => self.status = None,
             Err(e) => self.status = Some(e.to_string()),
@@ -139,9 +148,14 @@ impl CosmicApp {
                 }
                 _ => incoming.err("invalid_params", "`path` must be a file path ending in .png"),
             },
-            "ui.start" => {
-                incoming.err("not_supported", "no interactive tools exist yet; run commands with engine.execute")
-            }
+            "ui.start" => match p.get("command").and_then(Value::as_str) {
+                Some(command) if tools::has_start(command) => match self.tools.start(command) {
+                    Ok(()) => incoming.ok(json!({ "started": command })),
+                    Err(e) => incoming.err("busy", e),
+                },
+                Some(_) => incoming.err("not_supported", "that command has no interactive tool; use engine.execute"),
+                None => incoming.err("invalid_request", "`params.command` must be a command id"),
+            },
             other => {
                 let other = other.to_owned();
                 incoming.err("unknown_method", format!("unknown method `{other}`"));
@@ -254,6 +268,13 @@ impl eframe::App for CosmicApp {
         }
 
         let mut requests = self.handle_shortcuts(&ctx);
+        requests.extend(self.tools.poll());
+        if self.tools.is_busy() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        // Model files dropped on the window are imported.
+        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
+        requests.extend(dropped.iter().map(|p| tools::import_request(p)));
         let step = self.automation.tick(&ctx);
         requests.extend(step.requests);
         if let Some(path) = step.capture {

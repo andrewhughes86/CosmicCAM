@@ -123,6 +123,46 @@ class Commands:
         params = {"since": since, "limit": limit}
         return self.execute("console.log.get", {k: v for k, v in params.items() if v is not None})
 
+    def model_import(self, *, path: str, units: Optional[Literal["mm", "cm", "m", "in"]] = None, name: Optional[str] = None) -> Any:
+        """Import STL or OBJ geometry.
+
+        Args:
+            path: Model file (.stl or .obj).
+            units: Unit the file was authored in (default mm); STL and OBJ store none — one of mm, cm, m, in.
+            name: Name in the job outline (default: the file name).
+
+        Returns:
+            the model {id, name, source, format, units, triangles, vertices, bounds}
+
+        Command: ``model.import``
+        """
+        params = {"path": path, "units": units, "name": name}
+        return self.execute("model.import", {k: v for k, v in params.items() if v is not None})
+
+    def model_list(self) -> Any:
+        """The job's imported models.
+
+        Returns:
+            list of {id, name, source, format, units, triangles, vertices, bounds}
+
+        Command: ``model.list``
+        """
+        return self.execute("model.list")
+
+    def model_remove(self, *, id: str) -> Any:
+        """Remove an imported model from the job.
+
+        Args:
+            id: Model id, e.g. model.1.
+
+        Returns:
+            {"removed": id}
+
+        Command: ``model.remove``
+        """
+        params = {"id": id}
+        return self.execute("model.remove", {k: v for k, v in params.items() if v is not None})
+
     def view_fit(self) -> Any:
         """Zoom to fit everything in the viewport.
 
@@ -532,18 +572,6 @@ class Commands:
         Command: ``job.save``
         """
         return self.execute("job.save")
-
-    def model_import(self) -> Any:
-        """Import STEP, IGES, STL or OBJ geometry (Phase 2).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``model.import``
-        """
-        return self.execute("model.import")
 
     def setup_wcs_create(self) -> Any:
         """Define the work coordinate system (Phase 3).

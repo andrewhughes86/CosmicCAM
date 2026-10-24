@@ -4,6 +4,7 @@ members = [
     "apps/CosmicCAM",
     "crates/engine",
     "crates/geom",
+    "crates/io",
     "crates/render",
     "crates/ui-egui",
     "xtask",
@@ -31,6 +32,7 @@ unreachable = "deny"
 [workspace.dependencies]
 CosmicCAM-engine = { path = "crates/engine" }
 CosmicCAM-geom = { path = "crates/geom" }
+CosmicCAM-io = { path = "crates/io" }
 CosmicCAM-render = { path = "crates/render" }
 CosmicCAM-ui-egui = { path = "crates/ui-egui" }
 
@@ -44,6 +46,7 @@ getrandom = "0.4"
 glam = "0.30"
 log = "0.4"
 resvg = { version = "=0.48.1", default-features = false }
+rfd = "0.17.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 png = "0.18"

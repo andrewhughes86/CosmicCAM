@@ -16,7 +16,7 @@ pub mod session;
 
 pub use cmd::{ButtonSize, CommandSpec, Param, ParamKind, Placement, RibbonTab};
 pub use error::{EngineError, EngineResult, error_json};
-pub use session::{Display, Pane, Session, Theme, UiRequest};
+pub use session::{Display, Model, Pane, Session, Theme, UiRequest};
 
 #[cfg(test)]
 mod tests;

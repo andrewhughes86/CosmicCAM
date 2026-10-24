@@ -10,6 +10,8 @@ pub enum EngineError {
     NotSupported(String),
     #[error("command is not available right now: {0}")]
     Disabled(String),
+    #[error("import failed: {0}")]
+    Import(String),
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -24,6 +26,7 @@ impl EngineError {
             Self::InvalidParams(_) => "invalid_params",
             Self::NotSupported(_) => "not_supported",
             Self::Disabled(_) => "disabled",
+            Self::Import(_) => "import",
             Self::Internal(_) => "internal",
         }
     }

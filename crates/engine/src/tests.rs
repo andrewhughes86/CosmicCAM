@@ -90,6 +90,10 @@ fn hostile_params_never_panic() {
         json!({"preset": "x".repeat(100_000), "fps": -1, "sample": "yes"}),
         json!({"fps": f64::MAX, "id": "no-such-node"}),
         json!({"fps": 0.000001, "id": null, "sample": true}),
+        json!({"path": "/dev/zero", "units": "furlong", "name": 5}),
+        json!({"path": "/", "units": "mm"}),
+        json!({"path": "\u{0}.stl", "id": "model.1"}),
+        json!({"path": "x".repeat(4096), "name": ""}),
     ];
     for spec in cmd::all().filter(|c| c.id != "test.panic") {
         for params in &hostile {
@@ -261,4 +265,111 @@ fn introspection_commands() {
     let entries = log.as_array().cloned().unwrap_or_default();
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[1]["error"]["kind"], "invalid_params");
+}
+
+/// A unique scratch file holding `contents`; removed when the guard drops.
+struct TempFile(std::path::PathBuf);
+
+impl TempFile {
+    fn new(name: &str, contents: &[u8]) -> Self {
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("cosmiccam-engine-{}-{n}", std::process::id()));
+        let path = dir.join(name);
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(&path, contents);
+        Self(path)
+    }
+
+    fn path(&self) -> &str {
+        self.0.to_str().unwrap_or_default()
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        if let Some(dir) = self.0.parent() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
+const PYRAMID_OBJ: &[u8] =
+    b"v 0 0 0\nv 40 0 0\nv 40 30 0\nv 0 30 0\nv 20 15 25\nf 1 4 3 2\nf 1 2 5\nf 2 3 5\nf 3 4 5\nf 4 1 5\n";
+
+#[test]
+fn import_adds_a_model_to_the_job() {
+    let file = TempFile::new("Pyramid.obj", PYRAMID_OBJ);
+    let mut s = Session::with_sample();
+    let revision = s.job.revision;
+    let r = s.execute("model.import", &json!({"path": file.path()})).unwrap_or_default();
+    assert_eq!(r["id"], "model.1");
+    assert_eq!(r["name"], "Pyramid");
+    assert_eq!(r["format"], "obj");
+    assert_eq!(r["triangles"], 6);
+    assert_eq!(r["bounds"]["max"], json!([40.0, 30.0, 25.0]));
+    assert_ne!(s.job.revision, revision);
+    // The import replaces the placeholder part.
+    assert!(!s.job.sample_loaded);
+    assert!(s.outline_node("model.sample").is_none());
+    let node = s.outline_node("model.1");
+    assert!(node.is_some_and(|n| n.properties.iter().any(|(k, v)| k == "Triangles" && v == "6")));
+    assert!(s.execute("selection.set", &json!({"id": "model.1"})).is_ok());
+    let list = s.execute("model.list", &Value::Null).unwrap_or_default();
+    assert_eq!(list.as_array().map(Vec::len), Some(1));
+    let state = s.execute("session.state.get", &Value::Null).unwrap_or_default();
+    assert_eq!(state["job"]["models"][0]["id"], "model.1");
+}
+
+#[test]
+fn import_scales_by_units_and_takes_a_name() {
+    let file = TempFile::new("pyramid.OBJ", PYRAMID_OBJ);
+    let mut s = Session::new();
+    let r = s.execute("model.import", &json!({"path": file.path(), "units": "in", "name": "  Bracket  "}));
+    let r = r.unwrap_or_default();
+    assert_eq!(r["name"], "Bracket");
+    assert_eq!(r["units"], "in");
+    assert!((r["bounds"]["max"][0].as_f64().unwrap_or_default() - 1016.0).abs() < 1e-3);
+}
+
+#[test]
+fn ids_are_not_reused_after_removal() {
+    let file = TempFile::new("p.obj", PYRAMID_OBJ);
+    let mut s = Session::new();
+    let import = |s: &mut Session| s.execute("model.import", &json!({"path": file.path()})).unwrap_or_default();
+    assert_eq!(import(&mut s)["id"], "model.1");
+    assert!(s.execute("selection.set", &json!({"id": "model.1"})).is_ok());
+    assert!(s.execute("model.remove", &json!({"id": "model.1"})).is_ok());
+    assert_eq!(s.view.selection, None);
+    assert!(s.job.models.is_empty());
+    assert_eq!(import(&mut s)["id"], "model.2");
+    assert!(matches!(s.execute("model.remove", &json!({"id": "model.1"})), Err(EngineError::InvalidParams(_))));
+}
+
+#[test]
+fn failed_imports_leave_the_job_alone() {
+    let bad = TempFile::new("broken.obj", b"v 0 0 0\nf 1 2 3\n");
+    let step = TempFile::new("part.step", b"ISO-10303-21;");
+    let mut s = Session::with_sample();
+    let revision = s.job.revision;
+    for path in [bad.path(), step.path(), "/no/such/file.stl"] {
+        let r = s.execute("model.import", &json!({"path": path}));
+        assert!(matches!(r, Err(EngineError::Import(_))), "{path}: {r:?}");
+    }
+    let r = s.execute("model.import", &json!({"path": bad.path()}));
+    assert!(matches!(r, Err(ref e) if e.kind() == "import" && e.to_string().contains("line 2")), "{r:?}");
+    assert!(s.job.sample_loaded && s.job.models.is_empty());
+    assert_eq!(s.job.revision, revision);
+    assert!(s.execute("model.import", &Value::Null).is_err());
+}
+
+#[test]
+fn job_new_clears_models_and_changes_the_revision() {
+    let file = TempFile::new("p.obj", PYRAMID_OBJ);
+    let mut s = Session::new();
+    assert!(s.execute("model.import", &json!({"path": file.path()})).is_ok());
+    let revision = s.job.revision;
+    assert!(s.execute("job.new", &Value::Null).is_ok());
+    assert!(s.job.models.is_empty());
+    assert_ne!(s.job.revision, revision);
 }

@@ -4,9 +4,12 @@
 
 use std::f32::consts::TAU;
 
-use CosmicCAM_geom::{Aabb, Vec3};
+use CosmicCAM_geom::{Aabb, Mesh, Vec3};
 
 pub type Rgba = [f32; 4];
+
+/// Mesh edges between faces meeting at more than this are outlined.
+pub const MESH_CREASE_DEGREES: f32 = 30.0;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -90,6 +93,28 @@ impl SceneGeometry {
         for (a, z) in EDGES {
             self.push_line(c[a], c[z], color);
         }
+    }
+
+    /// A triangle mesh, flat shaded, with its feature edges outlined.
+    pub fn push_mesh(&mut self, mesh: &Mesh, fill: Rgba, edge: Option<Rgba>) {
+        self.triangles.reserve(mesh.triangles().len() * 3);
+        for &t in mesh.triangles() {
+            let n = mesh.face_normal(t);
+            for p in mesh.corners(t) {
+                self.triangles.push(Vertex::lit(p, n, fill));
+            }
+        }
+        if let Some(edge) = edge {
+            let p = mesh.positions();
+            for [a, b] in mesh.feature_edges(MESH_CREASE_DEGREES) {
+                if let (Some(&a), Some(&b)) = (p.get(a as usize), p.get(b as usize)) {
+                    self.push_line(a, b, edge);
+                }
+            }
+        }
+        let b = mesh.bounds();
+        self.bounds.include(b.min);
+        self.bounds.include(b.max);
     }
 
     /// Vertical cylinder standing on `base`.
@@ -277,6 +302,22 @@ mod tests {
         let huge = Aabb::new(Vec3::splat(-1.0e9), Vec3::splat(1.0e9));
         let g = grid(&huge, &palette());
         assert!(g.lines.len() <= 4 * 801 + 8);
+    }
+
+    #[test]
+    fn meshes_are_drawn_with_their_outline() -> Result<(), CosmicCAM_geom::MeshError> {
+        let (a, b, c, d) = (Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::Z);
+        let tetra = Mesh::from_soup([[a, c, b], [a, b, d], [b, c, d], [c, a, d]])?;
+        let mut g = SceneGeometry::default();
+        g.push_mesh(&tetra, [1.0; 4], Some([0.0; 4]));
+        assert_eq!(g.triangles.len(), 12);
+        assert_eq!(g.lines.len(), 12);
+        assert_eq!(g.bounds, Aabb::new(Vec3::ZERO, Vec3::ONE));
+        for tri in g.triangles.chunks(3) {
+            let centroid = tri.iter().map(|v| Vec3::from(v.pos)).sum::<Vec3>() / 3.0;
+            assert!(Vec3::from(tri[0].normal).dot(centroid - Vec3::splat(0.25)) > 0.0);
+        }
+        Ok(())
     }
 
     #[test]

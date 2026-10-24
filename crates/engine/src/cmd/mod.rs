@@ -6,6 +6,7 @@
 //! generated from it (`cargo xtask api`).
 
 mod job;
+mod model;
 mod planned;
 mod ui;
 mod view;
@@ -295,8 +296,12 @@ pub fn never(_: &Session) -> bool {
 
 /// All registered commands, in ribbon order within each tab.
 pub fn all() -> impl Iterator<Item = &'static CommandSpec> {
-    let registered =
-        job::COMMANDS.iter().chain(view::COMMANDS.iter()).chain(ui::COMMANDS.iter()).chain(planned::COMMANDS.iter());
+    let registered = job::COMMANDS
+        .iter()
+        .chain(model::COMMANDS.iter())
+        .chain(view::COMMANDS.iter())
+        .chain(ui::COMMANDS.iter())
+        .chain(planned::COMMANDS.iter());
     #[cfg(test)]
     let registered = registered.chain(test_only::COMMANDS.iter());
     registered

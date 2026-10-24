@@ -49,8 +49,27 @@ values raise `CosmicCAMError(kind="invalid_params")` without changing anything.
 | `unknown_command` | No command has that id |
 | `disabled` | The command exists but cannot run now (e.g. a planned feature) |
 | `not_supported` | The feature is not implemented yet |
+| `import` | A model file could not be read or parsed (the message names the line) |
 | `internal` | The command failed unexpectedly; the app restored its state |
 | `unauthorized`, `timeout`, `disconnected` | Connection problems |
+
+## Importing models
+
+CosmicCAM imports STL (binary and ASCII) and Wavefront OBJ meshes. Neither format stores units,
+so say which unit the file was drawn in (`mm` by default); the job is always in millimetres.
+
+```python
+part = cc.model_import(path="parts/bracket.stl")              # {'id': 'model.1', 'triangles': ..., 'bounds': ...}
+cc.model_import(path="parts/fixture.obj", units="in", name="Vice jaws")
+for m in cc.model_list():
+    print(m["id"], m["name"], m["bounds"])
+cc.selection_set(id=part["id"])     # models appear under Models in the job outline
+cc.model_remove(id="model.2")
+```
+
+The first import replaces the built-in sample part. A file that cannot be read raises
+`CosmicCAMError(kind="import")` and leaves the job unchanged. `cc.start("model.import")` opens
+the file dialog instead, as the ribbon button does; files dropped on the window are imported too.
 
 ## State, screenshots and the log
 
@@ -92,17 +111,17 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-77 commands in 14 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+79 commands in 14 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.outline.get`](#joboutlineget), [`job.open`](#jobopen), [`job.save`](#jobsave)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
 - **session**: [`session.state.get`](#sessionstateget)
 - **command**: [`command.list`](#commandlist), [`command.describe`](#commanddescribe)
 - **console**: [`console.clear`](#consoleclear), [`console.log.get`](#consolelogget)
+- **model**: [`model.import`](#modelimport), [`model.list`](#modellist), [`model.remove`](#modelremove)
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
-- **model**: [`model.import`](#modelimport)
 - **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.fit`](#setupstockfit), [`setup.stock.margins`](#setupstockmargins)
 - **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.feeds`](#toolfeeds), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
 - **toolpath**: [`toolpath.pocket`](#toolpathpocket), [`toolpath.profile`](#toolpathprofile), [`toolpath.drill`](#toolpathdrill), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
@@ -270,6 +289,54 @@ Commands run so far and their outcomes.
 | `limit` | integer | no | Most recent entries to return (default 100) (1 to 1000) |
 
 Returns: list of {seq, command, params, ok, result \| error}
+
+
+### model
+
+#### `model.import`
+
+```python
+cc.model_import(path=…, units=None, name=None)
+```
+
+Import STL or OBJ geometry.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | string | yes | Model file (.stl or .obj) |
+| `units` | choice | no | Unit the file was authored in (default mm); STL and OBJ store none — one of mm, cm, m, in |
+| `name` | string | no | Name in the job outline (default: the file name) |
+
+Returns: the model {id, name, source, format, units, triangles, vertices, bounds}
+
+<sub>shortcut `Ctrl+I` · ribbon: Setup › Model</sub>
+
+#### `model.list`
+
+```python
+cc.model_list()
+```
+
+The job's imported models.
+
+
+Returns: list of {id, name, source, format, units, triangles, vertices, bounds}
+
+#### `model.remove`
+
+```python
+cc.model_remove(id=…)
+```
+
+Remove an imported model from the job.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Model id, e.g. model.1 |
+
+Returns: {"removed": id}
 
 
 ### view
@@ -718,22 +785,6 @@ Close CosmicCAM.
 Returns: null
 
 <sub>shortcut `Ctrl+Q`</sub>
-
-
-### model
-
-#### `model.import`
-
-```python
-cc.model_import()
-```
-
-Import STEP, IGES, STL or OBJ geometry (Phase 2).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Setup › Model</sub>
 
 
 ### setup

@@ -48,7 +48,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     planned!("job.open", "Open", "Open a job file (planned)", small(Home, "Job")),
     planned!("job.save", "Save", "Save the job (planned)", small(Home, "Job")),
     // Setup (Phases 2, 3 and 5)
-    planned!("model.import", "Import model", "Import STEP, IGES, STL or OBJ geometry (Phase 2)", large(Setup, "Model")),
     planned!(
         "setup.wcs.create",
         "Create WCS",

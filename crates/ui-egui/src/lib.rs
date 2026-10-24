@@ -18,6 +18,7 @@ pub mod navigation;
 mod panes;
 mod ribbon;
 pub mod theme;
+mod tools;
 pub mod ui_kit;
 mod viewport;
 

@@ -1,8 +1,10 @@
 //! The session: all engine state, changed only through [`Session::execute`].
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Arc;
 
-use CosmicCAM_geom::Aabb;
+use CosmicCAM_geom::{Aabb, Mesh};
+use CosmicCAM_io::{ModelFormat, Units};
 use CosmicCAM_render::OrbitCamera;
 use serde_json::{Value, json};
 
@@ -211,16 +213,75 @@ impl Default for ViewState {
     }
 }
 
+/// Most models one job holds.
+pub const MAX_MODELS: usize = 256;
+
+/// An imported model. The mesh is shared, so snapshotting the session stays cheap.
+#[derive(Clone, Debug)]
+pub struct Model {
+    /// Outline id, `model.<n>`.
+    pub id: String,
+    pub name: String,
+    /// The file it was imported from.
+    pub source: String,
+    pub format: ModelFormat,
+    /// Unit the file was read in; the mesh itself is in millimetres.
+    pub units: Units,
+    pub mesh: Arc<Mesh>,
+}
+
+impl Model {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "name": self.name,
+            "source": self.source,
+            "format": self.format.id(),
+            "units": self.units.id(),
+            "triangles": self.mesh.triangles().len(),
+            "vertices": self.mesh.positions().len(),
+            "bounds": bounds_json(&self.mesh.bounds()),
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct JobState {
     pub name: String,
     /// The Phase 1 placeholder workpiece is shown.
     pub sample_loaded: bool,
+    pub models: Vec<Model>,
+    /// Number used for the next model id.
+    pub(crate) next_model: u64,
+    /// Bumped whenever the job's geometry changes; never repeats within a run, so the
+    /// viewport rebuilds its scene when it differs from what it last drew.
+    pub revision: u64,
 }
 
 impl Default for JobState {
     fn default() -> Self {
-        Self { name: "Untitled".into(), sample_loaded: false }
+        Self { name: "Untitled".into(), sample_loaded: false, models: Vec::new(), next_model: 1, revision: 0 }
+    }
+}
+
+impl JobState {
+    pub(crate) fn geometry_changed(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    pub fn model(&self, id: &str) -> Option<&Model> {
+        self.models.iter().find(|m| m.id == id)
+    }
+
+    /// Bounds of all job geometry.
+    pub fn models_bounds(&self) -> Aabb {
+        let mut b = Aabb::EMPTY;
+        for m in &self.models {
+            let mb = m.mesh.bounds();
+            b.include(mb.min);
+            b.include(mb.max);
+        }
+        b
     }
 }
 
@@ -381,7 +442,11 @@ impl Session {
     pub fn state_json(&self) -> Value {
         let c = &self.view.camera;
         json!({
-            "job": { "name": self.job.name, "sample_loaded": self.job.sample_loaded },
+            "job": {
+                "name": self.job.name,
+                "sample_loaded": self.job.sample_loaded,
+                "models": self.job.models.iter().map(Model::to_json).collect::<Vec<_>>(),
+            },
             "theme": self.prefs.theme.id(),
             "fps_limit": self.prefs.fps_limit,
             "display": self.prefs.display.to_json(),
@@ -399,6 +464,7 @@ impl Session {
     pub(crate) fn reset_job(&mut self, sample: bool) {
         let mut fresh = if sample { Session::with_sample() } else { Session::new() };
         fresh.prefs = self.prefs.clone();
+        fresh.job.revision = self.job.revision.wrapping_add(1);
         fresh.view.layout_generation = self.view.layout_generation;
         fresh.view.aspect = self.view.aspect;
         fresh.view.camera.projection = self.view.camera.projection;
@@ -421,14 +487,31 @@ impl Session {
             properties,
         };
         let mut models = Vec::new();
+        let extents = |b: Aabb| {
+            let size = b.size();
+            format!("{:.1} × {:.1} × {:.1} mm", size.x, size.y, size.z)
+        };
         if self.job.sample_loaded {
-            let size = self.view.scene_bounds.size();
             models.push(leaf(
                 "model.sample",
                 "Sample part",
                 vec![
                     ("Source".into(), "Built-in placeholder".into()),
-                    ("Extents".into(), format!("{:.1} × {:.1} × {:.1} mm", size.x, size.y, size.z)),
+                    ("Extents".into(), extents(self.view.scene_bounds)),
+                ],
+            ));
+        }
+        for m in &self.job.models {
+            models.push(leaf(
+                &m.id,
+                &m.name,
+                vec![
+                    ("Source".into(), m.source.clone()),
+                    ("Format".into(), m.format.label().into()),
+                    ("File units".into(), m.units.id().into()),
+                    ("Triangles".into(), m.mesh.triangles().len().to_string()),
+                    ("Vertices".into(), m.mesh.positions().len().to_string()),
+                    ("Extents".into(), extents(m.mesh.bounds())),
                 ],
             ));
         }

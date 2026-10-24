@@ -26,7 +26,11 @@ class FakeApp:
 
     def serve(self):
         conn, _ = self.listener.accept()
-        f = conn.makefile("rwb")
+        # Close everything when the client hangs up, so no thread outlives the test run.
+        with self.listener, conn, conn.makefile("rwb") as f:
+            self.answer(f)
+
+    def answer(self, f):
         first = True
         for line in f:
             req = json.loads(line)
@@ -79,6 +83,28 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(sent[1], {"command": "view.fit", "params": {}})
         cc.close()
 
+    def test_model_import_sends_path_and_units(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.model_import(path="/parts/bracket.stl", units="in")
+        cc.model_list()
+        cc.model_remove(id="model.1")
+        sent = [r["params"] for r in app.requests]
+        self.assertEqual(
+            sent[0], {"command": "model.import", "params": {"path": "/parts/bracket.stl", "units": "in"}}
+        )
+        self.assertEqual(sent[1], {"command": "model.list", "params": {}})
+        self.assertEqual(sent[2], {"command": "model.remove", "params": {"id": "model.1"}})
+        cc.close()
+
+    def test_start_sends_ui_start(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.start("model.import")
+        self.assertEqual(app.requests[0]["method"], "ui.start")
+        self.assertEqual(app.requests[0]["params"], {"command": "model.import"})
+        cc.close()
+
 
 class GeneratedApiTests(unittest.TestCase):
     def test_every_method_is_keyword_only_and_documented(self):
@@ -88,6 +114,11 @@ class GeneratedApiTests(unittest.TestCase):
             self.assertIn("Command: ``", m.__doc__ or "", m.__name__)
             for p in list(inspect.signature(m).parameters.values())[1:]:
                 self.assertEqual(p.kind, inspect.Parameter.KEYWORD_ONLY, f"{m.__name__}.{p.name}")
+
+    def test_model_import_signature(self):
+        sig = inspect.signature(Commands.model_import)
+        self.assertEqual(list(sig.parameters)[1:], ["path", "units", "name"])
+        self.assertIs(sig.parameters["path"].default, inspect.Parameter.empty)
 
     def test_public_names(self):
         for name in ("launch", "connect", "CosmicCAM", "CosmicCAMError"):
