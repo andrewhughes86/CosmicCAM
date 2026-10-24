@@ -42,32 +42,10 @@ use RibbonTab::{Export, Home, Setup, Simulation, Tooling, Toolpaths};
 const TOOL_TYPES: &[&str] =
     &["tool.create.flat", "tool.create.ball", "tool.create.bull", "tool.create.chamfer", "tool.create.drill"];
 
-const WCS_ORIGINS: &[&str] = &["setup.wcs.top_center", "setup.wcs.bottom_corner"];
-
 pub(super) static COMMANDS: &[CommandSpec] = &[
     planned!("job.open", "Open", "Open a job file (planned)", small(Home, "Job")),
     planned!("job.save", "Save", "Save the job (planned)", small(Home, "Job")),
-    // Setup (Phases 2, 3 and 5)
-    planned!(
-        "setup.wcs.create",
-        "Create WCS",
-        "Define the work coordinate system (Phase 3)",
-        Some(Placement::large(Setup, "Coordinates").with_menu(WCS_ORIGINS))
-    ),
-    planned!(
-        "setup.wcs.top_center",
-        "Origin at top centre",
-        "Put the WCS origin at the stock top centre (Phase 3)",
-        None
-    ),
-    planned!(
-        "setup.wcs.bottom_corner",
-        "Origin at bottom corner",
-        "Put the WCS origin at a stock bottom corner (Phase 3)",
-        None
-    ),
-    planned!("setup.wcs.align", "Align", "Rotate the WCS to a face or edge (Phase 3)", small(Setup, "Coordinates")),
-    planned!("setup.wcs.offset", "Offset", "Translate the WCS by a distance (Phase 3)", small(Setup, "Coordinates")),
+    // Setup (Phases 3 and 5)
     planned!("setup.stock.box", "Box stock", "Rectangular block stock (Phase 5)", large(Setup, "Stock")),
     planned!("setup.stock.cylinder", "Cylinder stock", "Round bar stock (Phase 5)", large(Setup, "Stock")),
     planned!(

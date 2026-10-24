@@ -20,7 +20,7 @@ G-code output so far.
 | --- | --- | --- |
 | 1 | Desktop UI & theme engine | **Done** |
 | 2 | Model import & geometry ingestion (STL/OBJ, STEP/IGES) | **In progress** (STL/OBJ done) |
-| 3 | Work coordinate system (WCS) creation | Planned |
+| 3 | Work coordinate system (WCS) creation | **In progress** |
 | 4 | Tool library & management | Planned |
 | 5 | Stock setup & material definition | Planned |
 | 6 | Toolpath creation (2.5D and 3-axis strategies) | Planned |
@@ -36,13 +36,16 @@ G-code output so far.
 - **Model import:** binary and ASCII STL and Wavefront OBJ, from the Import model button
   (Ctrl+I), drag-and-drop onto the window or `model.import` in scripts. Files are read in mm,
   cm, m or inches.
+- **Work coordinate systems:** create, place on the part (top centre, corners…), offset,
+  rotate and align WCS, setting each axis and the origin by clicking faces and edges (planes,
+  holes, edges, corners, box points); the active one is drawn in full colour in the viewport.
 - **3D viewport:**
   - Shaded models with feature edges, stock outline, ground grid and a WCS marker.
-  - A clickable view cube and a corner orientation marker.
+  - A clickable view cube with a column of view buttons under it, and a corner orientation marker.
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 79 commands. Each command has a typed parameter schema that the engine checks before
+  the same 91 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.
@@ -52,7 +55,7 @@ G-code output so far.
   - There is no `unwrap`/`panic` in production code.
 
 ### Placeholders
-Commands for later phases (WCS, stock, tools, toolpaths, simulation, post-processing)
+Commands for later phases ( stock, tools, toolpaths, simulation, post-processing)
 already appear in the ribbon and the API. They are disabled and report "not available yet" so the
 full surface is visible and scriptable ahead of time.
 

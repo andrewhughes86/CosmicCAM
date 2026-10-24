@@ -10,6 +10,11 @@ mod model;
 mod planned;
 mod ui;
 mod view;
+mod wcs;
+pub(crate) mod wcs_define;
+
+pub use view::VIEWPORT_TOOLS;
+pub use wcs_define::{BOX_POINTS as WCS_BOX_POINTS, ORIENTATIONS as WCS_ORIENTATIONS, ORIGINS as WCS_ORIGINS};
 
 use serde_json::{Map, Value, json};
 
@@ -299,6 +304,7 @@ pub fn all() -> impl Iterator<Item = &'static CommandSpec> {
     let registered = job::COMMANDS
         .iter()
         .chain(model::COMMANDS.iter())
+        .chain(wcs::COMMANDS.iter())
         .chain(view::COMMANDS.iter())
         .chain(ui::COMMANDS.iter())
         .chain(planned::COMMANDS.iter());
@@ -311,17 +317,36 @@ pub fn find(id: &str) -> Option<&'static CommandSpec> {
     all().find(|c| c.id == id)
 }
 
-/// Commands on `tab`, grouped by panel in first-seen order.
-pub fn ribbon(tab: RibbonTab) -> Vec<(&'static str, Vec<&'static CommandSpec>)> {
-    let mut panels: Vec<(&'static str, Vec<&'static CommandSpec>)> = Vec::new();
-    for spec in all() {
-        let Some(p) = spec.placement.filter(|p| p.tab == tab) else {
-            continue;
-        };
+/// Commands that also appear on a second ribbon tab, as shortcuts to their home panel.
+pub static EXTRA_PLACEMENTS: &[(&str, Placement)] = &[
+    ("model.import", Placement::large(RibbonTab::Home, "Setup")),
+    ("setup.wcs.create", Placement::large(RibbonTab::Home, "Setup").with_menu(wcs::CREATE_MENU)),
+    ("setup.wcs.align", Placement::small(RibbonTab::Home, "Setup")),
+    ("setup.wcs.offset", Placement::small(RibbonTab::Home, "Setup")),
+];
+
+/// Panel order on tabs where first-seen order is not the order wanted. Panels not listed
+/// follow in first-seen order.
+const PANEL_ORDER: &[(RibbonTab, &[&str])] = &[(RibbonTab::Home, &["Job", "Setup", "Display"])];
+
+/// Every ribbon button: each command's own placement, then the extra ones.
+pub fn placements() -> impl Iterator<Item = (&'static CommandSpec, Placement)> {
+    all()
+        .filter_map(|s| Some((s, s.placement?)))
+        .chain(EXTRA_PLACEMENTS.iter().filter_map(|(id, p)| Some((find(id)?, *p))))
+}
+
+/// Commands on `tab`, grouped by panel.
+pub fn ribbon(tab: RibbonTab) -> Vec<(&'static str, Vec<(&'static CommandSpec, Placement)>)> {
+    let mut panels: Vec<(&'static str, Vec<(&'static CommandSpec, Placement)>)> = Vec::new();
+    for (spec, p) in placements().filter(|(_, p)| p.tab == tab) {
         match panels.iter_mut().find(|(name, _)| *name == p.panel) {
-            Some((_, list)) => list.push(spec),
-            None => panels.push((p.panel, vec![spec])),
+            Some((_, list)) => list.push((spec, p)),
+            None => panels.push((p.panel, vec![(spec, p)])),
         }
+    }
+    if let Some((_, order)) = PANEL_ORDER.iter().find(|(t, _)| *t == tab) {
+        panels.sort_by_key(|(name, _)| order.iter().position(|o| o == name).unwrap_or(order.len()));
     }
     panels
 }

@@ -69,6 +69,69 @@ The first import replaces the built-in sample part. A file that cannot be read r
 `CosmicCAMError(kind="import")` and leaves the job unchanged. `cc.start("model.import")` opens
 the file dialog instead, as the ribbon button does; files dropped on the window are imported too.
 
+## Work coordinate systems
+
+A WCS is the part zero the machine works from, with its axis directions. The active WCS is the
+one toolpaths will be programmed in; each WCS is drawn as a triad in the viewport (the active
+one in full colour, axes labelled X, Y and Z) and listed under Setups in the job outline. Once
+a WCS exists the world (model) origin triad is drawn faint.
+
+`setup.wcs.create` defines a WCS from two independent groups of parameters. `setup.wcs.align`
+takes the same groups and re-defines an existing WCS; a group left out is kept.
+
+### Orientation: how the axes are set
+
+| Parameter | Meaning |
+| --- | --- |
+| `orientation` | `model` (world axes, the default), `z_x`, `z_y`, `x_y` (select two axes; the third follows, right-handed) or `vectors` |
+| `orientation_z`, `orientation_x`, `orientation_y` | The selection for each axis the mode uses: a plane (its outward normal), a cylinder (its axis), or an edge (a straight edge's direction, a circle's axis) |
+| `orientation_z_vector`, `orientation_x_vector` | Directions, for `orientation = "vectors"` |
+| `flip_z`, `flip_x`, `flip_y` | Reverse a selected axis (the derived one follows) |
+
+Straight edges used for X or Y point away from the origin, along the edge. A hole or boss
+selected for X or Y when its axis runs along Z points X (or Y) towards it, which is how a
+second dowel hole sets X.
+
+### Origin: where zero goes
+
+| Parameter | Meaning |
+| --- | --- |
+| `origin` | `model` (world zero, the default), `box`, `point` or `intersection` |
+| `origin_box` | For `box`: a point on the models' bounding box, `<level>_<position>` with level `top`, `middle`, `bottom` and position `front_left`, `front`, `front_right`, `left`, `center`, `right`, `back_left`, `back`, `back_right` (`center` alone is the box centre; default `top_center`) |
+| `origin_point` / `origin_geometry` | For `point`: coordinates, or a selection (a circle's centre, a cylinder's upper axis end, a plane's centre, an edge's midpoint) |
+| `origin_a`, `origin_b`, `origin_c` | For `intersection`: three planes (a corner), a line and a plane (an edge or a cylinder axis meeting a face), or two lines |
+
+Parameters the chosen modes do not use are refused, so a script always gets what it asked for.
+
+Selections name recognised geometry: `<model id>/face.<n>` (planes, cylinders and freeform
+patches) and `<model id>/edge.<n>` (straight and circular edges). List them with
+`cc.model_faces_list(id=..., kind="plane")` and `cc.model_edges_list(id=..., kind="line")`, or
+find what a ray hits with `cc.model_pick(...)` and `cc.model_edge_pick(...)`, as viewport
+clicks do.
+
+```python
+top = next(f for f in cc.model_faces_list(id="model.1", kind="plane") if f["normal"] == [0, 0, 1])
+left = next(f for f in cc.model_faces_list(id="model.1", kind="plane") if f["normal"] == [-1, 0, 0])
+front = next(f for f in cc.model_faces_list(id="model.1", kind="plane") if f["normal"] == [0, -1, 0])
+edge = cc.model_edges_list(id="model.1", kind="line")[0]
+
+# Corner of three faces; Z from the top face, X along an edge.
+cc.setup_wcs_create(
+    origin="intersection", origin_a=top["face"], origin_b=left["face"], origin_c=front["face"],
+    orientation="z_x", orientation_z=top["face"], orientation_x=edge["edge"],
+)
+cc.setup_wcs_create(origin="box", origin_box="top_center")          # model axes, top centre
+cc.setup_wcs_align(orientation="z_x", orientation_z=top["face"], orientation_x=edge["edge"], flip_x=True)
+cc.setup_wcs_offset(delta=[0, 0, -2])                               # along the WCS's own axes
+cc.setup_wcs_activate(id="wcs.2")
+```
+
+In the app, Create WCS and Align open a panel with the same two groups: choose a mode, click
+each selection row and then the geometry in the viewport (picked faces and edges turn the
+accent colour; things that cannot be used turn red under the pointer), tick Flip where needed,
+check the preview triad and press OK. Offset, Rotate and Rename open a small dialog. Scripts
+never get dialogs.
+
 ## State, screenshots and the log
 
 ```python

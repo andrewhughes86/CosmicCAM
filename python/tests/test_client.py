@@ -97,6 +97,36 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(sent[2], {"command": "model.remove", "params": {"id": "model.1"}})
         cc.close()
 
+    def test_wcs_commands_send_vectors_and_choices(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.setup_wcs_create(origin="box", origin_box="top_center", orientation="z_x",
+                            orientation_z="model.1/face.3", orientation_x="model.1/edge.7", flip_x=True)
+        cc.setup_wcs_offset(delta=[1, 2, 3], frame="world")
+        sent = [r["params"] for r in app.requests]
+        self.assertEqual(
+            sent[0],
+            {
+                "command": "setup.wcs.create",
+                "params": {
+                    "orientation": "z_x", "orientation_z": "model.1/face.3", "orientation_x": "model.1/edge.7",
+                    "flip_x": True, "origin": "box", "origin_box": "top_center",
+                },
+            },
+        )
+        self.assertEqual(
+            sent[1], {"command": "setup.wcs.offset", "params": {"delta": [1, 2, 3], "frame": "world"}}
+        )
+        cc.close()
+
+    def test_click_sends_ui_click(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.click(120, 340.5)
+        self.assertEqual(app.requests[0]["method"], "ui.click")
+        self.assertEqual(app.requests[0]["params"], {"x": 120, "y": 340.5})
+        cc.close()
+
     def test_start_sends_ui_start(self):
         app = FakeApp()
         cc = CosmicCAM(app.port, TOKEN, timeout=5)

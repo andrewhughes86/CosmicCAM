@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_engine::{ButtonSize, CommandSpec, RibbonTab, Session, Theme, cmd};
+use CosmicCAM_engine::{ButtonSize, CommandSpec, Placement, RibbonTab, Session, Theme, cmd};
 use CosmicCAM_render::Projection;
 use egui::{
     Align2, Color32, CornerRadius, FontId, Galley, Id, Pos2, Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui,
@@ -107,7 +107,7 @@ fn group(
     session: &Session,
     tokens: &Tokens,
     name: &str,
-    commands: &[&'static CommandSpec],
+    commands: &[(&'static CommandSpec, Placement)],
     requests: &mut Vec<Request>,
 ) {
     Container::new(Surface::RibbonGroup).show(ui, tokens, |ui| {
@@ -116,28 +116,31 @@ fn group(
             let row = ui.horizontal(|ui| {
                 ui.set_height(BODY_HEIGHT);
                 let mut rest = commands;
-                while let Some(spec) = rest.first() {
-                    let kind = size(spec);
-                    let run_len = rest.iter().take_while(|c| size(c) == kind).count();
+                while let Some((_, first)) = rest.first() {
+                    let kind = first.size;
+                    let run_len = rest.iter().take_while(|(_, p)| p.size == kind).count();
                     let (run, tail) = rest.split_at(run_len);
                     rest = tail;
                     match kind {
                         ButtonSize::Large => {
-                            for spec in run {
-                                large_button(ui, session, tokens, spec, requests);
+                            for (spec, p) in run {
+                                large_button(ui, session, tokens, spec, p.menu, requests);
                             }
                         }
                         ButtonSize::Small => {
                             for column in run.chunks(SMALLS_PER_COLUMN) {
                                 ui.vertical(|ui| {
                                     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                                    for spec in column {
+                                    for (spec, _) in column {
                                         small_button(ui, session, tokens, spec, requests);
                                     }
                                 });
                             }
                         }
-                        ButtonSize::Gallery => gallery(ui, session, tokens, name, run, requests),
+                        ButtonSize::Gallery => {
+                            let tiles: Vec<&'static CommandSpec> = run.iter().map(|(spec, _)| *spec).collect();
+                            gallery(ui, session, tokens, name, &tiles, requests);
+                        }
                     }
                 }
             });
@@ -152,14 +155,6 @@ fn group(
             );
         });
     });
-}
-
-fn size(spec: &CommandSpec) -> ButtonSize {
-    spec.placement.map_or(ButtonSize::Small, |p| p.size)
-}
-
-fn menu_of(spec: &CommandSpec) -> &'static [&'static str] {
-    spec.placement.map_or(&[], |p| p.menu)
 }
 
 /// Colours for a button in its current state.
@@ -195,7 +190,7 @@ fn paint_frame(ui: &Ui, rect: Rect, look: &Look) {
 
 /// Draws the command's icon; disabled icons are drawn faded. A missing or broken master
 /// shows an empty slot of the same size.
-fn paint_icon(ui: &Ui, rect: Rect, spec: &CommandSpec, tokens: &Tokens, enabled: bool) {
+pub(crate) fn paint_icon(ui: &Ui, rect: Rect, spec: &CommandSpec, tokens: &Tokens, enabled: bool) {
     let ctx = ui.ctx();
     let px = (rect.width() * ctx.pixels_per_point()).round() as u32;
     let cache_id = Id::new("ribbon-icon-cache");
@@ -238,10 +233,10 @@ fn large_button(
     session: &Session,
     tokens: &Tokens,
     spec: &'static CommandSpec,
+    menu: &'static [&'static str],
     requests: &mut Vec<Request>,
 ) {
     let enabled = session.is_enabled(spec);
-    let menu = menu_of(spec);
     let split = !menu.is_empty();
     let arrow_w = if split { 12.0 } else { 0.0 };
     let lines = label_lines(ui, spec.label);
@@ -417,7 +412,7 @@ fn truncate(ui: &Ui, text: &str, max: f32) -> Arc<Galley> {
     full
 }
 
-fn with_tooltip(response: Response, spec: &CommandSpec, enabled: bool) -> Response {
+pub(crate) fn with_tooltip(response: Response, spec: &CommandSpec, enabled: bool) -> Response {
     if enabled {
         response.on_hover_ui(|ui| tooltip(ui, spec))
     } else {

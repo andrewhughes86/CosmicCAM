@@ -120,6 +120,42 @@ impl Mesh {
         Self::new(self.positions.iter().map(|p| *p * factor).collect(), self.triangles.clone())
     }
 
+    /// The nearest triangle a ray hits from either side: (distance along the unit
+    /// `direction`, triangle index). Brute force; fine for picking at click rate.
+    pub fn raycast(&self, origin: Vec3, direction: Vec3) -> Option<(f32, usize)> {
+        let dir = direction.normalize_or_zero();
+        if dir == Vec3::ZERO || !origin.is_finite() {
+            return None;
+        }
+        let mut best: Option<(f32, usize)> = None;
+        for (i, &t) in self.triangles.iter().enumerate() {
+            let [a, b, c] = self.corners(t);
+            // Möller–Trumbore.
+            let (e1, e2) = (b - a, c - a);
+            let pv = dir.cross(e2);
+            let det = e1.dot(pv);
+            if det.abs() < 1.0e-12 {
+                continue;
+            }
+            let inv = 1.0 / det;
+            let tv = origin - a;
+            let u = tv.dot(pv) * inv;
+            if !(0.0..=1.0).contains(&u) {
+                continue;
+            }
+            let qv = tv.cross(e1);
+            let v = dir.dot(qv) * inv;
+            if v < 0.0 || u + v > 1.0 {
+                continue;
+            }
+            let dist = e2.dot(qv) * inv;
+            if dist > 0.0 && dist.is_finite() && best.is_none_or(|(d, _)| dist < d) {
+                best = Some((dist, i));
+            }
+        }
+        best
+    }
+
     /// Edges to outline: open boundaries, edges shared by more than two triangles and
     /// edges whose neighbouring faces meet at more than `crease_degrees`.
     pub fn feature_edges(&self, crease_degrees: f32) -> Vec<[u32; 2]> {
@@ -176,6 +212,15 @@ mod tests {
     #[test]
     fn cube_outlines_its_twelve_edges_not_diagonals() {
         assert_eq!(cube().feature_edges(30.0).len(), 12);
+    }
+
+    #[test]
+    fn raycast_hits_the_nearest_face() {
+        let m = cube();
+        let hit = m.raycast(Vec3::new(0.5, 0.5, 5.0), Vec3::NEG_Z);
+        assert!(hit.is_some_and(|(d, t)| (d - 4.0).abs() < 1e-5 && m.face_normal(m.triangles()[t]).z > 0.99));
+        assert!(m.raycast(Vec3::new(5.0, 5.0, 5.0), Vec3::NEG_Z).is_none());
+        assert!(m.raycast(Vec3::new(0.5, 0.5, 5.0), Vec3::ZERO).is_none());
     }
 
     #[test]

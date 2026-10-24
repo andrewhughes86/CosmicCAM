@@ -11,18 +11,23 @@ use crate::error::{EngineError, EngineResult};
 use crate::params;
 use crate::session::{Display, MAX_FPS_LIMIT, Session, Theme, camera_json};
 
-const HOME_VIEW: &str = "View";
 const HOME_DISPLAY: &str = "Display";
-
-const fn large(panel: &'static str) -> Option<Placement> {
-    Some(Placement::large(RibbonTab::Home, panel))
-}
 
 const fn small(panel: &'static str) -> Option<Placement> {
     Some(Placement::small(RibbonTab::Home, panel))
 }
 
-/// Every standard view, offered from the Iso split button.
+/// The view tools floating down the right side of the viewport, under the view cube:
+/// (command id, menu of related commands offered on right-click).
+pub static VIEWPORT_TOOLS: &[(&str, &[&str])] = &[
+    ("view.fit", &[]),
+    ("view.camera.iso", VIEW_MENU),
+    ("view.camera.top", &[]),
+    ("view.camera.front", &[]),
+    ("view.camera.right", &[]),
+];
+
+/// Every standard view, offered from the Iso button's menu.
 const VIEW_MENU: &[&str] = &[
     "view.camera.iso",
     "view.camera.top",
@@ -84,7 +89,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "view.fit",
         label: "Fit",
         tooltip: "Zoom to fit everything in the viewport",
-        placement: large(HOME_VIEW),
+        placement: None,
         icon: None,
         shortcut: Some("F"),
         params: &[],
@@ -97,16 +102,10 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             Ok(camera_json(&s.view.camera))
         },
     },
-    preset_command!(
-        "view.camera.iso",
-        "Iso",
-        Some("0"),
-        ViewPreset::IsoFrontRight,
-        Some(Placement::large(RibbonTab::Home, HOME_VIEW).with_menu(VIEW_MENU))
-    ),
-    preset_command!("view.camera.top", "Top", Some("7"), ViewPreset::Top, small(HOME_VIEW)),
-    preset_command!("view.camera.front", "Front", Some("1"), ViewPreset::Front, small(HOME_VIEW)),
-    preset_command!("view.camera.right", "Right", Some("3"), ViewPreset::Right, small(HOME_VIEW)),
+    preset_command!("view.camera.iso", "Iso", Some("0"), ViewPreset::IsoFrontRight, None),
+    preset_command!("view.camera.top", "Top", Some("7"), ViewPreset::Top, None),
+    preset_command!("view.camera.front", "Front", Some("1"), ViewPreset::Front, None),
+    preset_command!("view.camera.right", "Right", Some("3"), ViewPreset::Right, None),
     preset_command!("view.camera.bottom", "Bottom", None, ViewPreset::Bottom, None),
     preset_command!("view.camera.back", "Back", None, ViewPreset::Back, None),
     preset_command!("view.camera.left", "Left", None, ViewPreset::Left, None),

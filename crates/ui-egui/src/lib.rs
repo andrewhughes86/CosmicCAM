@@ -16,11 +16,13 @@ mod dock;
 pub mod icon_svg;
 pub mod navigation;
 mod panes;
+mod param_form;
 mod ribbon;
 pub mod theme;
 mod tools;
 pub mod ui_kit;
 mod viewport;
+mod wcs_tool;
 
 pub use CosmicCAM_engine::Session;
 pub use app::{CosmicApp, LaunchOptions};

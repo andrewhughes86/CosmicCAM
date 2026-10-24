@@ -20,6 +20,8 @@ pub enum Surface {
     Overlay,
     /// Dropdown menus opened from buttons.
     Menu,
+    /// Floating dialogs that gather a command's input.
+    Dialog,
 }
 
 pub struct Container {
@@ -47,6 +49,17 @@ impl Container {
                 .inner_margin(Margin::symmetric(8, 4))
                 .corner_radius(CornerRadius::same(4))
                 .stroke(Stroke::new(1.0, t.border)),
+            Surface::Dialog => Frame::new()
+                .fill(t.panel_bg)
+                .inner_margin(Margin::same(12))
+                .corner_radius(CornerRadius::same(6))
+                .stroke(Stroke::new(1.0, t.border))
+                .shadow(egui::epaint::Shadow {
+                    offset: [0, 4],
+                    blur: 16,
+                    spread: 0,
+                    color: t.app_bg.gamma_multiply(0.6),
+                }),
             Surface::Menu => Frame::new()
                 .fill(t.panel_bg)
                 .inner_margin(Margin::same(4))
@@ -72,6 +85,11 @@ impl<'a> Menu<'a> {
 
     pub fn show<R>(self, t: &Tokens, add: impl FnOnce(&mut Ui) -> R) -> Option<InnerResponse<R>> {
         Popup::menu(self.button).frame(Container::new(Surface::Menu).frame(t)).show(add)
+    }
+
+    /// The same menu, opened by right-clicking `button` instead.
+    pub fn context<R>(self, t: &Tokens, add: impl FnOnce(&mut Ui) -> R) -> Option<InnerResponse<R>> {
+        Popup::context_menu(self.button).frame(Container::new(Surface::Menu).frame(t)).show(add)
     }
 }
 
@@ -107,5 +125,46 @@ impl Panel {
             PanelKind::Bottom(id) => egui::Panel::bottom(id).resizable(false).frame(frame).show(ui, add),
             PanelKind::Central => egui::CentralPanel::default().frame(frame).show(ui, add),
         }
+    }
+}
+
+/// A floating, titled dialog window framed as [`Surface::Dialog`].
+pub struct Window {
+    title: String,
+    /// Tool panels open at the upper left, clear of the part; dialogs open centred.
+    tool: bool,
+}
+
+impl Window {
+    pub fn dialog(title: impl Into<String>) -> Self {
+        Self { title: title.into(), tool: false }
+    }
+
+    /// A panel that stays open while the user works in the viewport.
+    pub fn tool(title: impl Into<String>) -> Self {
+        Self { title: title.into(), tool: true }
+    }
+
+    /// Shows the window while `open` is true; the title bar's close button clears it.
+    pub fn show<R>(
+        self,
+        ctx: &egui::Context,
+        t: &Tokens,
+        open: &mut bool,
+        add: impl FnOnce(&mut Ui) -> R,
+    ) -> Option<R> {
+        egui::Window::new(self.title)
+            .open(open)
+            .collapsible(false)
+            .resizable(false)
+            .pivot(if self.tool { egui::Align2::LEFT_TOP } else { egui::Align2::CENTER_CENTER })
+            .default_pos(if self.tool {
+                ctx.content_rect().left_top() + egui::vec2(280.0, 160.0)
+            } else {
+                ctx.content_rect().center()
+            })
+            .frame(Container::new(Surface::Dialog).frame(t))
+            .show(ctx, add)
+            .and_then(|r| r.inner)
     }
 }

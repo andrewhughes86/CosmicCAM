@@ -3,7 +3,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
-use CosmicCAM_geom::{Aabb, Mesh};
+use CosmicCAM_geom::{Aabb, EdgeKind, EdgeMap, FaceKind, FaceMap, Mesh, Vec3};
 use CosmicCAM_io::{ModelFormat, Units};
 use CosmicCAM_render::OrbitCamera;
 use serde_json::{Value, json};
@@ -224,10 +224,103 @@ pub struct Model {
     pub name: String,
     /// The file it was imported from.
     pub source: String,
-    pub format: ModelFormat,
+    /// None for the built-in sample part.
+    pub format: Option<ModelFormat>,
     /// Unit the file was read in; the mesh itself is in millimetres.
     pub units: Units,
     pub mesh: Arc<Mesh>,
+    /// The planes, cylinders and freeform patches recognised on the mesh.
+    pub faces: Arc<FaceMap>,
+    /// The straight and circular edges recognised on the mesh.
+    pub edges: Arc<EdgeMap>,
+}
+
+impl Model {
+    /// Face and edge recognition for a newly loaded mesh.
+    pub fn recognise(mesh: &Mesh) -> (Arc<FaceMap>, Arc<EdgeMap>) {
+        (Arc::new(CosmicCAM_geom::faces::segment(mesh)), Arc::new(CosmicCAM_geom::edges::extract(mesh)))
+    }
+}
+
+/// `<model id>/edge.<n>`, as commands name edges.
+pub fn edge_ref(model: &str, edge: usize) -> String {
+    format!("{model}/edge.{edge}")
+}
+
+/// An edge as the API reports it.
+pub fn edge_json(model: &Model, edge: usize) -> Value {
+    let Some(e) = model.edges.edges.get(edge) else {
+        return Value::Null;
+    };
+    let mut v = json!({
+        "edge": edge_ref(&model.id, edge),
+        "model": model.id,
+        "kind": e.kind.id(),
+        "length": e.length,
+        "direction": e.kind.direction().to_array(),
+    });
+    match e.kind {
+        EdgeKind::Line { start, end } => {
+            v["start"] = json!(start.to_array());
+            v["end"] = json!(end.to_array());
+        }
+        EdgeKind::Circle { center, normal, radius } => {
+            v["center"] = json!(center.to_array());
+            v["normal"] = json!(normal.to_array());
+            v["radius"] = json!(radius);
+        }
+    }
+    v
+}
+
+/// Outline id of the built-in sample part.
+pub const SAMPLE_MODEL_ID: &str = "model.sample";
+
+/// Where a ray met a model.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pick {
+    /// Index into `JobState::models`.
+    pub model: usize,
+    pub triangle: usize,
+    pub face: usize,
+    pub point: Vec3,
+    pub distance: f32,
+}
+
+/// `<model id>/face.<n>`, as commands name faces.
+pub fn face_ref(model: &str, face: usize) -> String {
+    format!("{model}/face.{face}")
+}
+
+/// A face as the API reports it.
+pub fn face_json(model: &Model, face: usize) -> Value {
+    let Some(f) = model.faces.faces.get(face) else {
+        return Value::Null;
+    };
+    let mut v = json!({
+        "face": face_ref(&model.id, face),
+        "model": model.id,
+        "kind": f.kind.id(),
+        "area": f.area,
+        "centroid": f.centroid.to_array(),
+        "triangles": f.triangles,
+    });
+    match f.kind {
+        FaceKind::Plane { normal, point } => {
+            v["normal"] = json!(normal.to_array());
+            v["point"] = json!(point.to_array());
+        }
+        FaceKind::Cylinder { base, axis, radius, length, hole } => {
+            v["base"] = json!(base.to_array());
+            v["axis"] = json!(axis.to_array());
+            v["radius"] = json!(radius);
+            v["diameter"] = json!(radius * 2.0);
+            v["length"] = json!(length);
+            v["hole"] = json!(hole);
+        }
+        FaceKind::Freeform => {}
+    }
+    v
 }
 
 impl Model {
@@ -236,11 +329,80 @@ impl Model {
             "id": self.id,
             "name": self.name,
             "source": self.source,
-            "format": self.format.id(),
+            "format": self.format.map_or("builtin", ModelFormat::id),
             "units": self.units.id(),
             "triangles": self.mesh.triangles().len(),
             "vertices": self.mesh.positions().len(),
+            "faces": self.faces.faces.len(),
+            "edges": self.edges.edges.len(),
             "bounds": bounds_json(&self.mesh.bounds()),
+        })
+    }
+
+    /// The built-in sample part as a model, so it can be picked like an imported one.
+    pub fn sample() -> Self {
+        let c = [0.5; 4];
+        let palette = CosmicCAM_render::ScenePalette {
+            grid_minor: c,
+            grid_major: c,
+            axis_x: c,
+            axis_y: c,
+            axis_z: c,
+            part: c,
+            part_edge: c,
+            stock_edge: c,
+        };
+        let g = CosmicCAM_render::scene::sample_part(&palette, false, false);
+        let soup = g.triangles.as_chunks::<3>().0.iter().map(|t| t.map(|v| Vec3::from(v.pos)));
+        let mesh = Mesh::from_soup(soup).unwrap_or_default();
+        let (faces, edges) = Self::recognise(&mesh);
+        Self {
+            id: SAMPLE_MODEL_ID.into(),
+            name: "Sample part".into(),
+            source: "Built-in sample part".into(),
+            format: None,
+            units: Units::Millimetres,
+            mesh: Arc::new(mesh),
+            faces,
+            edges,
+        }
+    }
+}
+
+/// Most work coordinate systems one job holds.
+pub const MAX_WCS: usize = 64;
+
+/// A work coordinate system: the machine's part zero and axis directions, in world
+/// millimetres. `x_axis` and `z_axis` are unit length and perpendicular.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Wcs {
+    /// Outline id, `wcs.<n>`.
+    pub id: String,
+    pub name: String,
+    pub origin: Vec3,
+    pub x_axis: Vec3,
+    pub z_axis: Vec3,
+}
+
+impl Wcs {
+    pub fn y_axis(&self) -> Vec3 {
+        self.z_axis.cross(self.x_axis)
+    }
+
+    /// A point given in this WCS, in world coordinates.
+    pub fn to_world(&self, local: Vec3) -> Vec3 {
+        self.origin + self.x_axis * local.x + self.y_axis() * local.y + self.z_axis * local.z
+    }
+
+    pub fn to_json(&self, active: bool) -> Value {
+        json!({
+            "id": self.id,
+            "name": self.name,
+            "active": active,
+            "origin": self.origin.to_array(),
+            "x_axis": self.x_axis.to_array(),
+            "y_axis": self.y_axis().to_array(),
+            "z_axis": self.z_axis.to_array(),
         })
     }
 }
@@ -256,17 +418,100 @@ pub struct JobState {
     /// Bumped whenever the job's geometry changes; never repeats within a run, so the
     /// viewport rebuilds its scene when it differs from what it last drew.
     pub revision: u64,
+    pub wcs: Vec<Wcs>,
+    /// Id of the WCS toolpaths are programmed in.
+    pub active_wcs: Option<String>,
+    pub(crate) next_wcs: u64,
+    /// Bumped whenever a WCS changes; like `revision`, it never repeats within a run.
+    pub setup_revision: u64,
 }
 
 impl Default for JobState {
     fn default() -> Self {
-        Self { name: "Untitled".into(), sample_loaded: false, models: Vec::new(), next_model: 1, revision: 0 }
+        Self {
+            name: "Untitled".into(),
+            sample_loaded: false,
+            models: Vec::new(),
+            next_model: 1,
+            revision: 0,
+            wcs: Vec::new(),
+            active_wcs: None,
+            next_wcs: 1,
+            setup_revision: 0,
+        }
     }
 }
 
 impl JobState {
     pub(crate) fn geometry_changed(&mut self) {
         self.revision = self.revision.wrapping_add(1);
+    }
+
+    pub(crate) fn setup_changed(&mut self) {
+        self.setup_revision = self.setup_revision.wrapping_add(1);
+    }
+
+    pub fn wcs_by_id(&self, id: &str) -> Option<&Wcs> {
+        self.wcs.iter().find(|w| w.id == id)
+    }
+
+    pub fn active_wcs(&self) -> Option<&Wcs> {
+        self.active_wcs.as_deref().and_then(|id| self.wcs_by_id(id))
+    }
+
+    /// Bounds of the part geometry WCS origins are placed on.
+    pub fn part_bounds(&self) -> Aabb {
+        self.models_bounds()
+    }
+
+    /// The nearest model face a ray hits.
+    pub fn pick(&self, origin: Vec3, direction: Vec3) -> Option<Pick> {
+        let mut best: Option<Pick> = None;
+        for (mi, m) in self.models.iter().enumerate() {
+            if let Some((distance, triangle)) = m.mesh.raycast(origin, direction)
+                && best.is_none_or(|b| distance < b.distance)
+            {
+                best = Some(Pick {
+                    model: mi,
+                    triangle,
+                    face: m.faces.face_of(triangle).unwrap_or(0),
+                    point: origin + direction.normalize_or_zero() * distance,
+                    distance,
+                });
+            }
+        }
+        best
+    }
+
+    /// The edge passing within `radius` of a ray and not hidden behind the first surface
+    /// it hits: (model index, edge index).
+    pub fn pick_edge(&self, origin: Vec3, direction: Vec3, radius: f32) -> Option<(usize, usize)> {
+        let limit = self.pick(origin, direction).map_or(f32::INFINITY, |hit| hit.distance + radius * 2.0);
+        let mut best: Option<(usize, usize, f32)> = None;
+        for (mi, m) in self.models.iter().enumerate() {
+            if let Some((edge, along)) = m.edges.nearest_to_ray(origin, direction, radius, limit)
+                && best.is_none_or(|(_, _, d)| along < d)
+            {
+                best = Some((mi, edge, along));
+            }
+        }
+        best.map(|(m, e, _)| (m, e))
+    }
+
+    /// Resolves `<model id>/edge.<n>`.
+    pub fn edge(&self, reference: &str) -> Option<(&Model, usize)> {
+        let (model, edge) = reference.rsplit_once("/edge.")?;
+        let edge: usize = edge.parse().ok()?;
+        let m = self.model(model)?;
+        (edge < m.edges.edges.len()).then_some((m, edge))
+    }
+
+    /// Resolves `<model id>/face.<n>`.
+    pub fn face(&self, reference: &str) -> Option<(&Model, usize)> {
+        let (model, face) = reference.rsplit_once("/face.")?;
+        let face: usize = face.parse().ok()?;
+        let m = self.model(model)?;
+        (face < m.faces.faces.len()).then_some((m, face))
     }
 
     pub fn model(&self, id: &str) -> Option<&Model> {
@@ -350,6 +595,7 @@ impl Session {
         let mut s = Self::new();
         s.job.name = "Sample".into();
         s.job.sample_loaded = true;
+        s.job.models.push(Model::sample());
         s
     }
 
@@ -446,6 +692,8 @@ impl Session {
                 "name": self.job.name,
                 "sample_loaded": self.job.sample_loaded,
                 "models": self.job.models.iter().map(Model::to_json).collect::<Vec<_>>(),
+                "wcs": self.job.wcs.iter().map(|w| w.to_json(self.job.active_wcs.as_deref() == Some(&w.id))).collect::<Vec<_>>(),
+                "active_wcs": self.job.active_wcs,
             },
             "theme": self.prefs.theme.id(),
             "fps_limit": self.prefs.fps_limit,
@@ -465,6 +713,7 @@ impl Session {
         let mut fresh = if sample { Session::with_sample() } else { Session::new() };
         fresh.prefs = self.prefs.clone();
         fresh.job.revision = self.job.revision.wrapping_add(1);
+        fresh.job.setup_revision = self.job.setup_revision.wrapping_add(1);
         fresh.view.layout_generation = self.view.layout_generation;
         fresh.view.aspect = self.view.aspect;
         fresh.view.camera.projection = self.view.camera.projection;
@@ -491,26 +740,18 @@ impl Session {
             let size = b.size();
             format!("{:.1} × {:.1} × {:.1} mm", size.x, size.y, size.z)
         };
-        if self.job.sample_loaded {
-            models.push(leaf(
-                "model.sample",
-                "Sample part",
-                vec![
-                    ("Source".into(), "Built-in placeholder".into()),
-                    ("Extents".into(), extents(self.view.scene_bounds)),
-                ],
-            ));
-        }
         for m in &self.job.models {
             models.push(leaf(
                 &m.id,
                 &m.name,
                 vec![
                     ("Source".into(), m.source.clone()),
-                    ("Format".into(), m.format.label().into()),
+                    ("Format".into(), m.format.map_or("Built-in", ModelFormat::label).into()),
                     ("File units".into(), m.units.id().into()),
                     ("Triangles".into(), m.mesh.triangles().len().to_string()),
                     ("Vertices".into(), m.mesh.positions().len().to_string()),
+                    ("Faces".into(), face_summary(&m.faces)),
+                    ("Edges".into(), m.edges.edges.len().to_string()),
                     ("Extents".into(), extents(m.mesh.bounds())),
                 ],
             ));
@@ -527,11 +768,35 @@ impl Session {
             properties: vec![("Name".into(), self.job.name.clone()), ("Units".into(), "Millimetres".into())],
             children: vec![
                 group("models", "Models", models),
-                group("setups", "Setups", Vec::new()),
+                group("setups", "Setups", self.wcs_nodes()),
                 group("tools", "Tools", Vec::new()),
                 group("toolpaths", "Toolpaths", Vec::new()),
             ],
         }]
+    }
+
+    fn wcs_nodes(&self) -> Vec<OutlineNode> {
+        let v = |p: Vec3| format!("{:.3}, {:.3}, {:.3}", p.x, p.y, p.z);
+        self.job
+            .wcs
+            .iter()
+            .map(|w| {
+                let active = self.job.active_wcs.as_deref() == Some(&w.id);
+                OutlineNode {
+                    id: w.id.clone(),
+                    label: if active { format!("{} (active)", w.name) } else { w.name.clone() },
+                    children: Vec::new(),
+                    properties: vec![
+                        ("Name".into(), w.name.clone()),
+                        ("Active".into(), if active { "Yes" } else { "No" }.into()),
+                        ("Origin".into(), format!("{} mm", v(w.origin))),
+                        ("X axis".into(), v(w.x_axis)),
+                        ("Y axis".into(), v(w.y_axis())),
+                        ("Z axis".into(), v(w.z_axis)),
+                    ],
+                }
+            })
+            .collect()
     }
 
     /// Finds an outline node by id.
@@ -549,4 +814,16 @@ impl Session {
         }
         walk(self.outline(), id)
     }
+}
+
+/// "12 (9 planes, 2 cylinders, 1 freeform)".
+fn face_summary(map: &FaceMap) -> String {
+    let count = |kind: &str| map.faces.iter().filter(|f| f.kind.id() == kind).count();
+    format!(
+        "{} ({} planes, {} cylinders, {} freeform)",
+        map.faces.len(),
+        count("plane"),
+        count("cylinder"),
+        count("freeform")
+    )
 }

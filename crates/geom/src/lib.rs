@@ -12,8 +12,12 @@
 )]
 #![allow(non_snake_case)]
 
+pub mod edges;
+pub mod faces;
 pub mod mesh;
 
+pub use edges::{Edge, EdgeKind, EdgeMap};
+pub use faces::{Face, FaceKind, FaceMap};
 pub use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
 pub use mesh::{Mesh, MeshError};
 

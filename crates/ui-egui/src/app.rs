@@ -35,8 +35,17 @@ struct Capture {
     then_quit: bool,
 }
 
+/// A click injected over the control channel, played out over three frames
+/// (move, press, release) so hover and click logic see it as a real one.
+struct SyntheticClick {
+    at: egui::Pos2,
+    step: u8,
+    reply: Option<Incoming>,
+}
+
 pub struct CosmicApp {
     session: Session,
+    clicks: Vec<SyntheticClick>,
     dock: DockState<Tab>,
     layout_generation: u64,
     viewport: Viewport,
@@ -80,6 +89,7 @@ impl CosmicApp {
         });
         Self {
             session,
+            clicks: Vec::new(),
             dock: dock::default_layout(),
             layout_generation,
             viewport: Viewport::new(),
@@ -102,7 +112,7 @@ impl CosmicApp {
     /// starts that tool instead.
     pub fn run(&mut self, id: &str, params: &Value) {
         if params.is_null() && tools::has_start(id) {
-            self.status = self.tools.start(id).err();
+            self.status = self.tools.start(id, &self.session).err();
             return;
         }
         match self.session.execute(id, params) {
@@ -148,8 +158,20 @@ impl CosmicApp {
                 }
                 _ => incoming.err("invalid_params", "`path` must be a file path ending in .png"),
             },
+            "ui.click" => {
+                let coord = |k: &str| p.get(k).and_then(Value::as_f64).filter(|v| v.is_finite() && v.abs() < 1.0e5);
+                match (coord("x"), coord("y")) {
+                    (Some(x), Some(y)) if self.clicks.len() < 16 => {
+                        let at = egui::pos2(x as f32, y as f32);
+                        self.clicks.push(SyntheticClick { at, step: 0, reply: Some(incoming) });
+                        ctx.request_repaint();
+                    }
+                    (Some(_), Some(_)) => incoming.err("busy", "too many clicks queued"),
+                    _ => incoming.err("invalid_params", "`x` and `y` must be numbers (window points)"),
+                }
+            }
             "ui.start" => match p.get("command").and_then(Value::as_str) {
-                Some(command) if tools::has_start(command) => match self.tools.start(command) {
+                Some(command) if tools::has_start(command) => match self.tools.start(command, &self.session) {
                     Ok(()) => incoming.ok(json!({ "started": command })),
                     Err(e) => incoming.err("busy", e),
                 },
@@ -246,6 +268,31 @@ impl CosmicApp {
 }
 
 impl eframe::App for CosmicApp {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let Some(click) = self.clicks.first_mut() else {
+            return;
+        };
+        let button = |pressed| Event::PointerButton {
+            pos: click.at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        match click.step {
+            0 => raw_input.events.push(Event::PointerMoved(click.at)),
+            1 => raw_input.events.push(button(true)),
+            _ => raw_input.events.push(button(false)),
+        }
+        click.step += 1;
+        if click.step > 2 {
+            if let Some(reply) = click.reply.take() {
+                reply.ok(json!({ "x": click.at.x, "y": click.at.y }));
+            }
+            self.clicks.remove(0);
+        }
+        ctx.request_repaint();
+    }
+
     /// Runs every frame and also while the window is hidden, so the API keeps answering.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let incoming = self.control.as_ref().map(ControlServer::poll).unwrap_or_default();
@@ -306,6 +353,7 @@ impl eframe::App for CosmicApp {
             });
         });
 
+        self.viewport.pick_mode = self.tools.pick_mode();
         Panel::central(Surface::Workspace).show(ui, tokens, |ui| {
             let mut style = Style::from_egui(ui.style());
             style.tab_bar.bg_fill = tokens.raised_bg;
@@ -337,6 +385,14 @@ impl eframe::App for CosmicApp {
 
         for (id, params) in requests {
             self.run(&id, &params);
+        }
+        if let Some(hit) = self.viewport.take_pick() {
+            self.tools.picked(hit, &self.session);
+        }
+        if let Some((id, params)) = self.tools.show(&ctx, tokens, &self.session) {
+            let outcome = self.session.execute(&id, &params).map(|_| ()).map_err(|e| e.to_string());
+            self.status = outcome.as_ref().err().cloned();
+            self.tools.finished(outcome);
         }
     }
 }

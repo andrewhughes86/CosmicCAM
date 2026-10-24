@@ -6,8 +6,8 @@ mod overlay;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use CosmicCAM_engine::{Display, Session, Theme};
-use CosmicCAM_geom::{Aabb, Vec3};
-use CosmicCAM_render::{OrbitCamera, SceneGeometry, scene};
+use CosmicCAM_geom::{Aabb, FaceKind, Vec3};
+use CosmicCAM_render::{OrbitCamera, SceneGeometry, TriadStyle, scene};
 use egui::{Color32, Pos2, Rect, Sense, Ui, pos2};
 use egui_wgpu::RenderState;
 use serde_json::Value;
@@ -16,13 +16,91 @@ use crate::Request;
 use crate::navigation::{self, NavCaps};
 use crate::theme::{self, Tokens};
 
+/// What a click may pick while a picking tool is open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Accept {
+    /// Geometry that gives a direction or meets others: an edge near the pointer, else a
+    /// plane or cylinder face.
+    Axis,
+    /// A point: a circular edge (its centre) near the pointer, else a point on a face,
+    /// snapped to a nearby corner.
+    Point,
+}
+
+/// How close to an edge, in screen points, the pointer must be to pick it.
+const EDGE_PICK_PX: f32 = 8.0;
+
+/// Set by a picking tool each frame it is open.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PickMode {
+    /// What a click picks; None while the tool needs nothing more.
+    pub accept: Option<Accept>,
+    /// Faces already picked, drawn highlighted: (model id, face index).
+    pub picked: Vec<(String, usize)>,
+    /// Edges already picked, drawn highlighted: (model id, edge index).
+    pub picked_edges: Vec<(String, usize)>,
+    /// Points already picked, drawn as dots.
+    pub picked_points: Vec<Vec3>,
+    /// The WCS the picks would make: origin and X, Y, Z axes.
+    pub preview: Option<(Vec3, [Vec3; 3])>,
+    /// Plane normals a new plane must be independent of (one plane per axis): it may not
+    /// be parallel to one of them, nor lie along the line two of them share.
+    pub independent_of: Vec<Vec3>,
+}
+
+/// Whether `n` points along a new axis, given the normals already picked.
+pub fn independent(n: Vec3, picked: &[Vec3]) -> bool {
+    const MIN: f32 = 0.25;
+    match picked {
+        [] => true,
+        [a] => n.cross(*a).length() > MIN,
+        [a, b, ..] => n.cross(*a).length() > MIN && n.cross(*b).length() > MIN && a.cross(*b).dot(n).abs() > MIN,
+    }
+}
+
+/// A face or point the user clicked in pick mode.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PickHit {
+    pub model: String,
+    /// The face clicked, unless an edge was picked.
+    pub face: Option<usize>,
+    /// The edge picked.
+    pub edge: Option<usize>,
+    /// The point clicked (snapped to a corner when one is close).
+    pub point: Vec3,
+    /// The plane's outward normal when the face is a plane.
+    pub normal: Option<Vec3>,
+}
+
+/// Inputs the highlight geometry was last built from.
+type HighlightKey = (Vec<(String, usize)>, Option<(usize, usize, bool)>, u64, Theme);
+
 pub struct Viewport {
+    /// The open picking tool's request, if any; set by the app before each frame.
+    pub pick_mode: Option<PickMode>,
+    picked: Option<PickHit>,
+    /// (model index, face, acceptable) under the pointer.
+    hover: Option<(usize, usize, bool)>,
+    /// (model index, edge, acceptable) under the pointer in edge modes.
+    hover_edge: Option<(usize, usize, bool)>,
+    hover_point: Option<Vec3>,
+    last_pointer: Option<Pos2>,
+    /// What the last hover test looked for; a change forces a fresh test.
+    last_accept: Option<Accept>,
+    highlight_key: Option<HighlightKey>,
+    /// The overlay (WCS triads) without the pick preview, and the triad size it used.
+    base_overlay: SceneGeometry,
+    triad_size: f32,
+    /// Triads in the scene, for their axis labels: origin, X/Y/Z axes, arrow length, style.
+    triads: Vec<(Vec3, [Vec3; 3], f32, TriadStyle)>,
+    preview_shown: Option<(Vec3, [Vec3; 3])>,
     gpu: Option<gpu::ViewportGpu>,
     gpu_error: Option<String>,
     /// The camera on screen; eases towards the session's camera.
     shown: OrbitCamera,
-    /// Theme, job geometry revision and display flags the uploaded scene was built for.
-    scene_key: Option<(Theme, u64, Display)>,
+    /// Theme, job geometry revision, WCS revision and display flags the uploaded scene
+    /// was built for.
+    scene_key: Option<(Theme, u64, u64, Display)>,
     scene_bounds: Aabb,
     fit_pending: bool,
     last_render_time: Option<f64>,
@@ -42,6 +120,18 @@ impl Default for Viewport {
 impl Viewport {
     pub fn new() -> Self {
         Self {
+            pick_mode: None,
+            picked: None,
+            hover: None,
+            hover_edge: None,
+            hover_point: None,
+            last_pointer: None,
+            last_accept: None,
+            highlight_key: None,
+            base_overlay: SceneGeometry::default(),
+            triad_size: 20.0,
+            triads: Vec::new(),
+            preview_shown: None,
             gpu: None,
             gpu_error: None,
             shown: OrbitCamera::default(),
@@ -94,6 +184,8 @@ impl Viewport {
             self.shown = cam;
         }
         self.animate(ui, session);
+        self.handle_picking(ui, &response, rect, session);
+        self.update_highlight(session, tokens);
 
         let painter = ui.painter_at(rect);
         match self.render(ui, rect, tokens, render_state) {
@@ -130,6 +222,12 @@ impl Viewport {
         } else {
             self.cube_hover = None;
         }
+        self.paint_edges(&painter, rect, session, tokens);
+        if display.wcs {
+            self.paint_wcs_labels(&painter, rect, session, tokens);
+        }
+        let tools_top = if display.view_cube { overlay::cube_rect(rect).bottom() + 6.0 } else { rect.top() + 12.0 };
+        view_tools(ui, rect, tools_top, session, tokens, requests);
         if display.orientation_triad {
             overlay::paint_triad(&painter, overlay::triad_anchor(rect), &self.shown, tokens);
         }
@@ -145,16 +243,313 @@ impl Viewport {
         }
     }
 
+    /// A click in pick mode, taken once.
+    pub fn take_pick(&mut self) -> Option<PickHit> {
+        self.picked.take()
+    }
+
+    /// The camera ray through screen point `p`: (origin, unit direction).
+    fn ray(&self, rect: Rect, p: Pos2) -> Option<(Vec3, Vec3)> {
+        let cam = self.shown;
+        let radius = self.scene_bounds.radius() + cam.target.distance(self.scene_bounds.center());
+        let inv = cam.view_proj(rect.aspect_ratio(), radius).inverse();
+        let x = (p.x - rect.left()) / rect.width() * 2.0 - 1.0;
+        let y = 1.0 - (p.y - rect.top()) / rect.height() * 2.0;
+        let unproject = |z: f32| {
+            let h = inv * CosmicCAM_geom::Vec4::new(x, y, z, 1.0);
+            (h.w.abs() > 1.0e-9).then(|| h.truncate() / h.w)
+        };
+        let (near, far) = (unproject(0.0)?, unproject(1.0)?);
+        let dir = (far - near).normalize_or_zero();
+        (near.is_finite() && dir != Vec3::ZERO).then_some((near, dir))
+    }
+
+    fn handle_picking(&mut self, ui: &Ui, response: &egui::Response, rect: Rect, session: &Session) {
+        let Some(mode) = &self.pick_mode else {
+            self.hover = None;
+            self.hover_edge = None;
+            self.last_pointer = None;
+            return;
+        };
+        if mode.accept != self.last_accept {
+            self.last_accept = mode.accept;
+            self.last_pointer = None;
+        }
+        let Some(accept) = mode.accept else {
+            self.hover = None;
+            self.hover_edge = None;
+            return;
+        };
+        let pointer = response.hover_pos();
+        if pointer != self.last_pointer {
+            self.last_pointer = pointer;
+            self.hover = None;
+            self.hover_edge = None;
+            self.hover_point = None;
+            if let Some(p) = pointer
+                && let (Some((o, d)), Some((o2, d2))) =
+                    (self.ray(rect, p), self.ray(rect, p + egui::vec2(EDGE_PICK_PX, 0.0)))
+            {
+                let hit = session.job.pick(o, d);
+                // The pick radius in mm: how far apart two rays EDGE_PICK_PX apart are at
+                // the depth of the surface under the pointer.
+                let depth = hit.map_or(self.shown.distance, |h| h.distance);
+                let radius = ((o2 + d2 * depth) - (o + d * depth)).length().max(1.0e-4);
+                let edge = session.job.pick_edge(o, d, radius).filter(|(mi, ei)| {
+                    // Points come from circle centres only; a straight edge has no single point.
+                    accept == Accept::Axis
+                        || session
+                            .job
+                            .models
+                            .get(*mi)
+                            .and_then(|m| m.edges.edges.get(*ei))
+                            .is_some_and(|e| e.kind.id() == "circle")
+                });
+                if let Some((mi, ei)) = edge {
+                    self.hover_edge = Some((mi, ei, true));
+                } else if let Some(hit) = hit
+                    && let Some(model) = session.job.models.get(hit.model)
+                {
+                    let ok = match (accept, model.faces.faces.get(hit.face).map(|f| f.kind)) {
+                        (Accept::Point, _) => true,
+                        (Accept::Axis, Some(FaceKind::Plane { normal, .. })) => {
+                            independent(normal, &mode.independent_of)
+                        }
+                        (Accept::Axis, Some(FaceKind::Cylinder { .. })) => true,
+                        (Accept::Axis, _) => false,
+                    };
+                    self.hover = Some((hit.model, hit.face, ok));
+                    self.hover_point = Some(self.snap(rect, pointer, model, hit.triangle).unwrap_or(hit.point));
+                }
+            }
+        }
+        if self.hover.is_some() || self.hover_edge.is_some() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+        }
+        if !response.clicked() {
+            return;
+        }
+        if let Some((mi, edge, true)) = self.hover_edge
+            && let Some(model) = session.job.models.get(mi)
+        {
+            self.picked = Some(PickHit {
+                model: model.id.clone(),
+                face: None,
+                edge: Some(edge),
+                point: Vec3::ZERO,
+                normal: None,
+            });
+        } else if let Some((mi, face, true)) = self.hover
+            && let Some(model) = session.job.models.get(mi)
+        {
+            let normal = match model.faces.faces.get(face).map(|f| f.kind) {
+                Some(FaceKind::Plane { normal, .. }) => Some(normal),
+                _ => None,
+            };
+            self.picked = Some(PickHit {
+                model: model.id.clone(),
+                face: Some(face),
+                edge: None,
+                point: self.hover_point.unwrap_or_default(),
+                normal,
+            });
+        }
+    }
+
+    /// Draws picked edges and the edge under the pointer as thick lines over the scene.
+    fn paint_edges(&self, painter: &egui::Painter, rect: Rect, session: &Session, tokens: &Tokens) {
+        let picked = self.pick_mode.as_ref().map(|m| m.picked_edges.clone()).unwrap_or_default();
+        let mut lines: Vec<(usize, usize, Color32, f32)> = picked
+            .iter()
+            .filter_map(|(model, e)| session.job.models.iter().position(|m| &m.id == model).map(|mi| (mi, *e)))
+            .map(|(mi, e)| (mi, e, tokens.accent, 3.5))
+            .collect();
+        if let Some((mi, e, ok)) = self.hover_edge {
+            lines.push((mi, e, if ok { tokens.accent.gamma_multiply(0.7) } else { tokens.error }, 3.0));
+        }
+        let to_screen = self.projector(rect);
+        let mut dots = self.pick_mode.as_ref().map(|m| m.picked_points.clone()).unwrap_or_default();
+        if self.pick_mode.as_ref().is_some_and(|m| m.accept == Some(Accept::Point)) && self.hover_edge.is_none() {
+            dots.extend(self.hover_point);
+        }
+        for p in dots.iter().filter_map(|p| to_screen(*p)) {
+            painter.circle(p, 4.5, tokens.accent, egui::Stroke::new(1.5, tokens.panel_bg));
+        }
+        for (mi, e, colour, width) in lines {
+            let Some(edge) = session.job.models.get(mi).and_then(|m| m.edges.edges.get(e)) else { continue };
+            let pts: Vec<Option<Pos2>> = edge.points.iter().map(|p| to_screen(*p)).collect();
+            for pair in pts.windows(2) {
+                if let [Some(a), Some(b)] = pair {
+                    painter.line_segment([*a, *b], egui::Stroke::new(width, colour));
+                }
+            }
+        }
+    }
+
+    /// World point to screen point with the camera on screen; None off screen or behind.
+    fn projector(&self, rect: Rect) -> impl Fn(Vec3) -> Option<Pos2> + use<> {
+        let cam = self.shown;
+        let radius = self.scene_bounds.radius() + cam.target.distance(self.scene_bounds.center());
+        let view_proj = cam.view_proj(rect.aspect_ratio(), radius);
+        move |p: Vec3| {
+            let clip = view_proj * p.extend(1.0);
+            if !(clip.w.abs() > 1.0e-6 && clip.is_finite()) {
+                return None;
+            }
+            let ndc = clip.truncate() / clip.w;
+            if ndc.z < 0.0 || ndc.z > 1.0 || ndc.x.abs() > 1.2 || ndc.y.abs() > 1.2 {
+                return None;
+            }
+            Some(pos2(
+                rect.left() + (ndc.x + 1.0) * 0.5 * rect.width(),
+                rect.top() + (1.0 - ndc.y) * 0.5 * rect.height(),
+            ))
+        }
+    }
+
+    /// The hit triangle's corner within 10 px of the pointer, if any.
+    fn snap(
+        &self,
+        rect: Rect,
+        pointer: Option<Pos2>,
+        model: &CosmicCAM_engine::Model,
+        triangle: usize,
+    ) -> Option<Vec3> {
+        let pointer = pointer?;
+        let t = *model.mesh.triangles().get(triangle)?;
+        let cam = self.shown;
+        let radius = self.scene_bounds.radius() + cam.target.distance(self.scene_bounds.center());
+        let vp = cam.view_proj(rect.aspect_ratio(), radius);
+        model
+            .mesh
+            .corners(t)
+            .into_iter()
+            .filter_map(|c| {
+                let clip = vp * c.extend(1.0);
+                (clip.w.abs() > 1.0e-9).then(|| {
+                    let ndc = clip.truncate() / clip.w;
+                    let at = pos2(
+                        rect.left() + (ndc.x + 1.0) * 0.5 * rect.width(),
+                        rect.top() + (1.0 - ndc.y) * 0.5 * rect.height(),
+                    );
+                    (c, at.distance(pointer))
+                })
+            })
+            .filter(|(_, d)| *d <= 10.0)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(c, _)| c)
+    }
+
+    /// Rebuilds the highlighted faces and the preview triad when they change.
+    fn update_highlight(&mut self, session: &Session, tokens: &Tokens) {
+        if self.gpu.is_none() {
+            return; // built once the GPU exists
+        }
+        let picked = self.pick_mode.as_ref().map(|m| m.picked.clone()).unwrap_or_default();
+        let key: HighlightKey = (picked.clone(), self.hover, session.job.revision, session.prefs.theme);
+        if self.highlight_key.as_ref() != Some(&key) {
+            let mut g = SceneGeometry::default();
+            let mut paint = |mi: usize, face: usize, color: [f32; 4]| {
+                let Some(m) = session.job.models.get(mi) else { return };
+                for t in m.faces.triangles_of(face) {
+                    if let Some(&tri) = m.mesh.triangles().get(t) {
+                        let [a, b, c] = m.mesh.corners(tri);
+                        g.push_triangle(a, b, c, color);
+                    }
+                }
+            };
+            let accent = theme::linear(tokens.accent);
+            for (model, face) in &picked {
+                if let Some(mi) = session.job.models.iter().position(|m| &m.id == model) {
+                    paint(mi, *face, accent);
+                }
+            }
+            let axis_mode = self.pick_mode.as_ref().is_some_and(|m| m.accept == Some(Accept::Axis));
+            if let Some((mi, face, ok)) = self.hover
+                && axis_mode
+                && !picked.iter().any(|(m, f)| session.job.models.get(mi).is_some_and(|mm| &mm.id == m) && *f == face)
+            {
+                let base = if ok { tokens.accent } else { tokens.error };
+                paint(mi, face, theme::linear(base.gamma_multiply(0.45)));
+            }
+            if let Some(gpu) = &mut self.gpu {
+                let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_highlight(&g)));
+            }
+            self.highlight_key = Some(key);
+        }
+        let preview = self.pick_mode.as_ref().and_then(|m| m.preview);
+        if preview != self.preview_shown {
+            let mut overlay = self.base_overlay.clone();
+            if let Some((origin, axes)) = preview {
+                overlay.push_triad(origin, axes, self.triad_size * 1.2, &tokens.scene_palette(), TriadStyle::Full);
+            }
+            if let Some(gpu) = &mut self.gpu {
+                let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_overlay(&overlay)));
+            }
+            self.preview_shown = preview;
+        }
+    }
+
+    /// Labels the X, Y and Z arrows of every triad and names each WCS next to its origin,
+    /// projected with the camera on screen.
+    fn paint_wcs_labels(&self, painter: &egui::Painter, rect: Rect, session: &Session, tokens: &Tokens) {
+        let to_screen = self.projector(rect);
+        let mut triads = self.triads.clone();
+        if let Some((origin, axes)) = self.preview_shown {
+            triads.push((origin, axes, scene::triad_length(self.triad_size * 1.2, TriadStyle::Full), TriadStyle::Full));
+        }
+        for (origin, axes, length, style) in triads {
+            let Some(o) = to_screen(origin) else { continue };
+            for ((axis, name), colour) in
+                axes.iter().zip(["X", "Y", "Z"]).zip([tokens.axis_x, tokens.axis_y, tokens.axis_z])
+            {
+                let Some(tip) = to_screen(origin + *axis * length) else { continue };
+                let d = tip - o;
+                // An axis pointing at the viewer has no room for a label.
+                if d.length() < 6.0 {
+                    continue;
+                }
+                let colour = mix(tokens.text_muted, colour, style.colour_share());
+                let size = match style {
+                    TriadStyle::Full => 13.0,
+                    TriadStyle::Dim => 11.0,
+                    TriadStyle::Faint => 10.0,
+                };
+                let font = egui::FontId::new(size, egui::FontFamily::Monospace);
+                painter.text(tip + d.normalized() * 9.0, egui::Align2::CENTER_CENTER, name, font, colour);
+            }
+        }
+        let active = session.job.active_wcs.as_deref();
+        for w in &session.job.wcs {
+            let Some(at) = to_screen(w.origin) else { continue };
+            let is_active = active == Some(w.id.as_str());
+            let color = if is_active { tokens.text } else { tokens.text_muted };
+            painter.text(
+                at + egui::vec2(8.0, 8.0),
+                egui::Align2::LEFT_TOP,
+                &w.name,
+                egui::FontId::proportional(if is_active { 12.0 } else { 11.0 }),
+                color,
+            );
+        }
+    }
+
     fn rebuild_scene_if_needed(&mut self, session: &mut Session, tokens: &Tokens) {
         let display = session.prefs.display;
-        let key = (session.prefs.theme, session.job.revision, display);
+        let key = (session.prefs.theme, session.job.revision, session.job.setup_revision, display);
         if self.scene_key == Some(key) {
             return;
         }
         let palette = tokens.scene_palette();
         let mut content = SceneGeometry::default();
+        // The sample part is a model like any other; only its stock outline is extra.
         if session.job.sample_loaded {
-            content = scene::sample_part(&palette, display.edges, display.stock);
+            let stock = scene::sample_stock_box();
+            if display.stock {
+                content.push_box_edges(&stock, palette.stock_edge);
+            }
+            content.bounds.include(stock.min);
+            content.bounds.include(stock.max);
         }
         let edge = display.edges.then_some(palette.part_edge);
         for model in &session.job.models {
@@ -164,10 +559,26 @@ impl Viewport {
         world.triangles.extend_from_slice(&content.triangles);
         world.lines.extend_from_slice(&content.lines);
         let triad_size = (content.bounds.radius() * 0.4).clamp(15.0, 200.0);
-        let triad =
-            if display.wcs { scene::wcs_triad(Vec3::ZERO, triad_size, &palette) } else { SceneGeometry::default() };
+        // The world (model) origin always has a triad: in full colour until a WCS exists,
+        // then faint. Each WCS gets one too, the active one in full colour.
+        let mut triad = SceneGeometry::default();
+        self.triads.clear();
+        if display.wcs {
+            let world = if session.job.wcs.is_empty() { TriadStyle::Full } else { TriadStyle::Faint };
+            let mut frames = vec![(Vec3::ZERO, [Vec3::X, Vec3::Y, Vec3::Z], world)];
+            let active = session.job.active_wcs.as_deref();
+            for w in &session.job.wcs {
+                let style = if active == Some(w.id.as_str()) { TriadStyle::Full } else { TriadStyle::Dim };
+                frames.push((w.origin, [w.x_axis, w.y_axis(), w.z_axis], style));
+            }
+            for (origin, axes, style) in frames {
+                triad.push_triad(origin, axes, triad_size, &palette, style);
+                self.triads.push((origin, axes, scene::triad_length(triad_size, style), style));
+            }
+        }
 
-        let job_changed = self.scene_key.map(|(_, s, _)| s) != Some(key.1);
+        // Re-frame the view when the geometry changes, not when a WCS moves.
+        let job_changed = self.scene_key.map(|(_, revision, _, _)| revision) != Some(key.1);
         session.set_scene_bounds(if content.bounds.is_empty() {
             Aabb::new(Vec3::new(-50.0, -50.0, 0.0), Vec3::new(50.0, 50.0, 20.0))
         } else {
@@ -179,6 +590,10 @@ impl Viewport {
         if job_changed {
             self.fit_pending = true;
         }
+        self.base_overlay = triad.clone();
+        self.triad_size = triad_size;
+        self.preview_shown = None;
+        self.highlight_key = None;
         if let Some(gpu) = &mut self.gpu {
             let r = catch_unwind(AssertUnwindSafe(|| {
                 gpu.set_scene(&world);
@@ -271,5 +686,74 @@ impl Viewport {
         log::error!("viewport: {message}");
         self.gpu = None;
         self.gpu_error = Some(format!("3D viewport unavailable: {message}"));
+    }
+}
+
+/// `share` of `colour` over `base`, as the scene greys inactive triads.
+fn mix(base: Color32, colour: Color32, share: f32) -> Color32 {
+    let t = share.clamp(0.0, 1.0);
+    let m = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
+    Color32::from_rgb(m(base.r(), colour.r()), m(base.g(), colour.g()), m(base.b(), colour.b()))
+}
+
+/// Size of one floating view tool button.
+const TOOL_BUTTON: f32 = 38.0;
+/// Gap between the tool column and the viewport's right edge.
+const TOOL_MARGIN: f32 = 6.0;
+
+/// The column of view tools floating down the right edge, under the view cube.
+fn view_tools(ui: &Ui, viewport: Rect, top: f32, session: &Session, tokens: &Tokens, requests: &mut Vec<Request>) {
+    let centre_x = viewport.right() - TOOL_MARGIN - TOOL_BUTTON / 2.0;
+    for (n, (id, menu)) in CosmicCAM_engine::cmd::VIEWPORT_TOOLS.iter().enumerate() {
+        let Some(spec) = CosmicCAM_engine::cmd::find(id) else {
+            continue;
+        };
+        let button = Rect::from_center_size(
+            pos2(centre_x, top + TOOL_BUTTON / 2.0 + n as f32 * (TOOL_BUTTON + 4.0)),
+            egui::vec2(TOOL_BUTTON, TOOL_BUTTON),
+        );
+        if button.bottom() > viewport.bottom() - 8.0 {
+            break;
+        }
+        let enabled = session.is_enabled(spec);
+        let response = ui.interact(button, ui.id().with(("view-tool", *id)), Sense::click());
+        let fill = if response.is_pointer_button_down_on() {
+            tokens.accent.gamma_multiply(0.3)
+        } else if response.hovered() {
+            tokens.hover_bg
+        } else {
+            tokens.panel_bg.gamma_multiply(0.85)
+        };
+        let stroke = egui::Stroke::new(1.0, if response.hovered() { tokens.accent } else { tokens.border });
+        ui.painter().rect(button, 4.0, fill, stroke, egui::StrokeKind::Inside);
+        crate::ribbon::paint_icon(ui, button.shrink(6.0), spec, tokens, enabled);
+        let response = crate::ribbon::with_tooltip(response, spec, enabled);
+        if response.clicked() && enabled {
+            requests.push(((*id).to_owned(), Value::Null));
+        }
+        if !menu.is_empty() {
+            crate::ui_kit::Menu::below(&response).context(tokens, |ui| {
+                for item in menu.iter().filter_map(|m| CosmicCAM_engine::cmd::find(m)) {
+                    if ui.button(item.label).clicked() {
+                        requests.push((item.id.to_owned(), Value::Null));
+                    }
+                }
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_plane_must_give_a_new_axis() {
+        assert!(independent(Vec3::Z, &[]));
+        assert!(!independent(Vec3::NEG_Z, &[Vec3::Z]), "parallel");
+        assert!(independent(Vec3::X, &[Vec3::Z]));
+        assert!(independent(Vec3::NEG_Y, &[Vec3::Z, Vec3::NEG_X]));
+        // A plane whose normal lies in the span of the first two cannot fix the corner.
+        assert!(!independent(Vec3::new(1.0, 0.0, 1.0).normalize(), &[Vec3::Z, Vec3::X]));
     }
 }

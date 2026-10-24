@@ -78,8 +78,10 @@ pub struct ViewportGpu {
     bind_group: wgpu::BindGroup,
     background: wgpu::RenderPipeline,
     triangles: wgpu::RenderPipeline,
+    highlight: wgpu::RenderPipeline,
     lines: wgpu::RenderPipeline,
     scene: Mesh,
+    highlighted: Mesh,
     overlay: Mesh,
     targets: Option<Targets>,
     texture_id: Option<egui::TextureId>,
@@ -167,6 +169,13 @@ impl ViewportGpu {
         let face_bias = wgpu::DepthBiasState { constant: 2, slope_scale: 1.5, clamp: 0.0 };
         let triangles =
             scene_pipeline("viewport triangles", wgpu::PrimitiveTopology::TriangleList, depth(true, face_bias));
+        // Picked and hovered faces are redrawn over the part; without the face bias they win
+        // the depth test against the biased part triangles beneath them.
+        let highlight = scene_pipeline(
+            "viewport highlight",
+            wgpu::PrimitiveTopology::TriangleList,
+            depth(false, wgpu::DepthBiasState::default()),
+        );
         let lines = scene_pipeline(
             "viewport lines",
             wgpu::PrimitiveTopology::LineList,
@@ -204,12 +213,19 @@ impl ViewportGpu {
             bind_group,
             background,
             triangles,
+            highlight,
             lines,
             scene: Mesh::EMPTY,
+            highlighted: Mesh::EMPTY,
             overlay: Mesh::EMPTY,
             targets: None,
             texture_id: None,
         }
+    }
+
+    /// Replaces the highlighted faces (triangles only).
+    pub fn set_highlight(&mut self, g: &SceneGeometry) {
+        self.highlighted = Mesh::upload(&self.render_state.device, "highlight", g);
     }
 
     /// Replaces the depth-tested scene geometry.
@@ -292,7 +308,8 @@ impl ViewportGpu {
             .render_state
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("viewport") });
-        let pass = |encoder: &mut wgpu::CommandEncoder, first: bool, mesh: &Mesh, background: bool| {
+        let pass = |encoder: &mut wgpu::CommandEncoder, first: bool, mesh: &Mesh, highlight: Option<&Mesh>| {
+            let background = highlight.is_some();
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("viewport pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -318,7 +335,11 @@ impl ViewportGpu {
                 rp.set_pipeline(&self.background);
                 rp.draw(0..3, 0..1);
             }
-            for (pipeline, chunks) in [(&self.triangles, &mesh.triangles), (&self.lines, &mesh.lines)] {
+            let none = Vec::new();
+            let lit = highlight.map_or(&none, |h| &h.triangles);
+            for (pipeline, chunks) in
+                [(&self.triangles, &mesh.triangles), (&self.highlight, lit), (&self.lines, &mesh.lines)]
+            {
                 if !chunks.is_empty() {
                     rp.set_pipeline(pipeline);
                 }
@@ -328,9 +349,9 @@ impl ViewportGpu {
                 }
             }
         };
-        pass(&mut encoder, true, &self.scene, true);
+        pass(&mut encoder, true, &self.scene, Some(&self.highlighted));
         // Second pass with a fresh depth buffer so the WCS triad is never hidden by the part.
-        pass(&mut encoder, false, &self.overlay, false);
+        pass(&mut encoder, false, &self.overlay, None);
         queue.submit([encoder.finish()]);
         Some(id)
     }

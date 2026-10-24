@@ -71,6 +71,69 @@ The first import replaces the built-in sample part. A file that cannot be read r
 `CosmicCAMError(kind="import")` and leaves the job unchanged. `cc.start("model.import")` opens
 the file dialog instead, as the ribbon button does; files dropped on the window are imported too.
 
+## Work coordinate systems
+
+A WCS is the part zero the machine works from, with its axis directions. The active WCS is the
+one toolpaths will be programmed in; each WCS is drawn as a triad in the viewport (the active
+one in full colour, axes labelled X, Y and Z) and listed under Setups in the job outline. Once
+a WCS exists the world (model) origin triad is drawn faint.
+
+`setup.wcs.create` defines a WCS from two independent groups of parameters. `setup.wcs.align`
+takes the same groups and re-defines an existing WCS; a group left out is kept.
+
+### Orientation: how the axes are set
+
+| Parameter | Meaning |
+| --- | --- |
+| `orientation` | `model` (world axes, the default), `z_x`, `z_y`, `x_y` (select two axes; the third follows, right-handed) or `vectors` |
+| `orientation_z`, `orientation_x`, `orientation_y` | The selection for each axis the mode uses: a plane (its outward normal), a cylinder (its axis), or an edge (a straight edge's direction, a circle's axis) |
+| `orientation_z_vector`, `orientation_x_vector` | Directions, for `orientation = "vectors"` |
+| `flip_z`, `flip_x`, `flip_y` | Reverse a selected axis (the derived one follows) |
+
+Straight edges used for X or Y point away from the origin, along the edge. A hole or boss
+selected for X or Y when its axis runs along Z points X (or Y) towards it, which is how a
+second dowel hole sets X.
+
+### Origin: where zero goes
+
+| Parameter | Meaning |
+| --- | --- |
+| `origin` | `model` (world zero, the default), `box`, `point` or `intersection` |
+| `origin_box` | For `box`: a point on the models' bounding box, `<level>_<position>` with level `top`, `middle`, `bottom` and position `front_left`, `front`, `front_right`, `left`, `center`, `right`, `back_left`, `back`, `back_right` (`center` alone is the box centre; default `top_center`) |
+| `origin_point` / `origin_geometry` | For `point`: coordinates, or a selection (a circle's centre, a cylinder's upper axis end, a plane's centre, an edge's midpoint) |
+| `origin_a`, `origin_b`, `origin_c` | For `intersection`: three planes (a corner), a line and a plane (an edge or a cylinder axis meeting a face), or two lines |
+
+Parameters the chosen modes do not use are refused, so a script always gets what it asked for.
+
+Selections name recognised geometry: `<model id>/face.<n>` (planes, cylinders and freeform
+patches) and `<model id>/edge.<n>` (straight and circular edges). List them with
+`cc.model_faces_list(id=..., kind="plane")` and `cc.model_edges_list(id=..., kind="line")`, or
+find what a ray hits with `cc.model_pick(...)` and `cc.model_edge_pick(...)`, as viewport
+clicks do.
+
+```python
+top = next(f for f in cc.model_faces_list(id="model.1", kind="plane") if f["normal"] == [0, 0, 1])
+left = next(f for f in cc.model_faces_list(id="model.1", kind="plane") if f["normal"] == [-1, 0, 0])
+front = next(f for f in cc.model_faces_list(id="model.1", kind="plane") if f["normal"] == [0, -1, 0])
+edge = cc.model_edges_list(id="model.1", kind="line")[0]
+
+# Corner of three faces; Z from the top face, X along an edge.
+cc.setup_wcs_create(
+    origin="intersection", origin_a=top["face"], origin_b=left["face"], origin_c=front["face"],
+    orientation="z_x", orientation_z=top["face"], orientation_x=edge["edge"],
+)
+cc.setup_wcs_create(origin="box", origin_box="top_center")          # model axes, top centre
+cc.setup_wcs_align(orientation="z_x", orientation_z=top["face"], orientation_x=edge["edge"], flip_x=True)
+cc.setup_wcs_offset(delta=[0, 0, -2])                               # along the WCS's own axes
+cc.setup_wcs_activate(id="wcs.2")
+```
+
+In the app, Create WCS and Align open a panel with the same two groups: choose a mode, click
+each selection row and then the geometry in the viewport (picked faces and edges turn the
+accent colour; things that cannot be used turn red under the pointer), tick Flip where needed,
+check the preview triad and press OK. Offset, Rotate and Rename open a small dialog. Scripts
+never get dialogs.
+
 ## State, screenshots and the log
 
 ```python
@@ -111,18 +174,18 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-79 commands in 14 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+91 commands in 14 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.outline.get`](#joboutlineget), [`job.open`](#jobopen), [`job.save`](#jobsave)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
 - **session**: [`session.state.get`](#sessionstateget)
 - **command**: [`command.list`](#commandlist), [`command.describe`](#commanddescribe)
 - **console**: [`console.clear`](#consoleclear), [`console.log.get`](#consolelogget)
-- **model**: [`model.import`](#modelimport), [`model.list`](#modellist), [`model.remove`](#modelremove)
+- **model**: [`model.import`](#modelimport), [`model.list`](#modellist), [`model.remove`](#modelremove), [`model.faces.list`](#modelfaceslist), [`model.face.get`](#modelfaceget), [`model.pick`](#modelpick), [`model.edges.list`](#modeledgeslist), [`model.edge.get`](#modeledgeget), [`model.edge.pick`](#modeledgepick)
+- **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.wcs.rotate`](#setupwcsrotate), [`setup.wcs.rename`](#setupwcsrename), [`setup.wcs.activate`](#setupwcsactivate), [`setup.wcs.remove`](#setupwcsremove), [`setup.wcs.list`](#setupwcslist), [`setup.wcs.get`](#setupwcsget), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.fit`](#setupstockfit), [`setup.stock.margins`](#setupstockmargins)
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
-- **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.fit`](#setupstockfit), [`setup.stock.margins`](#setupstockmargins)
 - **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.feeds`](#toolfeeds), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
 - **toolpath**: [`toolpath.pocket`](#toolpathpocket), [`toolpath.profile`](#toolpathprofile), [`toolpath.drill`](#toolpathdrill), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
 - **sim**: [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.speed`](#simspeed), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
@@ -308,7 +371,7 @@ Import STL or OBJ geometry.
 | `units` | choice | no | Unit the file was authored in (default mm); STL and OBJ store none — one of mm, cm, m, in |
 | `name` | string | no | Name in the job outline (default: the file name) |
 
-Returns: the model {id, name, source, format, units, triangles, vertices, bounds}
+Returns: the model {id, name, source, format, units, triangles, vertices, faces, bounds}
 
 <sub>shortcut `Ctrl+I` · ribbon: Setup › Model</sub>
 
@@ -321,7 +384,7 @@ cc.model_list()
 The job's imported models.
 
 
-Returns: list of {id, name, source, format, units, triangles, vertices, bounds}
+Returns: list of {id, name, source, format, units, triangles, vertices, faces, bounds}
 
 #### `model.remove`
 
@@ -338,6 +401,362 @@ Remove an imported model from the job.
 
 Returns: {"removed": id}
 
+#### `model.faces.list`
+
+```python
+cc.model_faces_list(id=…, kind=None)
+```
+
+The planes, cylinders and freeform patches recognised on a model.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Model id, e.g. model.1 |
+| `kind` | choice | no | Only faces of this kind — one of plane, cylinder, freeform |
+
+Returns: list of faces {face, model, kind, area, centroid, triangles, ...}: planes add normal and point; cylinders add base, axis, radius, diameter, length and hole (at most 5000)
+
+#### `model.face.get`
+
+```python
+cc.model_face_get(face=…)
+```
+
+One recognised face: its kind and geometry.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `face` | string | yes | Face reference, e.g. model.1/face.3 |
+
+Returns: {face, model, kind, area, centroid, triangles, ...} as model.faces.list
+
+#### `model.pick`
+
+```python
+cc.model_pick(origin=…, direction=…)
+```
+
+The model face a ray hits first, as a click in the viewport picks it.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `origin` | vec3 | yes | Ray start, world mm — [x, y, z] in mm |
+| `direction` | vec3 | yes | Ray direction — [x, y, z] in mm |
+
+Returns: {face, model, kind, ..., point, distance} for the face hit, or null
+
+#### `model.edges.list`
+
+```python
+cc.model_edges_list(id=…, kind=None)
+```
+
+The straight and circular edges recognised on a model.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Model id, e.g. model.1 |
+| `kind` | choice | no | Only edges of this kind — one of line, circle |
+
+Returns: list of edges {edge, model, kind, length, direction, ...}: lines add start and end; circles add center, normal and radius (at most 5000)
+
+#### `model.edge.get`
+
+```python
+cc.model_edge_get(edge=…)
+```
+
+One recognised edge: its kind and geometry.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `edge` | string | yes | Edge reference, e.g. model.1/edge.4 |
+
+Returns: {edge, model, kind, length, direction, ...} as model.edges.list
+
+#### `model.edge.pick`
+
+```python
+cc.model_edge_pick(origin=…, direction=…, radius=None)
+```
+
+The visible edge passing closest to a ray, as a click in the viewport picks it.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `origin` | vec3 | yes | Ray start, world mm — [x, y, z] in mm |
+| `direction` | vec3 | yes | Ray direction — [x, y, z] in mm |
+| `radius` | number | no | How far from the ray an edge may be, mm (default 1) (0.0001 to 1e6) |
+
+Returns: {edge, model, kind, length, direction, ...} for the edge found, or null
+
+
+### setup
+
+#### `setup.wcs.create`
+
+```python
+cc.setup_wcs_create(name=None, activate=None, orientation=None, orientation_z=None, orientation_x=None, orientation_y=None, orientation_z_vector=None, orientation_x_vector=None, flip_z=None, flip_x=None, flip_y=None, origin=None, origin_box=None, origin_point=None, origin_geometry=None, origin_a=None, origin_b=None, origin_c=None)
+```
+
+Define a work coordinate system: its orientation (axes) and origin.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | no | Name in the job outline (default: WCS <n>) |
+| `activate` | bool | no | Make it the active WCS (default true) |
+| `orientation` | choice | no | How the axes are set: model (world axes), z_x, z_y or x_y (two selected axes; the third follows), vectors — one of model, z_x, z_y, x_y, vectors |
+| `orientation_z` | string | no | Z axis selection: a plane (its normal), cylinder (its axis) or edge |
+| `orientation_x` | string | no | X axis selection: a plane, cylinder or edge |
+| `orientation_y` | string | no | Y axis selection: a plane, cylinder or edge |
+| `orientation_z_vector` | vec3 | no | Z direction, for orientation = vectors — [x, y, z] in mm |
+| `orientation_x_vector` | vec3 | no | X direction, for orientation = vectors (squared to Z) — [x, y, z] in mm |
+| `flip_z` | bool | no | Reverse the Z axis |
+| `flip_x` | bool | no | Reverse the X axis |
+| `flip_y` | bool | no | Reverse the Y axis (orientations z_y and x_y) |
+| `origin` | choice | no | Where the origin goes: model (world zero), box (a point on the model's box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, point, intersection |
+| `origin_box` | choice | no | Box point, for origin = box (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right |
+| `origin_point` | vec3 | no | Coordinates, for origin = point — [x, y, z] in mm |
+| `origin_geometry` | string | no | Selection, for origin = point: a circular edge or cylinder (centre / upper axis end), plane (centre) or straight edge (midpoint) |
+| `origin_a` | string | no | First selection, for origin = intersection: a plane, cylinder or edge |
+| `origin_b` | string | no | Second selection, for origin = intersection |
+| `origin_c` | string | no | Third selection, for origin = intersection (three planes) |
+
+Returns: the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+<sub>ribbon: Setup › Coordinates</sub>
+
+#### `setup.wcs.top_center`
+
+```python
+cc.setup_wcs_top_center(id=None)
+```
+
+Move the WCS origin to the top centre of the part (creates a WCS if there is none).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | WCS id, e.g. wcs.1 (default: the active WCS) |
+
+Returns: the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+#### `setup.wcs.bottom_corner`
+
+```python
+cc.setup_wcs_bottom_corner(id=None, corner=None)
+```
+
+Move the WCS origin to a bottom corner of the part (creates a WCS if there is none).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | WCS id, e.g. wcs.1 (default: the active WCS) |
+| `corner` | choice | no | Which corner (default front_left) — one of front_left, front_right, back_left, back_right |
+
+Returns: the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+#### `setup.wcs.align`
+
+```python
+cc.setup_wcs_align(id=None, orientation=None, orientation_z=None, orientation_x=None, orientation_y=None, orientation_z_vector=None, orientation_x_vector=None, flip_z=None, flip_x=None, flip_y=None, origin=None, origin_box=None, origin_point=None, origin_geometry=None, origin_a=None, origin_b=None, origin_c=None)
+```
+
+Re-define an existing WCS: a new orientation, origin, or both (groups left out are kept).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | WCS id, e.g. wcs.1 (default: the active WCS) |
+| `orientation` | choice | no | How the axes are set: model (world axes), z_x, z_y or x_y (two selected axes; the third follows), vectors — one of model, z_x, z_y, x_y, vectors |
+| `orientation_z` | string | no | Z axis selection: a plane (its normal), cylinder (its axis) or edge |
+| `orientation_x` | string | no | X axis selection: a plane, cylinder or edge |
+| `orientation_y` | string | no | Y axis selection: a plane, cylinder or edge |
+| `orientation_z_vector` | vec3 | no | Z direction, for orientation = vectors — [x, y, z] in mm |
+| `orientation_x_vector` | vec3 | no | X direction, for orientation = vectors (squared to Z) — [x, y, z] in mm |
+| `flip_z` | bool | no | Reverse the Z axis |
+| `flip_x` | bool | no | Reverse the X axis |
+| `flip_y` | bool | no | Reverse the Y axis (orientations z_y and x_y) |
+| `origin` | choice | no | Where the origin goes: model (world zero), box (a point on the model's box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, point, intersection |
+| `origin_box` | choice | no | Box point, for origin = box (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right |
+| `origin_point` | vec3 | no | Coordinates, for origin = point — [x, y, z] in mm |
+| `origin_geometry` | string | no | Selection, for origin = point: a circular edge or cylinder (centre / upper axis end), plane (centre) or straight edge (midpoint) |
+| `origin_a` | string | no | First selection, for origin = intersection: a plane, cylinder or edge |
+| `origin_b` | string | no | Second selection, for origin = intersection |
+| `origin_c` | string | no | Third selection, for origin = intersection (three planes) |
+
+Returns: the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+<sub>ribbon: Setup › Coordinates</sub>
+
+#### `setup.wcs.offset`
+
+```python
+cc.setup_wcs_offset(id=None, delta=…, frame=None)
+```
+
+Move the WCS origin by a distance.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | WCS id, e.g. wcs.1 (default: the active WCS) |
+| `delta` | vec3 | yes | Distance to move, in mm — [x, y, z] in mm |
+| `frame` | choice | no | Axes `delta` is measured along: the WCS's own (default) or the world's — one of wcs, world |
+
+Returns: the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+<sub>ribbon: Setup › Coordinates</sub>
+
+#### `setup.wcs.rotate`
+
+```python
+cc.setup_wcs_rotate(id=None, axis=…, degrees=…)
+```
+
+Turn the WCS about one of its own axes.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | WCS id, e.g. wcs.1 (default: the active WCS) |
+| `axis` | choice | yes | The WCS axis to turn about — one of x, y, z |
+| `degrees` | number | yes | Angle, counter-clockwise looking down the axis (-36000 to 36000) |
+
+Returns: the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+#### `setup.wcs.rename`
+
+```python
+cc.setup_wcs_rename(id=None, name=…)
+```
+
+Give a WCS a new name.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | WCS id, e.g. wcs.1 (default: the active WCS) |
+| `name` | string | yes | New name |
+
+Returns: the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+#### `setup.wcs.activate`
+
+```python
+cc.setup_wcs_activate(id=…)
+```
+
+Program toolpaths in this WCS.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | WCS id, e.g. wcs.1 |
+
+Returns: the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+#### `setup.wcs.remove`
+
+```python
+cc.setup_wcs_remove(id=…)
+```
+
+Delete a work coordinate system.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | WCS id, e.g. wcs.1 |
+
+Returns: {"removed": id, "active_wcs": id or null}
+
+#### `setup.wcs.list`
+
+```python
+cc.setup_wcs_list()
+```
+
+The job's work coordinate systems.
+
+
+Returns: list of {id, name, active, origin, x_axis, y_axis, z_axis}
+
+#### `setup.wcs.get`
+
+```python
+cc.setup_wcs_get(id=None)
+```
+
+One work coordinate system.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | WCS id, e.g. wcs.1 (default: the active WCS) |
+
+Returns: the WCS {id, name, active, origin, x_axis, y_axis, z_axis}, or null when there is none
+
+#### `setup.stock.box`
+
+```python
+cc.setup_stock_box()
+```
+
+Rectangular block stock (Phase 5).
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+<sub>ribbon: Setup › Stock</sub>
+
+#### `setup.stock.cylinder`
+
+```python
+cc.setup_stock_cylinder()
+```
+
+Round bar stock (Phase 5).
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+<sub>ribbon: Setup › Stock</sub>
+
+#### `setup.stock.fit`
+
+```python
+cc.setup_stock_fit()
+```
+
+Size the stock to the model's bounding box (Phase 3).
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+<sub>ribbon: Setup › Stock</sub>
+
+#### `setup.stock.margins`
+
+```python
+cc.setup_stock_margins()
+```
+
+Extra stock around chosen faces (Phase 5).
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+<sub>ribbon: Setup › Stock</sub>
+
 
 ### view
 
@@ -352,7 +771,7 @@ Zoom to fit everything in the viewport.
 
 Returns: camera {target, distance, yaw, pitch, projection, eye}
 
-<sub>shortcut `F` · ribbon: Home › View</sub>
+<sub>shortcut `F`</sub>
 
 #### `view.camera.iso`
 
@@ -365,7 +784,7 @@ Look at the part from the Iso view.
 
 Returns: {"preset": id}
 
-<sub>shortcut `0` · ribbon: Home › View</sub>
+<sub>shortcut `0`</sub>
 
 #### `view.camera.top`
 
@@ -378,7 +797,7 @@ Look at the part from the Top view.
 
 Returns: {"preset": id}
 
-<sub>shortcut `7` · ribbon: Home › View</sub>
+<sub>shortcut `7`</sub>
 
 #### `view.camera.front`
 
@@ -391,7 +810,7 @@ Look at the part from the Front view.
 
 Returns: {"preset": id}
 
-<sub>shortcut `1` · ribbon: Home › View</sub>
+<sub>shortcut `1`</sub>
 
 #### `view.camera.right`
 
@@ -404,7 +823,7 @@ Look at the part from the Right view.
 
 Returns: {"preset": id}
 
-<sub>shortcut `3` · ribbon: Home › View</sub>
+<sub>shortcut `3`</sub>
 
 #### `view.camera.bottom`
 
@@ -785,122 +1204,6 @@ Close CosmicCAM.
 Returns: null
 
 <sub>shortcut `Ctrl+Q`</sub>
-
-
-### setup
-
-#### `setup.wcs.create`
-
-```python
-cc.setup_wcs_create()
-```
-
-Define the work coordinate system (Phase 3).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Setup › Coordinates</sub>
-
-#### `setup.wcs.top_center`
-
-```python
-cc.setup_wcs_top_center()
-```
-
-Put the WCS origin at the stock top centre (Phase 3).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-#### `setup.wcs.bottom_corner`
-
-```python
-cc.setup_wcs_bottom_corner()
-```
-
-Put the WCS origin at a stock bottom corner (Phase 3).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-#### `setup.wcs.align`
-
-```python
-cc.setup_wcs_align()
-```
-
-Rotate the WCS to a face or edge (Phase 3).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Setup › Coordinates</sub>
-
-#### `setup.wcs.offset`
-
-```python
-cc.setup_wcs_offset()
-```
-
-Translate the WCS by a distance (Phase 3).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Setup › Coordinates</sub>
-
-#### `setup.stock.box`
-
-```python
-cc.setup_stock_box()
-```
-
-Rectangular block stock (Phase 5).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Setup › Stock</sub>
-
-#### `setup.stock.cylinder`
-
-```python
-cc.setup_stock_cylinder()
-```
-
-Round bar stock (Phase 5).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Setup › Stock</sub>
-
-#### `setup.stock.fit`
-
-```python
-cc.setup_stock_fit()
-```
-
-Size the stock to the model's bounding box (Phase 3).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Setup › Stock</sub>
-
-#### `setup.stock.margins`
-
-```python
-cc.setup_stock_margins()
-```
-
-Extra stock around chosen faces (Phase 5).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Setup › Stock</sub>
 
 
 ### tool

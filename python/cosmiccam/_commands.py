@@ -132,7 +132,7 @@ class Commands:
             name: Name in the job outline (default: the file name).
 
         Returns:
-            the model {id, name, source, format, units, triangles, vertices, bounds}
+            the model {id, name, source, format, units, triangles, vertices, faces, bounds}
 
         Command: ``model.import``
         """
@@ -143,7 +143,7 @@ class Commands:
         """The job's imported models.
 
         Returns:
-            list of {id, name, source, format, units, triangles, vertices, bounds}
+            list of {id, name, source, format, units, triangles, vertices, faces, bounds}
 
         Command: ``model.list``
         """
@@ -162,6 +162,284 @@ class Commands:
         """
         params = {"id": id}
         return self.execute("model.remove", {k: v for k, v in params.items() if v is not None})
+
+    def model_faces_list(self, *, id: str, kind: Optional[Literal["plane", "cylinder", "freeform"]] = None) -> Any:
+        """The planes, cylinders and freeform patches recognised on a model.
+
+        Args:
+            id: Model id, e.g. model.1.
+            kind: Only faces of this kind — one of plane, cylinder, freeform.
+
+        Returns:
+            list of faces {face, model, kind, area, centroid, triangles, ...}: planes add normal and point; cylinders add base, axis, radius, diameter, length and hole (at most 5000)
+
+        Command: ``model.faces.list``
+        """
+        params = {"id": id, "kind": kind}
+        return self.execute("model.faces.list", {k: v for k, v in params.items() if v is not None})
+
+    def model_face_get(self, *, face: str) -> Any:
+        """One recognised face: its kind and geometry.
+
+        Args:
+            face: Face reference, e.g. model.1/face.3.
+
+        Returns:
+            {face, model, kind, area, centroid, triangles, ...} as model.faces.list
+
+        Command: ``model.face.get``
+        """
+        params = {"face": face}
+        return self.execute("model.face.get", {k: v for k, v in params.items() if v is not None})
+
+    def model_pick(self, *, origin: Sequence[float], direction: Sequence[float]) -> Any:
+        """The model face a ray hits first, as a click in the viewport picks it.
+
+        Args:
+            origin: Ray start, world mm — [x, y, z] in mm.
+            direction: Ray direction — [x, y, z] in mm.
+
+        Returns:
+            {face, model, kind, ..., point, distance} for the face hit, or null
+
+        Command: ``model.pick``
+        """
+        params = {"origin": origin, "direction": direction}
+        return self.execute("model.pick", {k: v for k, v in params.items() if v is not None})
+
+    def model_edges_list(self, *, id: str, kind: Optional[Literal["line", "circle"]] = None) -> Any:
+        """The straight and circular edges recognised on a model.
+
+        Args:
+            id: Model id, e.g. model.1.
+            kind: Only edges of this kind — one of line, circle.
+
+        Returns:
+            list of edges {edge, model, kind, length, direction, ...}: lines add start and end; circles add center, normal and radius (at most 5000)
+
+        Command: ``model.edges.list``
+        """
+        params = {"id": id, "kind": kind}
+        return self.execute("model.edges.list", {k: v for k, v in params.items() if v is not None})
+
+    def model_edge_get(self, *, edge: str) -> Any:
+        """One recognised edge: its kind and geometry.
+
+        Args:
+            edge: Edge reference, e.g. model.1/edge.4.
+
+        Returns:
+            {edge, model, kind, length, direction, ...} as model.edges.list
+
+        Command: ``model.edge.get``
+        """
+        params = {"edge": edge}
+        return self.execute("model.edge.get", {k: v for k, v in params.items() if v is not None})
+
+    def model_edge_pick(self, *, origin: Sequence[float], direction: Sequence[float], radius: Optional[float] = None) -> Any:
+        """The visible edge passing closest to a ray, as a click in the viewport picks it.
+
+        Args:
+            origin: Ray start, world mm — [x, y, z] in mm.
+            direction: Ray direction — [x, y, z] in mm.
+            radius: How far from the ray an edge may be, mm (default 1) (0.0001 to 1e6).
+
+        Returns:
+            {edge, model, kind, length, direction, ...} for the edge found, or null
+
+        Command: ``model.edge.pick``
+        """
+        params = {"origin": origin, "direction": direction, "radius": radius}
+        return self.execute("model.edge.pick", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_create(self, *, name: Optional[str] = None, activate: Optional[bool] = None, orientation: Optional[Literal["model", "z_x", "z_y", "x_y", "vectors"]] = None, orientation_z: Optional[str] = None, orientation_x: Optional[str] = None, orientation_y: Optional[str] = None, orientation_z_vector: Optional[Sequence[float]] = None, orientation_x_vector: Optional[Sequence[float]] = None, flip_z: Optional[bool] = None, flip_x: Optional[bool] = None, flip_y: Optional[bool] = None, origin: Optional[Literal["model", "box", "point", "intersection"]] = None, origin_box: Optional[Literal["top_front_left", "top_front", "top_front_right", "top_left", "top_center", "top_right", "top_back_left", "top_back", "top_back_right", "middle_front_left", "middle_front", "middle_front_right", "middle_left", "center", "middle_right", "middle_back_left", "middle_back", "middle_back_right", "bottom_front_left", "bottom_front", "bottom_front_right", "bottom_left", "bottom_center", "bottom_right", "bottom_back_left", "bottom_back", "bottom_back_right"]] = None, origin_point: Optional[Sequence[float]] = None, origin_geometry: Optional[str] = None, origin_a: Optional[str] = None, origin_b: Optional[str] = None, origin_c: Optional[str] = None) -> Any:
+        """Define a work coordinate system: its orientation (axes) and origin.
+
+        Args:
+            name: Name in the job outline (default: WCS <n>).
+            activate: Make it the active WCS (default true).
+            orientation: How the axes are set: model (world axes), z_x, z_y or x_y (two selected axes; the third follows), vectors — one of model, z_x, z_y, x_y, vectors.
+            orientation_z: Z axis selection: a plane (its normal), cylinder (its axis) or edge.
+            orientation_x: X axis selection: a plane, cylinder or edge.
+            orientation_y: Y axis selection: a plane, cylinder or edge.
+            orientation_z_vector: Z direction, for orientation = vectors — [x, y, z] in mm.
+            orientation_x_vector: X direction, for orientation = vectors (squared to Z) — [x, y, z] in mm.
+            flip_z: Reverse the Z axis.
+            flip_x: Reverse the X axis.
+            flip_y: Reverse the Y axis (orientations z_y and x_y).
+            origin: Where the origin goes: model (world zero), box (a point on the model's box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, point, intersection.
+            origin_box: Box point, for origin = box (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right.
+            origin_point: Coordinates, for origin = point — [x, y, z] in mm.
+            origin_geometry: Selection, for origin = point: a circular edge or cylinder (centre / upper axis end), plane (centre) or straight edge (midpoint).
+            origin_a: First selection, for origin = intersection: a plane, cylinder or edge.
+            origin_b: Second selection, for origin = intersection.
+            origin_c: Third selection, for origin = intersection (three planes).
+
+        Returns:
+            the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+        Command: ``setup.wcs.create``
+        """
+        params = {"name": name, "activate": activate, "orientation": orientation, "orientation_z": orientation_z, "orientation_x": orientation_x, "orientation_y": orientation_y, "orientation_z_vector": orientation_z_vector, "orientation_x_vector": orientation_x_vector, "flip_z": flip_z, "flip_x": flip_x, "flip_y": flip_y, "origin": origin, "origin_box": origin_box, "origin_point": origin_point, "origin_geometry": origin_geometry, "origin_a": origin_a, "origin_b": origin_b, "origin_c": origin_c}
+        return self.execute("setup.wcs.create", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_top_center(self, *, id: Optional[str] = None) -> Any:
+        """Move the WCS origin to the top centre of the part (creates a WCS if there is none).
+
+        Args:
+            id: WCS id, e.g. wcs.1 (default: the active WCS).
+
+        Returns:
+            the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+        Command: ``setup.wcs.top_center``
+        """
+        params = {"id": id}
+        return self.execute("setup.wcs.top_center", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_bottom_corner(self, *, id: Optional[str] = None, corner: Optional[Literal["front_left", "front_right", "back_left", "back_right"]] = None) -> Any:
+        """Move the WCS origin to a bottom corner of the part (creates a WCS if there is none).
+
+        Args:
+            id: WCS id, e.g. wcs.1 (default: the active WCS).
+            corner: Which corner (default front_left) — one of front_left, front_right, back_left, back_right.
+
+        Returns:
+            the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+        Command: ``setup.wcs.bottom_corner``
+        """
+        params = {"id": id, "corner": corner}
+        return self.execute("setup.wcs.bottom_corner", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_align(self, *, id: Optional[str] = None, orientation: Optional[Literal["model", "z_x", "z_y", "x_y", "vectors"]] = None, orientation_z: Optional[str] = None, orientation_x: Optional[str] = None, orientation_y: Optional[str] = None, orientation_z_vector: Optional[Sequence[float]] = None, orientation_x_vector: Optional[Sequence[float]] = None, flip_z: Optional[bool] = None, flip_x: Optional[bool] = None, flip_y: Optional[bool] = None, origin: Optional[Literal["model", "box", "point", "intersection"]] = None, origin_box: Optional[Literal["top_front_left", "top_front", "top_front_right", "top_left", "top_center", "top_right", "top_back_left", "top_back", "top_back_right", "middle_front_left", "middle_front", "middle_front_right", "middle_left", "center", "middle_right", "middle_back_left", "middle_back", "middle_back_right", "bottom_front_left", "bottom_front", "bottom_front_right", "bottom_left", "bottom_center", "bottom_right", "bottom_back_left", "bottom_back", "bottom_back_right"]] = None, origin_point: Optional[Sequence[float]] = None, origin_geometry: Optional[str] = None, origin_a: Optional[str] = None, origin_b: Optional[str] = None, origin_c: Optional[str] = None) -> Any:
+        """Re-define an existing WCS: a new orientation, origin, or both (groups left out are kept).
+
+        Args:
+            id: WCS id, e.g. wcs.1 (default: the active WCS).
+            orientation: How the axes are set: model (world axes), z_x, z_y or x_y (two selected axes; the third follows), vectors — one of model, z_x, z_y, x_y, vectors.
+            orientation_z: Z axis selection: a plane (its normal), cylinder (its axis) or edge.
+            orientation_x: X axis selection: a plane, cylinder or edge.
+            orientation_y: Y axis selection: a plane, cylinder or edge.
+            orientation_z_vector: Z direction, for orientation = vectors — [x, y, z] in mm.
+            orientation_x_vector: X direction, for orientation = vectors (squared to Z) — [x, y, z] in mm.
+            flip_z: Reverse the Z axis.
+            flip_x: Reverse the X axis.
+            flip_y: Reverse the Y axis (orientations z_y and x_y).
+            origin: Where the origin goes: model (world zero), box (a point on the model's box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, point, intersection.
+            origin_box: Box point, for origin = box (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right.
+            origin_point: Coordinates, for origin = point — [x, y, z] in mm.
+            origin_geometry: Selection, for origin = point: a circular edge or cylinder (centre / upper axis end), plane (centre) or straight edge (midpoint).
+            origin_a: First selection, for origin = intersection: a plane, cylinder or edge.
+            origin_b: Second selection, for origin = intersection.
+            origin_c: Third selection, for origin = intersection (three planes).
+
+        Returns:
+            the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+        Command: ``setup.wcs.align``
+        """
+        params = {"id": id, "orientation": orientation, "orientation_z": orientation_z, "orientation_x": orientation_x, "orientation_y": orientation_y, "orientation_z_vector": orientation_z_vector, "orientation_x_vector": orientation_x_vector, "flip_z": flip_z, "flip_x": flip_x, "flip_y": flip_y, "origin": origin, "origin_box": origin_box, "origin_point": origin_point, "origin_geometry": origin_geometry, "origin_a": origin_a, "origin_b": origin_b, "origin_c": origin_c}
+        return self.execute("setup.wcs.align", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_offset(self, *, delta: Sequence[float], id: Optional[str] = None, frame: Optional[Literal["wcs", "world"]] = None) -> Any:
+        """Move the WCS origin by a distance.
+
+        Args:
+            id: WCS id, e.g. wcs.1 (default: the active WCS).
+            delta: Distance to move, in mm — [x, y, z] in mm.
+            frame: Axes `delta` is measured along: the WCS's own (default) or the world's — one of wcs, world.
+
+        Returns:
+            the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+        Command: ``setup.wcs.offset``
+        """
+        params = {"id": id, "delta": delta, "frame": frame}
+        return self.execute("setup.wcs.offset", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_rotate(self, *, axis: Literal["x", "y", "z"], degrees: float, id: Optional[str] = None) -> Any:
+        """Turn the WCS about one of its own axes.
+
+        Args:
+            id: WCS id, e.g. wcs.1 (default: the active WCS).
+            axis: The WCS axis to turn about — one of x, y, z.
+            degrees: Angle, counter-clockwise looking down the axis (-36000 to 36000).
+
+        Returns:
+            the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+        Command: ``setup.wcs.rotate``
+        """
+        params = {"id": id, "axis": axis, "degrees": degrees}
+        return self.execute("setup.wcs.rotate", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_rename(self, *, name: str, id: Optional[str] = None) -> Any:
+        """Give a WCS a new name.
+
+        Args:
+            id: WCS id, e.g. wcs.1 (default: the active WCS).
+            name: New name.
+
+        Returns:
+            the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+        Command: ``setup.wcs.rename``
+        """
+        params = {"id": id, "name": name}
+        return self.execute("setup.wcs.rename", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_activate(self, *, id: str) -> Any:
+        """Program toolpaths in this WCS.
+
+        Args:
+            id: WCS id, e.g. wcs.1.
+
+        Returns:
+            the WCS {id, name, active, origin, x_axis, y_axis, z_axis}
+
+        Command: ``setup.wcs.activate``
+        """
+        params = {"id": id}
+        return self.execute("setup.wcs.activate", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_remove(self, *, id: str) -> Any:
+        """Delete a work coordinate system.
+
+        Args:
+            id: WCS id, e.g. wcs.1.
+
+        Returns:
+            {"removed": id, "active_wcs": id or null}
+
+        Command: ``setup.wcs.remove``
+        """
+        params = {"id": id}
+        return self.execute("setup.wcs.remove", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_list(self) -> Any:
+        """The job's work coordinate systems.
+
+        Returns:
+            list of {id, name, active, origin, x_axis, y_axis, z_axis}
+
+        Command: ``setup.wcs.list``
+        """
+        return self.execute("setup.wcs.list")
+
+    def setup_wcs_get(self, *, id: Optional[str] = None) -> Any:
+        """One work coordinate system.
+
+        Args:
+            id: WCS id, e.g. wcs.1 (default: the active WCS).
+
+        Returns:
+            the WCS {id, name, active, origin, x_axis, y_axis, z_axis}, or null when there is none
+
+        Command: ``setup.wcs.get``
+        """
+        params = {"id": id}
+        return self.execute("setup.wcs.get", {k: v for k, v in params.items() if v is not None})
 
     def view_fit(self) -> Any:
         """Zoom to fit everything in the viewport.
@@ -572,66 +850,6 @@ class Commands:
         Command: ``job.save``
         """
         return self.execute("job.save")
-
-    def setup_wcs_create(self) -> Any:
-        """Define the work coordinate system (Phase 3).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``setup.wcs.create``
-        """
-        return self.execute("setup.wcs.create")
-
-    def setup_wcs_top_center(self) -> Any:
-        """Put the WCS origin at the stock top centre (Phase 3).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``setup.wcs.top_center``
-        """
-        return self.execute("setup.wcs.top_center")
-
-    def setup_wcs_bottom_corner(self) -> Any:
-        """Put the WCS origin at a stock bottom corner (Phase 3).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``setup.wcs.bottom_corner``
-        """
-        return self.execute("setup.wcs.bottom_corner")
-
-    def setup_wcs_align(self) -> Any:
-        """Rotate the WCS to a face or edge (Phase 3).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``setup.wcs.align``
-        """
-        return self.execute("setup.wcs.align")
-
-    def setup_wcs_offset(self) -> Any:
-        """Translate the WCS by a distance (Phase 3).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``setup.wcs.offset``
-        """
-        return self.execute("setup.wcs.offset")
 
     def setup_stock_box(self) -> Any:
         """Rectangular block stock (Phase 5).

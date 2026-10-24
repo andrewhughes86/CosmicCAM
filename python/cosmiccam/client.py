@@ -114,6 +114,10 @@ class CosmicCAM(Commands):
         The window must be visible."""
         return self.request("ui.screenshot", {"path": str(Path(path).resolve())})
 
+    def click(self, x: float, y: float) -> Any:
+        """Clicks the left mouse button at window point (x, y), as a user would."""
+        return self.request("ui.click", {"x": x, "y": y})
+
     def start(self, command: str) -> Any:
         """Starts a command's interactive tool, as a toolbar click would."""
         return self.request("ui.start", {"command": command})

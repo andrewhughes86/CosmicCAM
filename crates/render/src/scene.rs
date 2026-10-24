@@ -134,7 +134,8 @@ impl SceneGeometry {
             Vec3::new(a.cos(), a.sin(), 0.0)
         };
         for i in 0..segments {
-            let (d0, d1) = (ring(i), ring(i + 1));
+            // The last segment closes on the first exactly, so the seam welds.
+            let (d0, d1) = (ring(i), ring((i + 1) % segments));
             let (b0, b1) = (base + d0 * radius, base + d1 * radius);
             let (t0, t1) = (top + d0 * radius, top + d1 * radius);
             // Smooth side normals.
@@ -232,15 +233,74 @@ pub fn grid(around: &Aabb, palette: &ScenePalette) -> SceneGeometry {
 /// The WCS orientation triad drawn in the scene at `origin`.
 pub fn wcs_triad(origin: Vec3, size: f32, palette: &ScenePalette) -> SceneGeometry {
     let mut g = SceneGeometry::default();
-    let size = if size.is_finite() { size.clamp(5.0, 500.0) } else { 20.0 };
-    let r = size * 0.025;
-    g.push_arrow(origin, Vec3::X, size, r, palette.axis_x);
-    g.push_arrow(origin, Vec3::Y, size, r, palette.axis_y);
-    g.push_arrow(origin, Vec3::Z, size, r, palette.axis_z);
+    g.push_triad(origin, [Vec3::X, Vec3::Y, Vec3::Z], size, palette, TriadStyle::Full);
     g
 }
 
-/// Placeholder workpiece shown until model import lands (Phase 2), with optional outline
+/// How prominently a coordinate-system triad is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TriadStyle {
+    /// The active WCS, or the world origin while no WCS exists.
+    Full,
+    /// An inactive WCS: greyed and thinner.
+    Dim,
+    /// The world (model) origin once a WCS exists: shorter, thin and mostly grey, there
+    /// for reference without competing with the WCS.
+    Faint,
+}
+
+impl TriadStyle {
+    /// Share of the axis colour kept; the rest is grey.
+    pub fn colour_share(self) -> f32 {
+        match self {
+            Self::Full => 1.0,
+            Self::Dim => 0.45,
+            Self::Faint => 0.25,
+        }
+    }
+
+    fn radius_ratio(self) -> f32 {
+        match self {
+            Self::Full => 0.025,
+            Self::Dim => 0.016,
+            Self::Faint => 0.011,
+        }
+    }
+
+    fn length_ratio(self) -> f32 {
+        if self == Self::Faint { 0.7 } else { 1.0 }
+    }
+}
+
+/// Length of a triad's arrows for a requested `size`.
+pub fn triad_length(size: f32, style: TriadStyle) -> f32 {
+    let size = if size.is_finite() { size.clamp(5.0, 500.0) } else { 20.0 };
+    size * style.length_ratio()
+}
+
+impl SceneGeometry {
+    /// An XYZ triad of arrows along `axes` at `origin`, drawn in `style`.
+    pub fn push_triad(&mut self, origin: Vec3, axes: [Vec3; 3], size: f32, palette: &ScenePalette, style: TriadStyle) {
+        let length = triad_length(size, style);
+        let r = length / style.length_ratio() * style.radius_ratio();
+        let grey = palette.part_edge;
+        let k = style.colour_share();
+        let shade = |c: Rgba| -> Rgba { std::array::from_fn(|i| c[i] * k + grey[i] * (1.0 - k)) };
+        for (axis, color) in axes.into_iter().zip([palette.axis_x, palette.axis_y, palette.axis_z]) {
+            self.push_arrow(origin, axis, length, r, shade(color));
+        }
+    }
+}
+
+/// Bounds of the placeholder part itself, without its stock.
+pub const SAMPLE_PART_BOUNDS: Aabb = Aabb { min: Vec3::new(-50.0, -30.0, 0.0), max: Vec3::new(50.0, 30.0, 42.0) };
+
+/// The sample part's stock: its bounds plus 3 mm on the sides and top.
+pub fn sample_stock_box() -> Aabb {
+    Aabb::new(SAMPLE_PART_BOUNDS.min - Vec3::new(3.0, 3.0, 0.0), SAMPLE_PART_BOUNDS.max + Vec3::new(3.0, 3.0, 3.0))
+}
+
+/// Placeholder workpiece for trying the app without a model, with optional outline
 /// edges and stock box. The bounds always include the stock.
 pub fn sample_part(palette: &ScenePalette, edges: bool, stock: bool) -> SceneGeometry {
     let mut g = SceneGeometry::default();
@@ -318,6 +378,32 @@ mod tests {
             assert!(Vec3::from(tri[0].normal).dot(centroid - Vec3::splat(0.25)) > 0.0);
         }
         Ok(())
+    }
+
+    #[test]
+    fn faint_triads_are_shorter_and_greyer() {
+        let mut p = palette();
+        p.axis_x = [1.0, 0.0, 0.0, 1.0];
+        p.part_edge = [0.5, 0.5, 0.5, 1.0];
+        let reach = |style| {
+            let mut g = SceneGeometry::default();
+            g.push_triad(Vec3::ZERO, [Vec3::X, Vec3::Y, Vec3::Z], 40.0, &p, style);
+            let x_max = g.triangles.iter().map(|v| v.pos[0]).fold(0.0, f32::max);
+            let red = g.triangles.iter().map(|v| v.color[0] - v.color[1]).fold(0.0, f32::max);
+            (x_max, red)
+        };
+        let (full_len, full_red) = reach(TriadStyle::Full);
+        let (faint_len, faint_red) = reach(TriadStyle::Faint);
+        assert!((full_len - triad_length(40.0, TriadStyle::Full)).abs() < 1e-3);
+        assert!(faint_len < full_len * 0.8 && faint_red < full_red * 0.5, "{faint_len} {faint_red}");
+    }
+
+    #[test]
+    fn sample_part_bounds_constant_matches_the_part() {
+        let g = sample_part(&palette(), false, false);
+        let b = Aabb::from_points(g.triangles.iter().map(|v| Vec3::from(v.pos)));
+        assert!((b.min - SAMPLE_PART_BOUNDS.min).abs().max_element() < 1e-3, "{b:?}");
+        assert!((b.max - SAMPLE_PART_BOUNDS.max).abs().max_element() < 1e-3, "{b:?}");
     }
 
     #[test]

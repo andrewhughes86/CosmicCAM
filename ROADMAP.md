@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | 1 | Desktop UI & theme engine | **Done** (2026-10-24) |
 | 2 | Model import & geometry ingestion | **In progress** (STL/OBJ landed 2026-10-24) |
-| 3 | Work coordinate system (WCS) creation | Planned |
+| 3 | Work coordinate system (WCS) creation | **In progress** (WCS commands landed 2026-10-24) |
 | 4 | Tool library & management | Planned |
 | 5 | Stock setup & material definition | Planned |
 | 6 | Toolpath creation engine | Planned |
@@ -57,7 +57,34 @@
   boundaries); large meshes are split across GPU buffers.
 - The Import model button and Ctrl+I open a native file dialog (`rfd`); `ui.start` does the same
   over the control channel. Files dropped on the window are imported.
-- Still to do in Phase 2: the STEP/IGES B-Rep bridge, topology mapping, viewport picking.
+- Still to do in Phase 2: the STEP/IGES B-Rep bridge and topology mapping (face and edge
+  recognition and viewport picking landed with Phase 3's WCS work).
+
+## Phase 3 — work coordinate systems (2026-10-24)
+
+- A job holds up to 64 WCS (origin plus orthonormal X/Z axes, right-handed), one of them active.
+- Commands: `setup.wcs.create`, `align` (see the two groups below), `top_center`,
+  `bottom_corner`, `offset` (WCS or world axes), `rotate`, `rename`, `activate`, `remove`,
+  `list`, `get`.
+- Viewport draws a triad per WCS (active in full colour, others dimmed) with its name; WCS are
+  listed under Setups in the outline and inspector.
+- Ribbon Offset, Rotate and Rename open a dialog generated from the command's parameters.
+- UI: Home now holds Import model and the WCS buttons; the view buttons moved off the ribbon to a
+  floating column under the view cube (right-click Iso for every standard view).
+- WCS definition in two groups, shared by `setup.wcs.create` and `setup.wcs.align`:
+  **orientation** (`model`, `z_x`, `z_y`, `x_y` or `vectors`; a plane, cylinder or edge
+  selected per axis; `flip_z` / `flip_x` / `flip_y`) and **origin** (`model`, `box` with 27
+  box points, `point` from coordinates or a selection, `intersection` of three planes, a line
+  and a plane, or two lines). Unused parameters are refused. The Create WCS and Align buttons
+  open one panel with both groups, viewport selection and a live preview. Meshes carry
+  recognised planes, cylinders and freeform patches, and straight and circular edges
+  (`model.faces.list`, `model.edges.list`, `model.pick`, `model.edge.pick`).
+- Every triad in the viewport labels its X, Y and Z arrows. The world (model) origin triad turns
+  faint (short, thin, mostly grey) once a WCS exists, and stays there for reference.
+- The viewport's view buttons are larger and sit against the right edge.
+- `ui.click {x, y}` control method (and `cc.click`) for driving the UI in tests.
+- Still to do in Phase 3: stock bounding box (`setup.stock.fit`), dragging the triad in the
+  viewport, saving WCS in a job file (no job file format yet).
 
 ## Not started yet (from AGENTS.md)
 
