@@ -8,7 +8,7 @@
 | 4 | Tool library & management | **In progress** (flat end mills, machine libraries 2026-10-24) |
 | 5 | Stock setup & material definition | **In progress** (setups, box stock options 2026-10-25) |
 | 6 | Toolpath creation engine | **In progress** (contour, face, pocket, drill, 3D rough, waterline, raster 2026-10-25) |
-| 7 | Material removal simulation & verification | Planned |
+| 7 | Material removal simulation & verification | **In progress** (3-axis stock simulation, gouges, collisions 2026-10-25) |
 | 8 | Post-processor & G-code export | **Started** (generic G-code 2026-10-24) |
 | 9 | MCP agent integration | Planned |
 | 10 | Scripting & add-ons (scripts panel, add-on packages, isolation) | Planned |
@@ -32,6 +32,21 @@
 - Engine: `Session::execute` runs commands under `catch_unwind` and restores state on a panic;
   `hostile_params_never_panic` covers every command.
 - `cargo xtask ci`: fmt, clippy `-D warnings`, tests, assets, layers, ui-containers, wasm.
+
+## Simulation (2026-10-25)
+
+- Stock simulation on a height grid ("Z-map", `geom::zmap`) in the toolpaths' WCS: each move
+  sweeps the flat end mill's bottom through the grid. Playback in machine time (programmed feeds,
+  rapids at the machine's rapid rate) with speed, scrubbing and stepping; going back replays.
+- `sim.start`, `sim.play`, `sim.pause`, `sim.step`, `sim.seek`, `sim.speed`, `sim.stop`, `sim.get`;
+  the Simulation tab and a playback bar over the viewport. The cut stock is drawn shaded (cut
+  areas, uncut stock and gouges in their own colours) with the tool; the part, stock box and
+  toolpaths are hidden while it runs.
+- `sim.gouge.check`: cells cut below the part's surface (measured against the lowest surface
+  around each cell, so cuts beside walls are not flagged); `sim.collision.check`: rapids that
+  remove material and cuts deeper than the flutes (cells wholly under the cutter only).
+- Still to come: ball and bull-nose tools, holder geometry, fixtures, multi-axis, comparing the
+  cut stock with the part (rest material), background computation for long programs.
 
 ## Demo project (2026-10-25)
 

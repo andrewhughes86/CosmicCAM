@@ -62,6 +62,7 @@ dependencies = [
  "egui-wgpu",
  "egui_dock",
  "getrandom 0.4.3",
+ "glam",
  "js-sys",
  "log",
  "png",

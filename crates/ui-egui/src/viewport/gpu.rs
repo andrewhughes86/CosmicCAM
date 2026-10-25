@@ -92,6 +92,9 @@ pub struct ViewportGpu {
     scene: Mesh,
     highlighted: Mesh,
     overlay: Mesh,
+    /// The simulated stock and the tool, depth-tested with the scene.
+    sim_stock: Mesh,
+    sim_tool: Mesh,
     targets: Option<Targets>,
     texture_id: Option<egui::TextureId>,
 }
@@ -240,6 +243,8 @@ impl ViewportGpu {
             scene: Mesh::EMPTY,
             highlighted: Mesh::EMPTY,
             overlay: Mesh::EMPTY,
+            sim_stock: Mesh::EMPTY,
+            sim_tool: Mesh::EMPTY,
             targets: None,
             texture_id: None,
         }
@@ -258,6 +263,16 @@ impl ViewportGpu {
     /// Replaces the depth-tested scene geometry.
     pub fn set_scene(&mut self, g: &SceneGeometry) {
         self.scene = Mesh::upload(&self.render_state.device, "scene", g);
+    }
+
+    /// Replaces the simulated stock.
+    pub fn set_sim_stock(&mut self, g: &SceneGeometry) {
+        self.sim_stock = Mesh::upload(&self.render_state.device, "sim stock", g);
+    }
+
+    /// Replaces the simulated tool.
+    pub fn set_sim_tool(&mut self, g: &SceneGeometry) {
+        self.sim_tool = Mesh::upload(&self.render_state.device, "sim tool", g);
     }
 
     /// Replaces the geometry drawn on top of the scene (the WCS triad).
@@ -341,7 +356,7 @@ impl ViewportGpu {
             .render_state
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("viewport") });
-        let pass = |encoder: &mut wgpu::CommandEncoder, first: bool, mesh: &Mesh, highlight: Option<&Mesh>| {
+        let pass = |encoder: &mut wgpu::CommandEncoder, first: bool, meshes: &[&Mesh], highlight: Option<&Mesh>| {
             let background = highlight.is_some();
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("viewport pass"),
@@ -370,9 +385,7 @@ impl ViewportGpu {
             }
             let none = Vec::new();
             let lit = highlight.map_or(&none, |h| &h.triangles);
-            for (pipeline, chunks) in
-                [(&self.triangles, &mesh.triangles), (&self.highlight, lit), (&self.lines, &mesh.lines)]
-            {
+            let mut draw = |pipeline: &wgpu::RenderPipeline, chunks: &Vec<(wgpu::Buffer, u32)>| {
                 if !chunks.is_empty() {
                     rp.set_pipeline(pipeline);
                 }
@@ -380,11 +393,18 @@ impl ViewportGpu {
                     rp.set_vertex_buffer(0, buf.slice(..));
                     rp.draw(0..*n, 0..1);
                 }
+            };
+            for mesh in meshes {
+                draw(&self.triangles, &mesh.triangles);
+            }
+            draw(&self.highlight, lit);
+            for mesh in meshes {
+                draw(&self.lines, &mesh.lines);
             }
         };
-        pass(&mut encoder, true, &self.scene, Some(&self.highlighted));
+        pass(&mut encoder, true, &[&self.scene, &self.sim_stock, &self.sim_tool], Some(&self.highlighted));
         // Second pass with a fresh depth buffer so the WCS triad is never hidden by the part.
-        pass(&mut encoder, false, &self.overlay, None);
+        pass(&mut encoder, false, &[&self.overlay], None);
         queue.submit([encoder.finish()]);
         Some(id)
     }

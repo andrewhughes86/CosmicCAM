@@ -243,6 +243,11 @@ impl CosmicApp {
             self.settings_open = true;
             return;
         }
+        // Space (or Play) while the simulation runs pauses it.
+        if id == "sim.play" && params.is_null() && self.session.sim.as_ref().is_some_and(|s| s.playing) {
+            self.run("sim.pause", &Value::Null);
+            return;
+        }
         // The explorer's Rename… and Delete open a small dialog first.
         if id == "ui.rename" || id == "ui.delete" {
             let field = |k: &str| params.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
@@ -569,6 +574,13 @@ impl eframe::App for CosmicApp {
             self.layout_generation = self.session.view.layout_generation;
         }
 
+        // The simulation's clock runs with the frames while it plays.
+        if let Some(sim) = self.session.sim.as_deref_mut()
+            && sim.playing
+        {
+            sim.tick(f64::from(ctx.input(|i| i.stable_dt)));
+            ctx.request_repaint();
+        }
         let mut requests = self.handle_shortcuts(&ctx);
         requests.extend(self.tools.poll(&mut self.session));
         if self.tools.is_busy() {

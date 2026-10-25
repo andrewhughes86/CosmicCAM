@@ -12,6 +12,7 @@ mod planned;
 mod post;
 mod settings;
 mod setup;
+mod sim;
 mod stock;
 mod strategies;
 mod tool;
@@ -366,6 +367,7 @@ pub fn all() -> impl Iterator<Item = &'static CommandSpec> {
         .chain(tool::COMMANDS.iter())
         .chain(machine::COMMANDS.iter())
         .chain(settings::COMMANDS.iter())
+        .chain(sim::COMMANDS.iter())
         .chain(post::COMMANDS.iter());
     #[cfg(test)]
     let registered = registered.chain(test_only::COMMANDS.iter());

@@ -1724,3 +1724,98 @@ fn copy_and_paste_within_and_between_jobs() {
     assert_eq!(s.job.models.len(), 1);
     assert!(s.job.is_modified());
 }
+
+#[test]
+fn simulation_plays_seeks_and_removes_material() {
+    let mut s = sample_with_tool();
+    assert!(s.execute("sim.play", &Value::Null).is_err(), "nothing to simulate yet");
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("toolpath.face", &json!({"stepover": 4})).is_ok());
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom]})).is_ok());
+    let st = s.execute("sim.start", &json!({})).unwrap_or_default();
+    assert_eq!(st["toolpaths"].as_array().map(Vec::len), Some(2));
+    let duration = st["duration"].as_f64().unwrap_or(0.0);
+    assert!(duration > 10.0);
+    let full = st["remaining_volume"].as_f64().unwrap_or(0.0);
+    // The sample's stock: 106 × 66 × 45 mm.
+    assert!((full - 106.0 * 66.0 * 45.0).abs() / full < 0.02, "{full}");
+
+    let half = s.execute("sim.seek", &json!({"fraction": 0.5})).unwrap_or_default();
+    let removed_half = half["removed_volume"].as_f64().unwrap_or(0.0);
+    assert!(removed_half > 0.0);
+    let end = s.execute("sim.seek", &json!({"fraction": 1.0})).unwrap_or_default();
+    let removed = end["removed_volume"].as_f64().unwrap_or(0.0);
+    assert!(removed > removed_half);
+    // Facing takes the 3 mm above the model top off the whole stock.
+    assert!(removed > 106.0 * 66.0 * 3.0 * 0.95, "{removed}");
+    assert!((full - removed - end["remaining_volume"].as_f64().unwrap_or(0.0)).abs() < full * 1e-6);
+    // Going back replays from the start and gives the same answer.
+    let back = s.execute("sim.seek", &json!({"fraction": 0.5})).unwrap_or_default();
+    assert!((back["removed_volume"].as_f64().unwrap_or(0.0) - removed_half).abs() < 1e-6);
+
+    // Steps, speed and play.
+    let before = back["move"].as_u64().unwrap_or(0);
+    let stepped = s.execute("sim.step", &json!({"moves": 3})).unwrap_or_default();
+    assert_eq!(stepped["move"].as_u64().unwrap_or(0), before + 3);
+    assert_eq!(s.execute("sim.speed", &json!({"speed": 50})).unwrap_or_default()["speed"], 50.0);
+    assert_eq!(s.execute("sim.speed", &Value::Null).unwrap_or_default()["speed"], 100.0, "the button steps up");
+    assert_eq!(s.execute("sim.play", &Value::Null).unwrap_or_default()["playing"], true);
+    if let Some(sim) = s.sim.as_deref_mut() {
+        let t = sim.time;
+        sim.tick(0.1);
+        assert!((sim.time - (t + 10.0)).abs() < 1e-6, "0.1 s at 100× is 10 s of machine time");
+    }
+    assert_eq!(s.execute("sim.pause", &Value::Null).unwrap_or_default()["playing"], false);
+    // Changing the job ends the simulation.
+    assert!(s.execute("toolpath.rename", &json!({"id": "toolpath.1", "name": "Facing"})).is_ok());
+    assert!(s.sim.is_none());
+}
+
+#[test]
+fn simulation_finds_gouges_and_rapids_through_material() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    // A clean profile round the base: no gouges, no collisions.
+    assert!(
+        s.execute("toolpath.contour", &json!({"geometry": [bottom], "multiple_depths": true, "max_stepdown": 10}))
+            .is_ok()
+    );
+    let g = s.execute("sim.gouge.check", &json!({})).unwrap_or_default();
+    assert_eq!(g["gouges"], 0, "{g}");
+    assert_eq!(s.execute("sim.collision.check", &Value::Null).unwrap_or_default()["collisions"], 0);
+    // The same profile cut 2 mm too far inside the outline gouges the base's walls.
+    assert!(
+        s.execute("toolpath.contour", &json!({"id": "toolpath.1", "geometry": [bottom], "stock_radial": -2.0})).is_ok()
+    );
+    let g = s.execute("sim.gouge.check", &json!({})).unwrap_or_default();
+    assert!(g["gouges"].as_u64().unwrap_or(0) > 0, "{g}");
+    // Clearance below the stock top: the rapids run through the material.
+    assert!(
+        s.execute(
+            "toolpath.contour",
+            &json!({"id": "toolpath.1", "geometry": [bottom], "multiple_depths": true, "max_stepdown": 10,
+                    "clearance_from": "model_top", "clearance_offset": 0.6,
+                    "retract_from": "model_top", "retract_offset": 0.5, "feed_height_from": "model_top", "feed_height_offset": 0.4})
+        )
+        .is_ok()
+    );
+    // A second toolpath over the block, with the same low clearance: the move between the two
+    // crosses the stock below its top.
+    let block_top = one_face(&mut s, "plane", plane_at([0.0, 0.0, 1.0], 2, 35.0));
+    assert!(
+        s.execute(
+            "toolpath.contour",
+            &json!({"geometry": [block_top], "clearance_from": "model_top", "clearance_offset": 0.6,
+                    "retract_from": "model_top", "retract_offset": 0.5, "feed_height_from": "model_top", "feed_height_offset": 0.4})
+        )
+        .is_ok()
+    );
+    let c = s.execute("sim.collision.check", &Value::Null).unwrap_or_default();
+    let kinds: Vec<&str> = c["events"].as_array().into_iter().flatten().filter_map(|e| e["kind"].as_str()).collect();
+    assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == "rapid_in_material"), "{c}");
+    // One deep pass with an 18 mm flute: the shank rubs.
+    assert!(s.execute("toolpath.remove", &json!({"id": "toolpath.2"})).is_ok());
+    assert!(s.execute("toolpath.contour", &json!({"id": "toolpath.1", "geometry": [bottom]})).is_ok());
+    let c = s.execute("sim.collision.check", &Value::Null).unwrap_or_default();
+    assert!(c["events"].as_array().into_iter().flatten().any(|e| e["kind"] == "shank_contact"), "{c}");
+}

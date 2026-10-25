@@ -777,6 +777,8 @@ pub struct Session {
     pub ui: UiState,
     /// What Copy put aside, for Paste into this or another open job.
     pub clipboard: Option<Clip>,
+    /// The material removal simulation of the active job, while one is open.
+    pub sim: Option<Box<crate::sim::Sim>>,
     /// Open documents (tabs). The active one lives in `job` and `view`; its slot is `None`.
     tabs: Vec<Option<ParkedDoc>>,
     active_tab: usize,
@@ -901,6 +903,8 @@ impl Session {
             Ok(result) => {
                 if result.is_ok() && changes_job(spec.id) {
                     self.job.edits = self.job.edits.wrapping_add(1);
+                    // The simulation ran the job as it was; it starts again from the changed one.
+                    self.sim = None;
                 }
                 if result.is_err() {
                     // Commands validate before they change anything, but never leave half an edit.
@@ -1012,6 +1016,7 @@ impl Session {
     /// Shows `doc`, giving it revisions past `drawn` (the revisions of the document shown
     /// until now) so the viewport rebuilds its scene.
     fn show_doc(&mut self, doc: ParkedDoc, drawn: (u64, u64)) {
+        self.sim = None;
         let mut job = doc.job;
         job.revision = job.revision.max(drawn.0).wrapping_add(1);
         job.setup_revision = job.setup_revision.max(drawn.1).wrapping_add(1);

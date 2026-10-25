@@ -2,6 +2,7 @@
 
 mod gpu;
 mod overlay;
+mod sim;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -133,6 +134,12 @@ pub struct Viewport {
     cube_hover: Option<overlay::CubeHover>,
     /// Stock being defined, drawn as a see-through box over the scene.
     pub stock_preview: Option<CosmicCAM_geom::Aabb>,
+    /// What the simulated stock was last drawn from: (cut revision, marks revision, theme).
+    sim_stock_key: Option<(u64, u64, Theme)>,
+    /// When the simulated stock was last rebuilt, seconds of app time.
+    sim_stock_built: f64,
+    /// Where the simulated tool was last drawn.
+    sim_tool_key: Option<[i64; 3]>,
     /// Scene built before the GPU existed, uploaded once it does.
     pending_upload: Option<(SceneGeometry, SceneGeometry)>,
     animating: bool,
@@ -172,6 +179,9 @@ impl Viewport {
             fps: 0.0,
             cube_hover: None,
             stock_preview: None,
+            sim_stock_key: None,
+            sim_stock_built: f64::NEG_INFINITY,
+            sim_tool_key: None,
             pending_upload: None,
             animating: false,
         }
@@ -218,6 +228,7 @@ impl Viewport {
         self.mode = Some(self.pick_mode.clone().unwrap_or_else(|| select_mode(session)));
         self.handle_picking(ui, &response, rect, session, requests);
         self.update_highlight(session, tokens);
+        self.update_sim(ui, session, tokens);
 
         let painter = ui.painter_at(rect);
         match self.render(ui, rect, tokens, render_state) {
@@ -263,6 +274,9 @@ impl Viewport {
             self.paint_wcs_labels(&painter, rect, session, tokens);
         }
         view_tools(ui, rect, session, tokens, requests);
+        if let Some(sim) = session.sim.as_deref() {
+            playback_bar(ui, rect, sim, session, tokens, requests);
+        }
         if display.orientation_triad {
             overlay::paint_triad(&painter, overlay::triad_anchor(rect), &self.shown, tokens);
         }
@@ -476,6 +490,50 @@ impl Viewport {
                 rect.left() + (ndc.x + 1.0) * 0.5 * rect.width(),
                 rect.top() + (1.0 - ndc.y) * 0.5 * rect.height(),
             ))
+        }
+    }
+
+    /// Uploads the simulated stock when the cut has changed (at most ~12 times a second while
+    /// it plays) and the tool when it has moved; clears both when there is no simulation.
+    fn update_sim(&mut self, ui: &Ui, session: &Session, tokens: &Tokens) {
+        let Some(gpu) = &mut self.gpu else { return };
+        let Some(sim) = session.sim.as_deref() else {
+            if self.sim_stock_key.take().is_some() || self.sim_tool_key.take().is_some() {
+                let empty = SceneGeometry::default();
+                let _ = catch_unwind(AssertUnwindSafe(|| {
+                    gpu.set_sim_stock(&empty);
+                    gpu.set_sim_tool(&empty);
+                }));
+            }
+            return;
+        };
+        let palette = tokens.scene_palette();
+        let colours = sim::SimColours {
+            stock: theme::linear(mix(tokens.part, tokens.warning, 0.35)),
+            cut: palette.part,
+            gouge: theme::linear(tokens.error),
+            flutes: theme::linear(tokens.accent),
+            shank: theme::linear(tokens.text_muted),
+        };
+        let now = ui.input(|i| i.time);
+        let key = (sim.zmap.revision, sim.marks_revision, session.prefs.theme);
+        let due = !sim.playing || now - self.sim_stock_built > 0.08;
+        if self.sim_stock_key != Some(key) && due {
+            let g = sim::stock(sim, &colours);
+            let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_stock(&g)));
+            self.sim_stock_key = Some(key);
+            self.sim_stock_built = now;
+        }
+        if let Some((tip, tool)) = sim.tool_at(sim.time) {
+            let tool_key = (tip * 1000.0).as_i64vec3().to_array();
+            if self.sim_tool_key != Some(tool_key) {
+                let g = sim::tool(&sim.frame, tip, tool, &colours);
+                let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_tool(&g)));
+                self.sim_tool_key = Some(tool_key);
+            }
+        }
+        if sim.playing {
+            ui.ctx().request_repaint();
         }
     }
 
@@ -721,6 +779,9 @@ impl Viewport {
             }
             h.finish()
         };
+        // While simulating, the cut stock stands in for the part, its box and the toolpaths.
+        let simulating = session.sim.is_some();
+        let shown_key = shown_key ^ u64::from(simulating);
         let key =
             (session.prefs.theme, session.job.revision, session.job.setup_revision ^ (units << 63), display, shown_key);
         if self.scene_key == Some(key) {
@@ -728,18 +789,18 @@ impl Viewport {
         }
         let palette = tokens.scene_palette();
         let mut content = SceneGeometry::default();
-        for tp in shown {
+        for tp in shown.into_iter().filter(|_| !simulating) {
             content.push_path(tp.start, tp.moves.iter().map(|m| (path_kind(m.kind), m.to)), &palette);
         }
         if let Some(stock) = session.job.stock {
-            if display.stock {
+            if display.stock && !simulating {
                 content.push_box_edges(&stock, palette.stock_edge);
             }
             content.bounds.include(stock.min);
             content.bounds.include(stock.max);
         }
         let edge = display.edges.then_some(palette.part_edge);
-        for model in session.job.models.iter().filter(|m| m.visible) {
+        for model in session.job.models.iter().filter(|m| m.visible && !simulating) {
             content.push_mesh(&model.mesh, palette.part, edge);
         }
         let mut world =
@@ -963,6 +1024,96 @@ fn view_tools(ui: &Ui, viewport: Rect, session: &Session, tokens: &Tokens, reque
             });
         }
     }
+}
+
+/// Minutes and seconds.
+fn clock(seconds: f64) -> String {
+    let s = seconds.max(0.0).round() as u64;
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
+}
+
+/// The simulation's controls, floating above the view tools: play or pause, step, a scrubber,
+/// the speed, where it is and what it has found, and close.
+fn playback_bar(
+    ui: &mut Ui,
+    viewport: Rect,
+    sim: &CosmicCAM_engine::sim::Sim,
+    session: &Session,
+    tokens: &Tokens,
+    requests: &mut Vec<Request>,
+) {
+    let size = egui::vec2(640.0_f32.min(viewport.width() - 16.0), 44.0);
+    let at = pos2(viewport.center().x - size.x / 2.0, viewport.bottom() - TOOL_MARGIN - TOOL_BUTTON - 10.0 - size.y);
+    let bar = Rect::from_min_size(at, size);
+    let mut child =
+        ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    crate::ui_kit::Container::new(crate::ui_kit::Surface::Overlay).frame(tokens).show(&mut child, |ui| {
+        ui.set_min_width(size.x - 16.0);
+        ui.spacing_mut().item_spacing.x = 8.0;
+        let icon_button = |ui: &mut Ui, icon: &str, tip: &str| -> bool {
+            let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), Sense::click());
+            if response.hovered() {
+                ui.painter().rect_filled(rect, 4.0, tokens.hover_bg);
+            }
+            crate::ribbon::paint_named_icon(ui, rect.shrink(3.0), icon, tokens, true);
+            response.on_hover_text(tip).clicked()
+        };
+        let (icon, tip, command) = if sim.playing {
+            ("sim_pause", "Pause (Space)", "sim.pause")
+        } else {
+            ("sim_play", "Play (Space)", "sim.play")
+        };
+        if icon_button(ui, icon, tip) {
+            requests.push((command.into(), Value::Null));
+        }
+        if icon_button(ui, "sim_step", "Next move") {
+            requests.push(("sim.step".into(), Value::Null));
+        }
+        let mut time = sim.time;
+        let slider = egui::Slider::new(&mut time, 0.0..=sim.duration.max(1.0e-6)).show_value(false);
+        if ui.add_sized(egui::vec2(220.0, 20.0), slider).changed() {
+            requests.push(("sim.seek".into(), serde_json::json!({ "time": time })));
+        }
+        ui.label(mono(format!("{} / {}", clock(sim.time), clock(sim.duration)), tokens));
+        if ui.button(format!("{}×", trim_speed(sim.speed))).on_hover_text("Playback speed: click for faster").clicked()
+        {
+            requests.push(("sim.speed".into(), Value::Null));
+        }
+        let current = sim.current_toolpath().map_or(String::new(), |(_, name)| name.clone());
+        ui.label(egui::RichText::new(current).color(tokens.text_muted));
+        if !sim.events.is_empty() {
+            let n = sim.events.len();
+            ui.label(
+                egui::RichText::new(format!("{n} collision{}", if n == 1 { "" } else { "s" })).color(tokens.warning),
+            )
+            .on_hover_text("Rapids through material or cuts deeper than the flutes; run Collisions for the list");
+        }
+        if let Some(g) = &sim.gouges {
+            let colour = if g.is_empty() { tokens.success } else { tokens.error };
+            let text = if g.is_empty() { "No gouges".to_owned() } else { format!("{} gouged cells", g.len()) };
+            ui.label(egui::RichText::new(text).color(colour));
+        }
+        let _ = session;
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("×").on_hover_text("Close the simulation").clicked() {
+                requests.push(("sim.stop".into(), Value::Null));
+            }
+        });
+    });
+}
+
+/// A speed without needless decimals: 0.5, 2, 25.
+fn trim_speed(v: f64) -> String {
+    if (v - v.round()).abs() < 1.0e-9 { format!("{v:.0}") } else { format!("{v:.1}") }
+}
+
+/// Monospaced text, for clocks that should not jitter as digits change.
+fn mono(text: String, tokens: &Tokens) -> egui::RichText {
+    egui::RichText::new(text).monospace().color(tokens.text)
 }
 
 #[cfg(test)]

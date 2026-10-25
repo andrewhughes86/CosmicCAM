@@ -293,6 +293,25 @@ cc.job_tab_activate(index=1)
 cc.job_clipboard_paste()
 ```
 
+## Simulation
+
+The simulation runs the toolpaths against the stock in machine time (feeds as programmed, rapids
+at the machine's rapid rate) and shows the stock as it is cut. It models 3-axis cutting with flat
+end mills on a height grid of the stock.
+
+```python
+cc.sim_start(cell=0.25)                 # all toolpaths; or toolpaths=["toolpath.2", ...]
+cc.sim_seek(fraction=0.5)               # or time=seconds
+state = cc.sim_get()                    # time, duration, move, toolpath, removed_volume, events
+cc.sim_speed(speed=50); cc.sim_play()   # plays in the app; sim_pause() stops
+cc.sim_step(moves=10)
+print(cc.sim_collision_check())         # rapids through material, cuts deeper than the flutes
+print(cc.sim_gouge_check(tolerance=0.05))  # cells cut below the part, deepest first
+cc.sim_stop()
+```
+
+Any change to the job ends the simulation; start it again to run the changed program.
+
 ## G-code
 
 Until the Python post-processors of Phase 8 exist, CosmicCAM writes plain, generic G-code:
@@ -365,7 +384,7 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-139 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+143 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.demo.open`](#jobdemoopen), [`job.clipboard.copy`](#jobclipboardcopy), [`job.clipboard.paste`](#jobclipboardpaste), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
@@ -378,11 +397,11 @@ with cosmiccam.launch(sample=True) as cc:
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
 - **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.visibility.set`](#toolpathvisibilityset), [`toolpath.rename`](#toolpathrename), [`toolpath.duplicate`](#toolpathduplicate), [`toolpath.remove`](#toolpathremove), [`toolpath.face`](#toolpathface), [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.rough`](#toolpathrough), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
-- **sim**: [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.speed`](#simspeed), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
 - **post**: [`post.processor.select`](#postprocessorselect), [`post.limits.check`](#postlimitscheck), [`post.gcode.export`](#postgcodeexport), [`post.gcode.get`](#postgcodeget)
 - **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.create.spot_drill`](#toolcreatespot_drill), [`tool.create.face_mill`](#toolcreateface_mill), [`tool.create.tap`](#toolcreatetap), [`tool.create.thread_mill`](#toolcreatethread_mill), [`tool.edit`](#tooledit), [`tool.feeds`](#toolfeeds), [`tool.duplicate`](#toolduplicate), [`tool.remove`](#toolremove), [`tool.list`](#toollist), [`tool.get`](#toolget), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
 - **machine**: [`machine.create`](#machinecreate), [`machine.edit`](#machineedit), [`machine.duplicate`](#machineduplicate), [`machine.remove`](#machineremove), [`machine.activate`](#machineactivate), [`machine.list`](#machinelist), [`machine.get`](#machineget), [`machine.library.open`](#machinelibraryopen)
 - **settings**: [`settings.open`](#settingsopen), [`settings.get`](#settingsget), [`settings.units.set`](#settingsunitsset)
+- **sim**: [`sim.start`](#simstart), [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.seek`](#simseek), [`sim.speed`](#simspeed), [`sim.stop`](#simstop), [`sim.get`](#simget), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
 
 ### job
 
@@ -2184,87 +2203,6 @@ Returns: not defined yet
 <sub>ribbon: Toolpaths › Output</sub>
 
 
-### sim
-
-#### `sim.play`
-
-```python
-cc.sim_play()
-```
-
-Run the material removal simulation (Phase 7).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Simulation › Playback</sub>
-
-#### `sim.pause`
-
-```python
-cc.sim_pause()
-```
-
-Pause the simulation (Phase 7).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Simulation › Playback</sub>
-
-#### `sim.step`
-
-```python
-cc.sim_step()
-```
-
-Advance one move (Phase 7).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Simulation › Playback</sub>
-
-#### `sim.speed`
-
-```python
-cc.sim_speed()
-```
-
-Playback speed (Phase 7).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Simulation › Playback</sub>
-
-#### `sim.collision.check`
-
-```python
-cc.sim_collision_check()
-```
-
-Check holder and shank against stock and fixtures (Phase 7).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Simulation › Verify</sub>
-
-#### `sim.gouge.check`
-
-```python
-cc.sim_gouge_check()
-```
-
-Check for overcut beyond tolerance (Phase 7).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Simulation › Verify</sub>
-
-
 ### post
 
 #### `post.processor.select`
@@ -2841,4 +2779,151 @@ Show lengths and feeds in millimetres or inches (commands always use millimetres
 | `units` | choice | yes | in or mm — one of in, mm |
 
 Returns: {units, theme, fps_limit}
+
+
+### sim
+
+#### `sim.start`
+
+```python
+cc.sim_start(toolpaths=None, cell=None)
+```
+
+Start the material removal simulation from the beginning.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `toolpaths` | list | no | Toolpaths to run, in order (default: all) |
+| `cell` | number | no | Stock grid spacing, mm (default: a quarter of the smallest tool radius) (0 to 100 mm) |
+
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+#### `sim.play`
+
+```python
+cc.sim_play()
+```
+
+Run the material removal simulation.
+
+
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+<sub>shortcut `Space` · ribbon: Simulation › Playback</sub>
+
+#### `sim.pause`
+
+```python
+cc.sim_pause()
+```
+
+Pause the simulation.
+
+
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+<sub>ribbon: Simulation › Playback</sub>
+
+#### `sim.step`
+
+```python
+cc.sim_step(moves=None)
+```
+
+Advance to the next move (or several).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `moves` | integer | no | How many moves to step; negative goes back (default 1) (-1000000 to 1000000) |
+
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+<sub>ribbon: Simulation › Playback</sub>
+
+#### `sim.seek`
+
+```python
+cc.sim_seek(time=None, fraction=None)
+```
+
+Jump to a time in the simulation.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `time` | number | no | Machine time, seconds (0 to 1e9) |
+| `fraction` | number | no | Share of the whole program, 0 to 1 (0 to 1) |
+
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+#### `sim.speed`
+
+```python
+cc.sim_speed(speed=None)
+```
+
+Playback speed: machine seconds per second (the button steps through 1× to 250×).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `speed` | number | no | Speed multiplier (0.1 to 10000) |
+
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+<sub>ribbon: Simulation › Playback</sub>
+
+#### `sim.stop`
+
+```python
+cc.sim_stop()
+```
+
+Leave the simulation and show the part again.
+
+
+Returns: null
+
+#### `sim.get`
+
+```python
+cc.sim_get()
+```
+
+Where the simulation is, what it has removed and what it found.
+
+
+Returns: the simulation, or null when none is open
+
+#### `sim.collision.check`
+
+```python
+cc.sim_collision_check()
+```
+
+Run the whole program and list rapids into material and cuts deeper than the flutes.
+
+
+Returns: {collisions, events: [{kind, toolpath, move, time, depth, at}]}
+
+<sub>ribbon: Simulation › Verify</sub>
+
+#### `sim.gouge.check`
+
+```python
+cc.sim_gouge_check(tolerance=None)
+```
+
+Run the whole program and find where it cuts below the part's surface.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `tolerance` | number | no | How far below the surface counts as a gouge, mm (default 0.05) (0 to 100 mm) |
+
+Returns: {tolerance, gouges, area, worst_depth, deepest: [{at, depth}]}
+
+<sub>ribbon: Simulation › Verify</sub>
 

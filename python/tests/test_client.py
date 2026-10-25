@@ -203,6 +203,20 @@ class ClientTests(unittest.TestCase):
         )
         cc.close()
 
+    def test_simulation(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.sim_seek(fraction=0.5)
+        cc.sim_gouge_check(tolerance=0.02)
+        self.assertEqual(
+            [r["params"] for r in app.requests],
+            [
+                {"command": "sim.seek", "params": {"fraction": 0.5}},
+                {"command": "sim.gouge.check", "params": {"tolerance": 0.02}},
+            ],
+        )
+        cc.close()
+
     def test_settings_units(self):
         app = FakeApp()
         cc = CosmicCAM(app.port, TOKEN, timeout=5)

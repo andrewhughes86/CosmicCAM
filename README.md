@@ -15,7 +15,7 @@ setup with fitted stock, then a 2D contour around the part and 3D roughing of th
 **Early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart from STEP/IGES
 import. CosmicCAM imports models, defines WCS, setups, stock, machines and tools, makes 2.5D and
 3D toolpaths and exports them as generic G-code. It has no machine-specific post-processors or
-simulation yet, so **check its G-code before running it on a machine**.
+machine simulation yet (only stock removal), so **check its G-code before running it on a machine**.
 
 | Phase | Milestone | Status |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ simulation yet, so **check its G-code before running it on a machine**.
 | 4 | Tool library & management | **In progress** |
 | 5 | Stock setup & material definition | **In progress** (setups, box stock) |
 | 6 | Toolpath creation (2.5D and 3-axis strategies) | **In progress** (contour, face, pocket, drill, 3D rough, waterline, raster) |
-| 7 | Material-removal simulation & verification | Planned |
+| 7 | Material-removal simulation & verification | **In progress** (3-axis stock simulation, gouge and collision checks) |
 | 8 | Post-processors & G-code export | **Started** (generic G-code) |
 | 9 | MCP agent integration | Planned |
 | 10 | Scripting & add-ons | Planned |
@@ -49,6 +49,9 @@ simulation yet, so **check its G-code before running it on a machine**.
 - **2D contour:** follow edges or a face outline at depth with radial and axial
   passes, stock to leave, leads, ramps, feed optimization, an entry point and a tolerance that
   follows true circles; set up in a panel with a live preview.
+- **Simulation:** play the program against the stock in machine time (Simulation tab, or Space),
+  scrub, step and change speed; gouge check (cuts below the part, shown in red) and collision
+  check (rapids through material, cuts deeper than the flutes). 3-axis, flat end mills.
 - **Explorer:** right-click any item to edit, show/hide, rename, copy, paste, duplicate or
   delete it; an eye beside each toolpath and model shows or hides it (only the selected toolpath
   is drawn otherwise).
@@ -73,7 +76,7 @@ simulation yet, so **check its G-code before running it on a machine**.
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 139 commands. Each command has a typed parameter schema that the engine checks before
+  the same 143 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.

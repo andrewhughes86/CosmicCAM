@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 CosmicCAM-engine = { workspace = true }
 CosmicCAM-geom = { workspace = true }
+glam = { workspace = true }
 CosmicCAM-render = { workspace = true }
 bytemuck = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "persistence", "wgpu"] }

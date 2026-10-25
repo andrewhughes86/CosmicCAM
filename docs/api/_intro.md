@@ -291,6 +291,25 @@ cc.job_tab_activate(index=1)
 cc.job_clipboard_paste()
 ```
 
+## Simulation
+
+The simulation runs the toolpaths against the stock in machine time (feeds as programmed, rapids
+at the machine's rapid rate) and shows the stock as it is cut. It models 3-axis cutting with flat
+end mills on a height grid of the stock.
+
+```python
+cc.sim_start(cell=0.25)                 # all toolpaths; or toolpaths=["toolpath.2", ...]
+cc.sim_seek(fraction=0.5)               # or time=seconds
+state = cc.sim_get()                    # time, duration, move, toolpath, removed_volume, events
+cc.sim_speed(speed=50); cc.sim_play()   # plays in the app; sim_pause() stops
+cc.sim_step(moves=10)
+print(cc.sim_collision_check())         # rapids through material, cuts deeper than the flutes
+print(cc.sim_gouge_check(tolerance=0.05))  # cells cut below the part, deepest first
+cc.sim_stop()
+```
+
+Any change to the job ends the simulation; start it again to run the changed program.
+
 ## G-code
 
 Until the Python post-processors of Phase 8 exist, CosmicCAM writes plain, generic G-code:

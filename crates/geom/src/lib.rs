@@ -18,6 +18,7 @@ pub mod faces;
 pub mod mesh;
 pub mod offset;
 pub mod region;
+pub mod zmap;
 
 pub use edges::{Edge, EdgeKind, EdgeMap};
 pub use faces::{Face, FaceKind, FaceMap};

@@ -33,7 +33,7 @@ const fn small(tab: RibbonTab, panel: &'static str) -> Option<Placement> {
     Some(Placement::small(tab, panel))
 }
 
-use RibbonTab::{Export, Setup, Simulation, Toolpaths};
+use RibbonTab::{Export, Setup, Toolpaths};
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
     // Setup (Phases 3 and 5)
@@ -46,18 +46,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         "Write machine-neutral cutter location data (Phase 6)",
         large(Toolpaths, "Output")
     ),
-    // Simulation (Phase 7)
-    planned!("sim.play", "Play", "Run the material removal simulation (Phase 7)", large(Simulation, "Playback")),
-    planned!("sim.pause", "Pause", "Pause the simulation (Phase 7)", small(Simulation, "Playback")),
-    planned!("sim.step", "Step", "Advance one move (Phase 7)", small(Simulation, "Playback")),
-    planned!("sim.speed", "Speed", "Playback speed (Phase 7)", small(Simulation, "Playback")),
-    planned!(
-        "sim.collision.check",
-        "Collisions",
-        "Check holder and shank against stock and fixtures (Phase 7)",
-        large(Simulation, "Verify")
-    ),
-    planned!("sim.gouge.check", "Gouges", "Check for overcut beyond tolerance (Phase 7)", large(Simulation, "Verify")),
     // Export (Phase 8)
     planned!(
         "post.processor.select",

@@ -1590,78 +1590,6 @@ class Commands:
         """
         return self.execute("toolpath.cl.export")
 
-    def sim_play(self) -> Any:
-        """Run the material removal simulation (Phase 7).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``sim.play``
-        """
-        return self.execute("sim.play")
-
-    def sim_pause(self) -> Any:
-        """Pause the simulation (Phase 7).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``sim.pause``
-        """
-        return self.execute("sim.pause")
-
-    def sim_step(self) -> Any:
-        """Advance one move (Phase 7).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``sim.step``
-        """
-        return self.execute("sim.step")
-
-    def sim_speed(self) -> Any:
-        """Playback speed (Phase 7).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``sim.speed``
-        """
-        return self.execute("sim.speed")
-
-    def sim_collision_check(self) -> Any:
-        """Check holder and shank against stock and fixtures (Phase 7).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``sim.collision.check``
-        """
-        return self.execute("sim.collision.check")
-
-    def sim_gouge_check(self) -> Any:
-        """Check for overcut beyond tolerance (Phase 7).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``sim.gouge.check``
-        """
-        return self.execute("sim.gouge.check")
-
     def post_processor_select(self) -> Any:
         """Choose the machine controller dialect (Phase 8).
 
@@ -2180,6 +2108,128 @@ class Commands:
         """
         params = {"units": units}
         return self.execute("settings.units.set", {k: v for k, v in params.items() if v is not None})
+
+    def sim_start(self, *, toolpaths: Optional[Sequence[str]] = None, cell: Optional[float] = None) -> Any:
+        """Start the material removal simulation from the beginning.
+
+        Args:
+            toolpaths: Toolpaths to run, in order (default: all).
+            cell: Stock grid spacing, mm (default: a quarter of the smallest tool radius) (0 to 100 mm).
+
+        Returns:
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+        Command: ``sim.start``
+        """
+        params = {"toolpaths": toolpaths, "cell": cell}
+        return self.execute("sim.start", {k: v for k, v in params.items() if v is not None})
+
+    def sim_play(self) -> Any:
+        """Run the material removal simulation.
+
+        Returns:
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+        Command: ``sim.play``
+        """
+        return self.execute("sim.play")
+
+    def sim_pause(self) -> Any:
+        """Pause the simulation.
+
+        Returns:
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+        Command: ``sim.pause``
+        """
+        return self.execute("sim.pause")
+
+    def sim_step(self, *, moves: Optional[int] = None) -> Any:
+        """Advance to the next move (or several).
+
+        Args:
+            moves: How many moves to step; negative goes back (default 1) (-1000000 to 1000000).
+
+        Returns:
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+        Command: ``sim.step``
+        """
+        params = {"moves": moves}
+        return self.execute("sim.step", {k: v for k, v in params.items() if v is not None})
+
+    def sim_seek(self, *, time: Optional[float] = None, fraction: Optional[float] = None) -> Any:
+        """Jump to a time in the simulation.
+
+        Args:
+            time: Machine time, seconds (0 to 1e9).
+            fraction: Share of the whole program, 0 to 1 (0 to 1).
+
+        Returns:
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+        Command: ``sim.seek``
+        """
+        params = {"time": time, "fraction": fraction}
+        return self.execute("sim.seek", {k: v for k, v in params.items() if v is not None})
+
+    def sim_speed(self, *, speed: Optional[float] = None) -> Any:
+        """Playback speed: machine seconds per second (the button steps through 1× to 250×).
+
+        Args:
+            speed: Speed multiplier (0.1 to 10000).
+
+        Returns:
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+
+        Command: ``sim.speed``
+        """
+        params = {"speed": speed}
+        return self.execute("sim.speed", {k: v for k, v in params.items() if v is not None})
+
+    def sim_stop(self) -> Any:
+        """Leave the simulation and show the part again.
+
+        Returns:
+            null
+
+        Command: ``sim.stop``
+        """
+        return self.execute("sim.stop")
+
+    def sim_get(self) -> Any:
+        """Where the simulation is, what it has removed and what it found.
+
+        Returns:
+            the simulation, or null when none is open
+
+        Command: ``sim.get``
+        """
+        return self.execute("sim.get")
+
+    def sim_collision_check(self) -> Any:
+        """Run the whole program and list rapids into material and cuts deeper than the flutes.
+
+        Returns:
+            {collisions, events: [{kind, toolpath, move, time, depth, at}]}
+
+        Command: ``sim.collision.check``
+        """
+        return self.execute("sim.collision.check")
+
+    def sim_gouge_check(self, *, tolerance: Optional[float] = None) -> Any:
+        """Run the whole program and find where it cuts below the part's surface.
+
+        Args:
+            tolerance: How far below the surface counts as a gouge, mm (default 0.05) (0 to 100 mm).
+
+        Returns:
+            {tolerance, gouges, area, worst_depth, deepest: [{at, depth}]}
+
+        Command: ``sim.gouge.check``
+        """
+        params = {"tolerance": tolerance}
+        return self.execute("sim.gouge.check", {k: v for k, v in params.items() if v is not None})
 
     def post_gcode_export(self, *, path: str, toolpaths: Optional[Sequence[str]] = None, units: Optional[Literal["in", "mm"]] = None, program_number: Optional[int] = None, line_numbers: Optional[bool] = None) -> Any:
         """Write the toolpaths as a G-code program (.nc) with the generic writer.
