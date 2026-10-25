@@ -929,18 +929,6 @@ class Commands:
         """
         return self.execute("toolpath.pocket")
 
-    def toolpath_profile(self) -> Any:
-        """Inner and outer boundary profiling (Phase 6).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``toolpath.profile``
-        """
-        return self.execute("toolpath.profile")
-
     def toolpath_drill(self) -> Any:
         """Spot, peck and tapping cycles (Phase 6).
 
@@ -1591,3 +1579,122 @@ class Commands:
         """
         params = {"units": units}
         return self.execute("settings.units.set", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_contour(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, lead_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, tool_axis: Optional[Literal["wcs_z"]] = None, geometry: Optional[Sequence[str]] = None, side: Optional[Literal["outside", "inside", "on"]] = None, reverse: Optional[bool] = None, wcs: Optional[str] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, both_ways: Optional[bool] = None, radial_passes: Optional[int] = None, radial_stepover: Optional[float] = None, spring_passes: Optional[int] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, multiple_depths: Optional[bool] = None, max_stepdown: Optional[float] = None, feed_optimization: Optional[bool] = None, optimization_angle: Optional[float] = None, optimization_feed: Optional[float] = None, optimization_distance: Optional[float] = None, tolerance: Optional[float] = None, lead_in: Optional[Literal["arc", "line", "none"]] = None, lead_in_radius: Optional[float] = None, lead_in_sweep: Optional[float] = None, lead_in_length: Optional[float] = None, lead_out_same: Optional[bool] = None, lead_out: Optional[Literal["arc", "line", "none"]] = None, lead_out_radius: Optional[float] = None, lead_out_sweep: Optional[float] = None, lead_out_length: Optional[float] = None, ramp: Optional[Literal["ramp", "plunge"]] = None, ramp_angle: Optional[float] = None, retract: Optional[Literal["minimum", "full", "stay_down"]] = None, stay_down_distance: Optional[float] = None, rapid_links: Optional[bool] = None, link_feed: Optional[float] = None) -> Any:
+        """Follow selected edges or a face outline at depth, offset by the tool radius.
+
+        Args:
+            id: Regenerate this toolpath with these settings instead of adding one.
+            name: Name in the job outline (default: 2D contour T<n>).
+            tool: Tool number in the active machine's library (default: the first) (1 to 9999).
+            spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
+            plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
+            lead_feed: Lead-in and lead-out feed, mm/min (default: the cutting feed) (0 to 1e6 mm/min).
+            coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
+            tool_axis: Tool orientation (only the WCS Z axis for now) — one of wcs_z.
+            geometry: Edges and faces to follow (model.N/edge.N, model.N/face.N).
+            side: Cut outside or inside closed contours, or on the line (open contours: outside = left) — one of outside, inside, on.
+            reverse: Run the contour the other way.
+            wcs: WCS to program in (default: the active one).
+            clearance_from: Clearance height reference (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            clearance_offset: Clearance height above its reference, mm (default 15) (-1e5 to 1e5 mm).
+            retract_from: Retract height reference (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            retract_offset: Retract height above its reference, mm (default 5) (-1e5 to 1e5 mm).
+            feed_height_from: Feed height reference: where rapid stops and feed starts (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            feed_height_offset: Feed height above its reference, mm (default 2) (-1e5 to 1e5 mm).
+            top_from: Top height reference: where cutting starts (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            top_offset: Top height offset, mm (default 0) (-1e5 to 1e5 mm).
+            bottom_from: Bottom height reference: the final depth (default selection) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            bottom_offset: Bottom height offset, mm (default 0; negative goes deeper) (-1e5 to 1e5 mm).
+            direction: Climb or conventional milling (default climb) — one of climb, conventional.
+            both_ways: Open contours: cut back and forth instead of returning to the start.
+            radial_passes: Number of side-by-side passes (default 1) (1 to 100).
+            radial_stepover: Distance between radial passes, mm (default: the tool's stepover, else 40% of Ø) (0 to 10000 mm).
+            spring_passes: Repeat the final pass this many times (default 0) (0 to 10).
+            stock_radial: Stock to leave on the walls, mm (default 0) (-1000 to 1000 mm).
+            stock_axial: Stock to leave on the floor, mm (default 0) (-1000 to 1000 mm).
+            multiple_depths: Step down in several depths (default false).
+            max_stepdown: Deepest step per depth, mm (default: the tool's stepdown, else Ø) (0 to 10000 mm).
+            feed_optimization: Slow down at sharp direction changes (default false).
+            optimization_angle: Direction change that counts as sharp, degrees (default 45) (0 to 180).
+            optimization_feed: Feed at sharp changes, % of the cutting feed (default 50) (1 to 100).
+            optimization_distance: Distance before and after the change to slow down over, mm (default Ø/2) (0 to 10000 mm).
+            tolerance: Chord tolerance for arcs and offsets, mm (default 0.01) (0.0001 to 1 mm).
+            lead_in: Lead-in style (default arc) — one of arc, line, none.
+            lead_in_radius: Lead-in arc radius, mm (default Ø/2) (0 to 10000 mm).
+            lead_in_sweep: Lead-in arc sweep, degrees (default 90) (0 to 180).
+            lead_in_length: Lead-in line length, mm (default Ø/2) (0 to 10000 mm).
+            lead_out_same: Lead out the way the tool led in (default true).
+            lead_out: Lead-out style — one of arc, line, none.
+            lead_out_radius: Lead-out arc radius, mm (0 to 10000 mm).
+            lead_out_sweep: Lead-out arc sweep, degrees (0 to 180).
+            lead_out_length: Lead-out line length, mm (0 to 10000 mm).
+            ramp: Go down by ramping along the lead-in or by plunging (default ramp) — one of ramp, plunge.
+            ramp_angle: Ramp angle, degrees (default 3) (0.1 to 90).
+            retract: Between passes: retract height (minimum), clearance height (full) or stay down — one of minimum, full, stay_down.
+            stay_down_distance: Stay down when the next pass starts within this distance, mm (default 2 × Ø) (0 to 10000 mm).
+            rapid_links: Link at rapid traverse (default true) or at the link feed.
+            link_feed: Feed for links when not rapid, mm/min (default: the machine's maximum) (0 to 1e6 mm/min).
+
+        Returns:
+            the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
+
+        Command: ``toolpath.contour``
+        """
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "lead_feed": lead_feed, "coolant": coolant, "tool_axis": tool_axis, "geometry": geometry, "side": side, "reverse": reverse, "wcs": wcs, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "direction": direction, "both_ways": both_ways, "radial_passes": radial_passes, "radial_stepover": radial_stepover, "spring_passes": spring_passes, "stock_radial": stock_radial, "stock_axial": stock_axial, "multiple_depths": multiple_depths, "max_stepdown": max_stepdown, "feed_optimization": feed_optimization, "optimization_angle": optimization_angle, "optimization_feed": optimization_feed, "optimization_distance": optimization_distance, "tolerance": tolerance, "lead_in": lead_in, "lead_in_radius": lead_in_radius, "lead_in_sweep": lead_in_sweep, "lead_in_length": lead_in_length, "lead_out_same": lead_out_same, "lead_out": lead_out, "lead_out_radius": lead_out_radius, "lead_out_sweep": lead_out_sweep, "lead_out_length": lead_out_length, "ramp": ramp, "ramp_angle": ramp_angle, "retract": retract, "stay_down_distance": stay_down_distance, "rapid_links": rapid_links, "link_feed": link_feed}
+        return self.execute("toolpath.contour", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_list(self) -> Any:
+        """The job's toolpaths.
+
+        Returns:
+            list of toolpaths, as toolpath.get returns them
+
+        Command: ``toolpath.list``
+        """
+        return self.execute("toolpath.list")
+
+    def toolpath_get(self, *, id: str, moves: Optional[bool] = None, limit: Optional[int] = None) -> Any:
+        """One toolpath, optionally with its moves.
+
+        Args:
+            id: Toolpath id, e.g. toolpath.1.
+            moves: Include the moves {kind, to, feed} (default false).
+            limit: Most moves to include (default 100000) (1 to 1000000).
+
+        Returns:
+            the toolpath, plus `move_list` when moves = true
+
+        Command: ``toolpath.get``
+        """
+        params = {"id": id, "moves": moves, "limit": limit}
+        return self.execute("toolpath.get", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_edit(self, *, id: str) -> Any:
+        """The settings a toolpath was made with; in the app this opens it in the toolpath panel.
+
+        Args:
+            id: Toolpath id, e.g. toolpath.1.
+
+        Returns:
+            the settings, as toolpath.contour takes them (pass them back with `id` to regenerate)
+
+        Command: ``toolpath.edit``
+        """
+        params = {"id": id}
+        return self.execute("toolpath.edit", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_remove(self, *, id: str) -> Any:
+        """Delete a toolpath from the job.
+
+        Args:
+            id: Toolpath id, e.g. toolpath.1.
+
+        Returns:
+            {"removed": id}
+
+        Command: ``toolpath.remove``
+        """
+        params = {"id": id}
+        return self.execute("toolpath.remove", {k: v for k, v in params.items() if v is not None})

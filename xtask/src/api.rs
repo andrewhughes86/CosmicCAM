@@ -59,6 +59,7 @@ fn py_type(p: &Param) -> String {
             format!("Literal[{}]", choices.iter().map(|c| format!("{c:?}")).collect::<Vec<_>>().join(", "))
         }
         ParamKind::Vec3 => "Sequence[float]".into(),
+        ParamKind::StrList { .. } => "Sequence[str]".into(),
     }
 }
 

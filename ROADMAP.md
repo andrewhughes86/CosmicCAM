@@ -7,7 +7,7 @@
 | 3 | Work coordinate system (WCS) creation | **Done** (2026-10-24) |
 | 4 | Tool library & management | **In progress** (flat end mills, machine libraries 2026-10-24) |
 | 5 | Stock setup & material definition | Planned |
-| 6 | Toolpath creation engine | Planned |
+| 6 | Toolpath creation engine | **In progress** (2D contour 2026-10-24) |
 | 7 | Material removal simulation & verification | Planned |
 | 8 | Post-processor & G-code export | Planned |
 | 9 | MCP agent integration | Planned |
@@ -119,6 +119,23 @@
   follow the preference. Commands and their results are always millimetres; length and feed
   parameters are marked `Length` / `Rate` in the schema.
 - The Machine tab sits between Setup and Tooling.
+
+## Phase 6 — first toolpath: 2D contour (2026-10-24)
+
+- `toolpath.contour`: follows edges, a face outline or a hole/boss rim at depth, offset by the
+  tool radius plus stock (round corners via the MIT/Apache `i_overlay` offset engine, guarded).
+  Outside / inside / on, climb / conventional, reverse, radial passes and stepover, spring passes,
+  radial and axial stock, multiple depths, feed reduction at direction changes (sharp corners and
+  tight arcs), arc or line leads, ramping along the lead-in or plunging, retract to retract or
+  clearance height or stay down, rapid or feed links, chord tolerance.
+- Five heights (clearance, retract, feed, top, bottom), each a reference (selected contour, model
+  top/bottom, stock top/bottom, origin) plus an offset, worked out in the WCS; new height icons.
+- `toolpath.list`, `toolpath.get` (with moves), `toolpath.edit` (stored settings), `toolpath.remove`;
+  toolpaths in the outline with length and time estimates, drawn in the viewport by move kind.
+- The 2D contour tile opens a toolpath panel docked at the right: Tool, Multi-axis (placeholder),
+  Geometry (click edges/faces), Heights, Passes, Linking tabs, a live preview, OK / Cancel.
+  Double-clicking a toolpath in the explorer edits it.
+- Still to do in Phase 6: pocketing, drilling, 3D strategies, CL data export, gouge checks.
 
 ## Web app (2026-10-24)
 

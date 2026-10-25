@@ -184,6 +184,35 @@ is refused, and so is lowering a machine's limits below a tool in its library. T
 Controller dialect and post-processing are part of the Python machine configurations planned
 for Phase 8; a machine's `post` field will name its post module.
 
+## Toolpaths: 2D contour
+
+`toolpath.contour` follows edges (or a face's outline, or the lower rim of a hole or boss) at
+depth, offset by the tool radius. Every setting is a parameter; leave one out for its default.
+In the app the 2D contour tile on the Toolpaths tab opens a panel at the right with the same
+settings on tabs (Tool, Multi-axis, Geometry, Heights, Passes, Linking) and previews the result.
+
+```python
+bottom = next(f for f in cc.model_faces_list(id="model.1", kind="plane") if f["normal"] == [0, 0, -1])
+tp = cc.toolpath_contour(
+    geometry=[bottom["face"]], side="outside", tool=1,
+    top_from="model_top", bottom_from="selection", bottom_offset=-0.5,  # 0.5 mm below the part
+    multiple_depths=True, max_stepdown=6, stock_radial=0.3,
+    radial_passes=2, radial_stepover=2, spring_passes=1,
+    lead_in="arc", lead_in_radius=4, ramp="ramp", ramp_angle=3,
+    feed_optimization=True, optimization_angle=45, optimization_feed=50,
+)
+print(tp["moves"], tp["cut_length"], tp["time"], tp["warnings"])
+moves = cc.toolpath_get(id=tp["id"], moves=True)["move_list"]   # [{kind, to, feed}, ...]
+cc.toolpath_contour(id=tp["id"], geometry=[bottom["face"]], direction="conventional")  # regenerate
+```
+
+Heights are measured in the WCS: each is a reference (`selection`, `model_top`,
+`model_bottom`, `stock_top`, `stock_bottom`, `origin`) plus an offset. From top to bottom they are
+clearance (moves between contours), retract (between passes), feed (rapid ends, feed begins),
+top (where the material starts) and bottom (the final depth); they must not cross. Climb milling
+keeps the material on the right of the tool's travel: clockwise outside a contour, anticlockwise
+inside. Moves are `rapid`, `link`, `plunge` (plunges and ramps), `lead` and `cut`, in world mm.
+
 ## Selecting geometry
 
 Clicking in the viewport selects what is under the pointer: a vertex (corner) if one is close,

@@ -140,6 +140,11 @@ impl Tokens {
             part: linear(self.part),
             part_edge: linear(self.part_edge),
             stock_edge: linear(self.stock_edge.gamma_multiply(0.85)),
+            path_cut: linear(self.accent_strong),
+            path_rapid: linear(self.warning.gamma_multiply(0.8)),
+            path_plunge: linear(self.error),
+            path_lead: linear(self.success),
+            path_link: linear(self.text_muted),
         }
     }
 }

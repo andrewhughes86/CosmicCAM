@@ -1031,3 +1031,153 @@ fn units_change_what_is_shown_but_not_the_api() {
 fn the_machine_tab_sits_between_setup_and_tooling() {
     assert_eq!(&RibbonTab::IDS[..4], &["home", "setup", "machine", "tooling"]);
 }
+
+/// A sample session with a Ø6 flat end mill (T1) in the library.
+fn sample_with_tool() -> Session {
+    let mut s = Session::with_sample();
+    let t =
+        s.execute("tool.create.flat", &json!({"diameter": 6, "feed": 1000, "plunge_feed": 300, "spindle_rpm": 10000}));
+    assert!(t.is_ok(), "{t:?}");
+    s
+}
+
+/// The sample base's bottom face (z = 0, the 100 × 60 outline).
+fn base_bottom(s: &mut Session) -> String {
+    one_face(s, "plane", plane_at([0.0, 0.0, -1.0], 2, 0.0))
+}
+
+fn moves(s: &mut Session, id: &str) -> Vec<Value> {
+    let tp = s.execute("toolpath.get", &json!({"id": id, "moves": true})).unwrap_or_default();
+    tp["move_list"].as_array().cloned().unwrap_or_default()
+}
+
+fn cut_points(moves: &[Value]) -> Vec<[f64; 3]> {
+    moves.iter().filter(|m| m["kind"] == "cut").map(|m| vec3(&m["to"])).collect()
+}
+
+fn signed_area(pts: &[[f64; 3]]) -> f64 {
+    (0..pts.len())
+        .map(|i| {
+            let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum::<f64>()
+        / 2.0
+}
+
+/// Distance from (x, y) to the sample base outline (-50..50, -30..30), outside positive.
+fn outside_distance(p: [f64; 3]) -> f64 {
+    let dx = (p[0].abs() - 50.0).max(0.0);
+    let dy = (p[1].abs() - 30.0).max(0.0);
+    dx.hypot(dy)
+}
+
+#[test]
+fn contour_runs_outside_the_outline_at_depth_climbing_clockwise() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    let tp = s.execute("toolpath.contour", &json!({"geometry": [bottom], "side": "outside"})).unwrap_or_default();
+    assert_eq!(tp["id"], "toolpath.1", "{tp}");
+    assert_eq!(tp["tool"], 1);
+    let m = moves(&mut s, "toolpath.1");
+    let cuts = cut_points(&m);
+    assert!(cuts.len() > 4);
+    assert!(cuts.iter().all(|p| p[2].abs() < 1e-4), "one depth, at the selected outline");
+    assert!(cuts.iter().all(|p| (outside_distance(*p) - 3.0).abs() < 0.05), "offset by the tool radius");
+    assert!(signed_area(&cuts) < 0.0, "climb outside runs clockwise");
+    // Starts and ends at clearance: model top 42 + 0.5 in, the inch default.
+    assert_eq!(m.first().map(|x| x["kind"].clone()), Some(json!("rapid")));
+    assert!((vec3(&m.last().map(|x| x["to"].clone()).unwrap_or_default())[2] - 54.7).abs() < 1e-4);
+    // The outline shows the toolpath; conventional reverses the direction.
+    assert!(s.outline_node("toolpath.1").is_some());
+    let conv = s
+        .execute("toolpath.contour", &json!({"id": "toolpath.1", "geometry": [bottom], "direction": "conventional"}))
+        .unwrap_or_default();
+    assert_eq!(conv["id"], "toolpath.1", "regenerated in place");
+    assert!(signed_area(&cut_points(&moves(&mut s, "toolpath.1"))) > 0.0);
+    assert_eq!(s.execute("toolpath.list", &Value::Null).unwrap_or_default().as_array().map(Vec::len), Some(1));
+}
+
+#[test]
+fn contour_depths_radial_passes_and_stock() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    let tp = s
+        .execute(
+            "toolpath.contour",
+            &json!({
+                "geometry": [bottom], "multiple_depths": true, "max_stepdown": 10,
+                "radial_passes": 2, "radial_stepover": 2, "stock_radial": 0.5, "stock_axial": 0.25,
+            }),
+        )
+        .unwrap_or_default();
+    let cuts = cut_points(&moves(&mut s, tp["id"].as_str().unwrap_or_default()));
+    let mut zs: Vec<i64> = cuts.iter().map(|p| (p[2] * 1000.0).round() as i64).collect();
+    zs.dedup();
+    // 42 → 0.25 in five steps of 8.35.
+    assert_eq!(zs, [33_650, 25_300, 16_950, 8_600, 250], "{zs:?}");
+    let mut dists: Vec<i64> = cuts.iter().map(|p| (outside_distance(*p) * 10.0).round() as i64).collect();
+    dists.sort_unstable();
+    dists.dedup();
+    assert_eq!(dists, [35, 55], "radius + stock, plus one stepover");
+}
+
+#[test]
+fn contour_inside_open_edges_leads_ramps_and_feed_optimization() {
+    let mut s = sample_with_tool();
+    let r = sample_refs(&mut s);
+    // Inside the boss's ... a boss is solid; cut inside the deck outline instead.
+    let deck = r.deck.clone();
+    let tp = s
+        .execute("toolpath.contour", &json!({"geometry": [deck], "side": "inside", "bottom_offset": -1}))
+        .unwrap_or_default();
+    let cuts = cut_points(&moves(&mut s, tp["id"].as_str().unwrap_or_default()));
+    assert!(cuts.iter().all(|p| (p[0].abs() - 47.0).abs() < 0.05 || (p[1].abs() - 27.0).abs() < 0.05), "3 mm inside");
+    assert!(signed_area(&cuts) > 0.0, "climb inside runs anticlockwise");
+    assert!(cuts.iter().all(|p| (p[2] - 19.0).abs() < 1e-4), "bottom offset goes deeper");
+
+    // An open edge: the block's top-front edge, cut on its left.
+    let tp =
+        s.execute("toolpath.contour", &json!({"geometry": [r.top_front_edge], "lead_in": "line", "ramp": "plunge"}));
+    assert!(tp.is_ok(), "{tp:?}");
+    let m = moves(&mut s, tp.unwrap_or_default()["id"].as_str().unwrap_or_default());
+    assert!(m.iter().any(|x| x["kind"] == "plunge"));
+    assert!(m.iter().any(|x| x["kind"] == "lead"));
+
+    // Feed optimization slows the corners of the rectangle.
+    let bottom = base_bottom(&mut s);
+    let tp = s
+        .execute(
+            "toolpath.contour",
+            &json!({"geometry": [bottom], "lead_in": "none", "feed_optimization": true, "optimization_feed": 40}),
+        )
+        .unwrap_or_default();
+    let m = moves(&mut s, tp["id"].as_str().unwrap_or_default());
+    let feeds: Vec<f64> = m.iter().filter(|x| x["kind"] == "cut").filter_map(|x| x["feed"].as_f64()).collect();
+    assert!(feeds.contains(&400.0) && feeds.contains(&1000.0), "{feeds:?}");
+}
+
+#[test]
+fn contour_refuses_what_it_cannot_cut() {
+    let mut s = Session::with_sample();
+    let bottom = base_bottom(&mut s);
+    let r = s.execute("toolpath.contour", &json!({"geometry": [bottom]}));
+    assert!(matches!(r, Err(EngineError::InvalidParams(ref m)) if m.contains("empty")), "{r:?}");
+    let mut s = sample_with_tool();
+    let refs = sample_refs(&mut s);
+    assert!(s.execute("toolpath.contour", &Value::Null).is_err(), "no geometry");
+    let big = s.execute("tool.create.flat", &json!({"diameter": 30, "feed": 500})).unwrap_or_default();
+    let boss_top = one_face(&mut s, "plane", plane_at([0.0, 0.0, 1.0], 2, 42.0));
+    let r = s.execute("toolpath.contour", &json!({"geometry": [boss_top], "side": "inside", "tool": big["number"]}));
+    assert!(matches!(r, Err(EngineError::InvalidParams(ref m)) if m.contains("does not fit")), "{r:?}");
+    let r = s.execute("toolpath.contour", &json!({"geometry": [refs.deck], "clearance_offset": -100}));
+    assert!(matches!(r, Err(EngineError::InvalidParams(ref m)) if m.contains("must not be below")), "{r:?}");
+    let corner =
+        s.execute("model.vertices.list", &json!({"id": "model.sample"})).unwrap_or_default()[0]["vertex"].clone();
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [corner]})).is_err(), "a vertex is no contour");
+    assert!(
+        s.execute("toolpath.contour", &json!({"geometry": [refs.deck], "feed": 999999})).is_err(),
+        "over the machine's feed"
+    );
+    assert!(s.execute("toolpath.remove", &json!({"id": "toolpath.9"})).is_err());
+}

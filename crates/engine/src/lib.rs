@@ -14,6 +14,7 @@ pub mod error;
 pub mod library;
 pub mod params;
 pub mod session;
+pub mod toolpath;
 pub mod units;
 
 pub use cmd::{ButtonSize, CommandSpec, Param, ParamKind, Placement, RibbonTab};

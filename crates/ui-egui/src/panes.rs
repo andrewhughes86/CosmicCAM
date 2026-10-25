@@ -24,8 +24,13 @@ fn outline_node(ui: &mut Ui, node: &OutlineNode, selection: Option<&str>, reques
     if node.children.is_empty() {
         ui.horizontal(|ui| {
             ui.add_space(18.0);
-            if ui.selectable_label(selected, &node.label).clicked() {
+            let row = ui.selectable_label(selected, &node.label);
+            if row.clicked() {
                 select(requests);
+            }
+            // Double-clicking a toolpath opens it for editing.
+            if row.double_clicked() && node.id.starts_with("toolpath.") {
+                requests.push(("toolpath.edit".into(), json!({ "id": node.id })));
             }
         });
         return;

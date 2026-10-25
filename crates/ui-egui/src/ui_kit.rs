@@ -22,6 +22,8 @@ pub enum Surface {
     Menu,
     /// Floating dialogs that gather a command's input.
     Dialog,
+    /// A settings panel docked at the side of the window (the toolpath editor).
+    SidePanel,
 }
 
 pub struct Container {
@@ -49,6 +51,9 @@ impl Container {
                 .inner_margin(Margin::symmetric(8, 4))
                 .corner_radius(CornerRadius::same(4))
                 .stroke(Stroke::new(1.0, t.border)),
+            Surface::SidePanel => {
+                Frame::new().fill(t.panel_bg).inner_margin(Margin::same(10)).stroke(Stroke::new(1.0, t.border))
+            }
             Surface::Dialog => Frame::new()
                 .fill(t.panel_bg)
                 .inner_margin(Margin::same(12))
@@ -102,6 +107,8 @@ pub struct Panel {
 enum PanelKind {
     Top(&'static str),
     Bottom(&'static str),
+    /// Resizable, at the right of the window, starting this wide.
+    Right(&'static str, f32),
     Central,
 }
 
@@ -114,6 +121,10 @@ impl Panel {
         Self { kind: PanelKind::Bottom(id), surface }
     }
 
+    pub fn right(id: &'static str, surface: Surface, width: f32) -> Self {
+        Self { kind: PanelKind::Right(id, width), surface }
+    }
+
     pub fn central(surface: Surface) -> Self {
         Self { kind: PanelKind::Central, surface }
     }
@@ -123,6 +134,9 @@ impl Panel {
         match self.kind {
             PanelKind::Top(id) => egui::Panel::top(id).resizable(false).frame(frame).show(ui, add),
             PanelKind::Bottom(id) => egui::Panel::bottom(id).resizable(false).frame(frame).show(ui, add),
+            PanelKind::Right(id, width) => {
+                egui::Panel::right(id).resizable(true).default_size(width).min_size(280.0).frame(frame).show(ui, add)
+            }
             PanelKind::Central => egui::CentralPanel::default().frame(frame).show(ui, add),
         }
     }

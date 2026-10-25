@@ -191,11 +191,16 @@ fn paint_frame(ui: &Ui, rect: Rect, look: &Look) {
 /// Draws the command's icon; disabled icons are drawn faded. A missing or broken master
 /// shows an empty slot of the same size.
 pub(crate) fn paint_icon(ui: &Ui, rect: Rect, spec: &CommandSpec, tokens: &Tokens, enabled: bool) {
+    paint_named_icon(ui, rect, &icon_svg::name_for(spec), tokens, enabled);
+}
+
+/// Draws the icon master `name` (from `assets/icons/ui/design/svg/`) into `rect`.
+pub(crate) fn paint_named_icon(ui: &Ui, rect: Rect, name: &str, tokens: &Tokens, enabled: bool) {
     let ctx = ui.ctx();
     let px = (rect.width() * ctx.pixels_per_point()).round() as u32;
     let cache_id = Id::new("ribbon-icon-cache");
     let mut cache = ctx.data_mut(|d| std::mem::take(d.get_temp_mut_or_default::<IconCache>(cache_id)));
-    let texture = cache.get(ctx, &icon_svg::name_for(spec), tokens, px);
+    let texture = cache.get(ctx, name, tokens, px);
     ctx.data_mut(|d| d.insert_temp(cache_id, cache));
     match texture {
         Some(id) => {

@@ -12,6 +12,7 @@ mod planned;
 mod settings;
 mod stock;
 mod tool;
+mod toolpath;
 mod ui;
 mod view;
 mod wcs;
@@ -140,6 +141,10 @@ pub enum ParamKind {
     Choice(&'static [&'static str]),
     /// `[x, y, z]` in millimetres.
     Vec3,
+    /// A list of up to `max` strings (e.g. geometry references).
+    StrList {
+        max: usize,
+    },
 }
 
 impl ParamKind {
@@ -152,6 +157,7 @@ impl ParamKind {
             Self::Integer { .. } => "integer",
             Self::Choice(_) => "choice",
             Self::Vec3 => "vec3",
+            Self::StrList { .. } => "list",
         }
     }
 }
@@ -201,6 +207,7 @@ impl Param {
                 v["max"] = json!(max);
             }
             ParamKind::Choice(choices) => v["choices"] = json!(choices),
+            ParamKind::StrList { max } => v["max_items"] = json!(max),
             _ => {}
         }
         v
@@ -310,6 +317,16 @@ fn check_kind(p: &Param, v: &Value) -> EngineResult<()> {
             Some(s) if choices.contains(&s) => Ok(()),
             _ => bad(format!("must be one of: {}", choices.join(", "))),
         },
+        ParamKind::StrList { max } => match v.as_array() {
+            Some(a)
+                if a.len() <= max
+                    && a.iter().all(|s| s.as_str().is_some_and(|s| s.len() <= crate::params::MAX_STR_LEN)) =>
+            {
+                Ok(())
+            }
+            Some(a) if a.len() > max => bad(format!("has more than {max} items")),
+            _ => bad("must be a list of strings".into()),
+        },
         ParamKind::Vec3 => match v.as_array() {
             Some(a)
                 if a.len() == 3 && a.iter().all(|c| c.as_f64().is_some_and(|n| n.is_finite() && n.abs() <= 1.0e9)) =>
@@ -341,7 +358,8 @@ pub fn all() -> impl Iterator<Item = &'static CommandSpec> {
         .chain(stock::COMMANDS.iter())
         .chain(tool::COMMANDS.iter())
         .chain(machine::COMMANDS.iter())
-        .chain(settings::COMMANDS.iter());
+        .chain(settings::COMMANDS.iter())
+        .chain(toolpath::COMMANDS.iter());
     #[cfg(test)]
     let registered = registered.chain(test_only::COMMANDS.iter());
     registered

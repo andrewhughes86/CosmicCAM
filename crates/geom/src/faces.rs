@@ -84,6 +84,45 @@ impl FaceMap {
     }
 }
 
+/// The closed boundary loops of a face, as world points, each without the first point
+/// repeated. The first loop is the longest (the outside of a face with holes).
+pub fn boundary_loops(mesh: &Mesh, map: &FaceMap, face: usize) -> Vec<Vec<Vec3>> {
+    let key = |p: Vec3| (p + Vec3::ZERO).to_array().map(f32::to_bits);
+    // Directed edges of the face's triangles; an edge with no reverse twin is on the boundary.
+    let mut directed: HashMap<([u32; 3], [u32; 3]), (Vec3, Vec3)> = HashMap::new();
+    for t in map.triangles_of(face) {
+        let Some(&tri) = mesh.triangles().get(t) else { continue };
+        let [a, b, c] = mesh.corners(tri);
+        for (p, q) in [(a, b), (b, c), (c, a)] {
+            if directed.remove(&(key(q), key(p))).is_none() {
+                directed.insert((key(p), key(q)), (p, q));
+            }
+        }
+    }
+    let mut next: HashMap<[u32; 3], (Vec3, Vec3)> = directed.into_iter().map(|((k, _), v)| (k, v)).collect();
+    let mut loops: Vec<Vec<Vec3>> = Vec::new();
+    while let Some(&start) = next.keys().next() {
+        let mut lp = Vec::new();
+        let mut at = start;
+        let mut guard = 0usize;
+        while let Some((p, q)) = next.remove(&at) {
+            lp.push(p);
+            at = key(q);
+            guard += 1;
+            if at == start || guard > 1_000_000 {
+                break;
+            }
+        }
+        if lp.len() >= 3 {
+            loops.push(lp);
+        }
+    }
+    let length =
+        |lp: &Vec<Vec3>| -> f32 { lp.iter().zip(lp.iter().cycle().skip(1)).map(|(a, b)| a.distance(*b)).sum() };
+    loops.sort_by(|a, b| length(b).total_cmp(&length(a)));
+    loops
+}
+
 /// A group of coplanar triangles.
 struct Region {
     triangles: Vec<u32>,
@@ -623,6 +662,18 @@ mod tests {
         let flipped: Vec<[Vec3; 3]> = m.triangles().iter().map(|t| m.corners([t[0], t[2], t[1]])).collect();
         let map = segment(&Mesh::from_soup(flipped)?);
         assert!(map.faces.iter().any(|f| matches!(f.kind, FaceKind::Cylinder { hole: true, .. })), "{:#?}", map.faces);
+        Ok(())
+    }
+
+    #[test]
+    fn a_plane_face_has_its_outline_as_a_loop() -> Result<(), crate::MeshError> {
+        let m = block_with_boss(16)?;
+        let map = segment(&m);
+        let bottom =
+            map.faces.iter().position(|f| matches!(f.kind, FaceKind::Plane { normal, .. } if normal.z < -0.99));
+        let loops = bottom.map(|f| boundary_loops(&m, &map, f)).unwrap_or_default();
+        assert_eq!(loops.len(), 1);
+        assert_eq!(loops[0].len(), 4, "{:?}", loops[0]);
         Ok(())
     }
 

@@ -48,12 +48,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     planned!("setup.stock.margins", "Margins", "Extra stock around chosen faces (Phase 5)", small(Setup, "Stock")),
     // Toolpaths (Phase 6)
     planned!("toolpath.pocket", "Pocket", "Island-aware pocket clearing (Phase 6)", gallery(Toolpaths, "Strategies")),
-    planned!(
-        "toolpath.profile",
-        "Profile",
-        "Inner and outer boundary profiling (Phase 6)",
-        gallery(Toolpaths, "Strategies")
-    ),
     planned!("toolpath.drill", "Drill", "Spot, peck and tapping cycles (Phase 6)", gallery(Toolpaths, "Strategies")),
     planned!(
         "toolpath.waterline",

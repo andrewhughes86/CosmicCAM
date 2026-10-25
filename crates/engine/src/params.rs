@@ -55,6 +55,22 @@ pub fn opt_bool(params: &Value, key: &str) -> EngineResult<Option<bool>> {
     }
 }
 
+/// A list of strings (already checked against the schema).
+pub fn str_list(params: &Value, key: &str) -> EngineResult<Vec<String>> {
+    match field(params, key)? {
+        None => Ok(Vec::new()),
+        Some(Value::Array(a)) => a
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| EngineError::InvalidParams(format!("`{key}` must be a list of strings")))
+            })
+            .collect(),
+        Some(_) => Err(EngineError::InvalidParams(format!("`{key}` must be a list of strings"))),
+    }
+}
+
 /// `[x, y, z]` with finite components.
 pub fn opt_vec3(params: &Value, key: &str) -> EngineResult<Option<CosmicCAM_geom::Vec3>> {
     match field(params, key)? {

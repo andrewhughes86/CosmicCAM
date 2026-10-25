@@ -12,9 +12,9 @@ the built-in sample part. STL and OBJ models can now be imported.*
 
 ## Where the project is
 
-**Early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart from STEP/IGES import. CosmicCAM can't machine
-anything yet: it imports STL and OBJ models, but there is no tooling, toolpath generation or
-G-code output so far.
+**Early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart from STEP/IGES import. CosmicCAM can't drive a
+machine yet: it imports models, defines WCS, stock, machines and tools, and makes 2D contour
+toolpaths, but there is no G-code output so far.
 
 | Phase | Milestone | Status |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ G-code output so far.
 | 3 | Work coordinate system (WCS) creation | **Done** |
 | 4 | Tool library & management | **In progress** |
 | 5 | Stock setup & material definition | Planned |
-| 6 | Toolpath creation (2.5D and 3-axis strategies) | Planned |
+| 6 | Toolpath creation (2.5D and 3-axis strategies) | **In progress** (2D contour) |
 | 7 | Material-removal simulation & verification | Planned |
 | 8 | Post-processors & G-code export | Planned |
 | 9 | MCP agent integration | Planned |
@@ -36,6 +36,8 @@ G-code output so far.
 - **Model import:** binary and ASCII STL and Wavefront OBJ, from the Import model button
   (Ctrl+I), drag-and-drop onto the window or `model.import` in scripts. Files are read in mm,
   cm, m or inches.
+- **First toolpath, 2D contour:** follow edges or a face outline at depth with radial and axial
+  passes, stock to leave, leads, ramps and feed optimization; set up in a panel with a live preview.
 - **Units:** inches (default) or millimetres everywhere in the app, from Settings on the Home tab;
   scripts and the API always use millimetres.
 - **Machines and tools:** several machine configurations, each with its own tool library of flat
@@ -49,7 +51,7 @@ G-code output so far.
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 111 commands. Each command has a typed parameter schema that the engine checks before
+  the same 118 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.

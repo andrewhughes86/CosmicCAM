@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 CosmicCAM-geom = { workspace = true }
+glam = { workspace = true }
 CosmicCAM-io = { workspace = true }
 CosmicCAM-render = { workspace = true }
 serde = { workspace = true }

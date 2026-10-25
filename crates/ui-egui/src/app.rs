@@ -50,6 +50,8 @@ pub struct CosmicApp {
     layout_generation: u64,
     viewport: Viewport,
     console: ConsoleState,
+    /// The toolpath editor panel, while one is open.
+    toolpath_panel: Option<crate::toolpath_panel::ToolpathPanel>,
     /// The tool library window: open or not, and its preview state.
     library_open: bool,
     settings_open: bool,
@@ -140,6 +142,7 @@ impl CosmicApp {
             viewport: Viewport::new(),
             console: ConsoleState::default(),
             library_open: false,
+            toolpath_panel: None,
             settings_open: false,
             saved_prefs,
             library: LibraryState::default(),
@@ -161,6 +164,17 @@ impl CosmicApp {
     /// with an interactive tool, run without parameters (a toolbar click or shortcut),
     /// starts that tool instead.
     pub fn run(&mut self, id: &str, params: &Value) {
+        // The 2D contour tile opens the toolpath panel; double-clicking a toolpath edits it.
+        if (params.is_null() && id == "toolpath.contour") || id == "toolpath.edit" {
+            let editing = params.get("id").and_then(Value::as_str);
+            if editing.is_some_and(|e| self.session.job.toolpaths.iter().all(|t| t.id != e)) {
+                self.status = Some("that toolpath no longer exists".into());
+                return;
+            }
+            self.toolpath_panel = Some(crate::toolpath_panel::ToolpathPanel::new(&self.session, editing));
+            self.status = None;
+            return;
+        }
         // The settings button opens the settings window; scripts get the settings back.
         if params.is_null() && id == "settings.open" {
             self.settings_open = true;
@@ -224,6 +238,10 @@ impl CosmicApp {
                     (Some(_), Some(_)) => incoming.err("busy", "too many clicks queued"),
                     _ => incoming.err("invalid_params", "`x` and `y` must be numbers (window points)"),
                 }
+            }
+            "ui.start" if p.get("command").and_then(Value::as_str) == Some("toolpath.contour") => {
+                self.toolpath_panel = Some(crate::toolpath_panel::ToolpathPanel::new(&self.session, None));
+                incoming.ok(json!({ "started": "toolpath.contour" }));
             }
             "ui.start" => match p.get("command").and_then(Value::as_str) {
                 Some(command) if tools::has_start(command) => match self.tools.start(command, &self.session) {
@@ -424,7 +442,25 @@ impl eframe::App for CosmicApp {
             });
         });
 
-        self.viewport.pick_mode = self.tools.pick_mode();
+        // The toolpath panel docks at the right, before the workspace takes the rest.
+        if let Some(panel) = &mut self.toolpath_panel {
+            let (request, keep) = panel.show(ui, &self.session, tokens);
+            if let Some((id, params)) = request {
+                match self.session.execute(&id, &params) {
+                    Ok(_) => {
+                        self.status = None;
+                        self.toolpath_panel = None;
+                    }
+                    Err(e) => panel.fail(e.to_string()),
+                }
+            } else if !keep {
+                self.toolpath_panel = None;
+            }
+        }
+        self.viewport.pick_mode = match &self.toolpath_panel {
+            Some(panel) => Some(panel.mode(&self.session)),
+            None => self.tools.pick_mode(),
+        };
         Panel::central(Surface::Workspace).show(ui, tokens, |ui| {
             let mut style = Style::from_egui(ui.style());
             style.tab_bar.bg_fill = tokens.raised_bg;
@@ -500,7 +536,10 @@ impl eframe::App for CosmicApp {
             storage.flush();
         }
         if let Some(hit) = self.viewport.take_pick() {
-            self.tools.picked(hit, &self.session);
+            match &mut self.toolpath_panel {
+                Some(panel) => panel.picked(hit, &self.session),
+                None => self.tools.picked(hit, &self.session),
+            }
         }
         if let Some((id, params)) = self.tools.show(&ctx, tokens, &self.session) {
             let outcome = self.session.execute(&id, &params).map(|_| ()).map_err(|e| e.to_string());

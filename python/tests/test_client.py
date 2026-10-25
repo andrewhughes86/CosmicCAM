@@ -134,6 +134,19 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(sent[2], {"command": "tool.edit", "params": {"number": 1, "new_number": 4}})
         cc.close()
 
+    def test_contour_sends_geometry_lists(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.toolpath_contour(geometry=["model.1/face.2", "model.1/edge.4"], side="inside", multiple_depths=True)
+        self.assertEqual(
+            app.requests[0]["params"],
+            {
+                "command": "toolpath.contour",
+                "params": {"geometry": ["model.1/face.2", "model.1/edge.4"], "side": "inside", "multiple_depths": True},
+            },
+        )
+        cc.close()
+
     def test_settings_units(self):
         app = FakeApp()
         cc = CosmicCAM(app.port, TOKEN, timeout=5)

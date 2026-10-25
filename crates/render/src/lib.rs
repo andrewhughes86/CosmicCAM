@@ -17,4 +17,4 @@ pub mod scene;
 pub mod view_cube;
 
 pub use camera::{OrbitCamera, Projection, ViewPreset};
-pub use scene::{SceneGeometry, ScenePalette, TriadStyle, Vertex};
+pub use scene::{PathKind, SceneGeometry, ScenePalette, TriadStyle, Vertex};

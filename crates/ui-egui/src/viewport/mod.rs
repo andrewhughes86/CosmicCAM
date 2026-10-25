@@ -50,6 +50,21 @@ pub struct PickMode {
     /// Plane normals a new plane must be independent of (one plane per axis): it may not
     /// be parallel to one of them, nor lie along the line two of them share.
     pub independent_of: Vec<Vec3>,
+    /// A toolpath being edited, drawn over the scene: its start and moves.
+    pub path: Option<(Vec3, std::sync::Arc<Vec<CosmicCAM_engine::toolpath::Move>>)>,
+}
+
+/// Viewport colour class of a toolpath move.
+fn path_kind(k: CosmicCAM_engine::toolpath::MoveKind) -> CosmicCAM_render::PathKind {
+    use CosmicCAM_engine::toolpath::MoveKind as M;
+    use CosmicCAM_render::PathKind as P;
+    match k {
+        M::Rapid => P::Rapid,
+        M::Link => P::Link,
+        M::Plunge => P::Plunge,
+        M::Lead => P::Lead,
+        M::Cut => P::Cut,
+    }
 }
 
 /// Whether `n` points along a new axis, given the normals already picked.
@@ -102,6 +117,8 @@ pub struct Viewport {
     /// Triads in the scene, for their axis labels: origin, X/Y/Z axes, arrow length, style.
     triads: Vec<(Vec3, [Vec3; 3], f32, TriadStyle)>,
     preview_shown: Option<(Vec3, [Vec3; 3])>,
+    /// Identity of the preview path last uploaded (its moves' address and count).
+    path_shown: Option<(usize, usize)>,
     gpu: Option<gpu::ViewportGpu>,
     gpu_error: Option<String>,
     /// The camera on screen; eases towards the session's camera.
@@ -142,6 +159,7 @@ impl Viewport {
             triad_size: 20.0,
             triads: Vec::new(),
             preview_shown: None,
+            path_shown: None,
             gpu: None,
             gpu_error: None,
             shown: OrbitCamera::default(),
@@ -526,11 +544,17 @@ impl Viewport {
             self.highlight_key = Some(key);
         }
         let preview = self.mode.as_ref().and_then(|m| m.preview);
-        if preview != self.preview_shown {
+        let path = self.mode.as_ref().and_then(|m| m.path.clone());
+        let path_id = path.as_ref().map(|(_, moves)| (std::sync::Arc::as_ptr(moves) as usize, moves.len()));
+        if preview != self.preview_shown || path_id != self.path_shown {
             let mut overlay = self.base_overlay.clone();
             if let Some((origin, axes)) = preview {
                 overlay.push_triad(origin, axes, self.triad_size * 1.2, &tokens.scene_palette(), TriadStyle::Full);
             }
+            if let Some((start, moves)) = &path {
+                overlay.push_path(*start, moves.iter().map(|m| (path_kind(m.kind), m.to)), &tokens.scene_palette());
+            }
+            self.path_shown = path_id;
             if let Some(gpu) = &mut self.gpu {
                 let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_overlay(&overlay)));
             }
@@ -592,6 +616,9 @@ impl Viewport {
         }
         let palette = tokens.scene_palette();
         let mut content = SceneGeometry::default();
+        for tp in &session.job.toolpaths {
+            content.push_path(tp.start, tp.moves.iter().map(|m| (path_kind(m.kind), m.to)), &palette);
+        }
         if let Some(stock) = session.job.stock {
             if display.stock {
                 content.push_box_edges(&stock, palette.stock_edge);
@@ -642,6 +669,7 @@ impl Viewport {
         self.base_overlay = triad.clone();
         self.triad_size = triad_size;
         self.preview_shown = None;
+        self.path_shown = None;
         self.highlight_key = None;
         if let Some(gpu) = &mut self.gpu {
             let r = catch_unwind(AssertUnwindSafe(|| {
@@ -751,6 +779,7 @@ fn select_mode(session: &Session) -> PickMode {
         picked_points: Vec::new(),
         preview: None,
         independent_of: Vec::new(),
+        path: None,
     };
     if let Some((m, entity)) = session.view.selection.as_deref().and_then(|id| session.job.entity(id)) {
         match entity {

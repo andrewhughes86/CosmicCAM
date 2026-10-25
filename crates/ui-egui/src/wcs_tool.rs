@@ -161,6 +161,7 @@ impl WcsTool {
             picked_points: Vec::new(),
             preview: self.preview,
             independent_of: Vec::new(),
+            path: None,
         };
         for (key, p) in self.picks.iter().filter(|(k, _)| used.contains(k)) {
             match p {

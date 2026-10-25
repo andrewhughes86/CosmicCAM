@@ -40,6 +40,22 @@ pub struct ScenePalette {
     pub part: Rgba,
     pub part_edge: Rgba,
     pub stock_edge: Rgba,
+    /// Toolpath colours by move kind.
+    pub path_cut: Rgba,
+    pub path_rapid: Rgba,
+    pub path_plunge: Rgba,
+    pub path_lead: Rgba,
+    pub path_link: Rgba,
+}
+
+/// What a toolpath move is for, as the viewport colours it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PathKind {
+    Cut,
+    Rapid,
+    Plunge,
+    Lead,
+    Link,
 }
 
 /// Triangle list plus line list, both in world millimetres.
@@ -115,6 +131,30 @@ impl SceneGeometry {
         let b = mesh.bounds();
         self.bounds.include(b.min);
         self.bounds.include(b.max);
+    }
+
+    /// A toolpath as lines from `start` through each move's end point, coloured by kind.
+    pub fn push_path(
+        &mut self,
+        start: Vec3,
+        moves: impl IntoIterator<Item = (PathKind, Vec3)>,
+        palette: &ScenePalette,
+    ) {
+        let mut at = start;
+        for (kind, to) in moves {
+            let color = match kind {
+                PathKind::Cut => palette.path_cut,
+                PathKind::Rapid => palette.path_rapid,
+                PathKind::Plunge => palette.path_plunge,
+                PathKind::Lead => palette.path_lead,
+                PathKind::Link => palette.path_link,
+            };
+            if to.is_finite() {
+                self.push_line(at, to, color);
+                self.bounds.include(to);
+                at = to;
+            }
+        }
     }
 
     /// Vertical cylinder standing on `base`.
@@ -334,6 +374,11 @@ mod tests {
             part: c,
             part_edge: c,
             stock_edge: c,
+            path_cut: c,
+            path_rapid: c,
+            path_plunge: c,
+            path_lead: c,
+            path_link: c,
         }
     }
 

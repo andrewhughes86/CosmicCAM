@@ -402,6 +402,11 @@ impl Model {
             part: c,
             part_edge: c,
             stock_edge: c,
+            path_cut: c,
+            path_rapid: c,
+            path_plunge: c,
+            path_lead: c,
+            path_link: c,
         };
         let g = CosmicCAM_render::scene::sample_part(&palette, false, false);
         let soup = g.triangles.as_chunks::<3>().0.iter().map(|t| t.map(|v| Vec3::from(v.pos)));
@@ -477,6 +482,8 @@ pub struct JobState {
     pub setup_revision: u64,
     /// The raw material: a box in world millimetres, once defined.
     pub stock: Option<Aabb>,
+    pub toolpaths: Vec<crate::toolpath::Toolpath>,
+    pub(crate) next_toolpath: u64,
 }
 
 impl Default for JobState {
@@ -492,6 +499,8 @@ impl Default for JobState {
             next_wcs: 1,
             setup_revision: 0,
             stock: None,
+            toolpaths: Vec::new(),
+            next_toolpath: 1,
         }
     }
 }
@@ -895,9 +904,32 @@ impl Session {
                 group("models", "Models", models),
                 group("setups", "Setups", self.setup_nodes()),
                 group("tools", "Tools", Vec::new()),
-                group("toolpaths", "Toolpaths", Vec::new()),
+                group("toolpaths", "Toolpaths", self.toolpath_nodes()),
             ],
         }]
+    }
+
+    fn toolpath_nodes(&self) -> Vec<OutlineNode> {
+        let u = self.prefs.units;
+        let rapid = self.library.active_machine().map_or(10_000.0, |m| m.max_feed.max(10_000.0));
+        self.job
+            .toolpaths
+            .iter()
+            .map(|t| {
+                let (cut, rapid_len, time) = t.stats(rapid);
+                let mut properties = vec![
+                    ("Strategy".into(), "2D contour".into()),
+                    ("Tool".into(), format!("T{}", t.tool)),
+                    ("WCS".into(), t.wcs.clone().unwrap_or_else(|| "world".into())),
+                    ("Moves".into(), t.moves.len().to_string()),
+                    ("Cutting length".into(), u.fmt_len(cut)),
+                    ("Rapid length".into(), u.fmt_len(rapid_len)),
+                    ("Estimated time".into(), format!("{}:{:02}", (time / 60.0).floor(), (time % 60.0).round() as u32)),
+                ];
+                properties.extend(t.warnings.iter().map(|w| ("Warning".into(), w.clone())));
+                OutlineNode { id: t.id.clone(), label: t.name.clone(), children: Vec::new(), properties }
+            })
+            .collect()
     }
 
     /// The stock, then each WCS.

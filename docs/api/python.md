@@ -186,6 +186,35 @@ is refused, and so is lowering a machine's limits below a tool in its library. T
 Controller dialect and post-processing are part of the Python machine configurations planned
 for Phase 8; a machine's `post` field will name its post module.
 
+## Toolpaths: 2D contour
+
+`toolpath.contour` follows edges (or a face's outline, or the lower rim of a hole or boss) at
+depth, offset by the tool radius. Every setting is a parameter; leave one out for its default.
+In the app the 2D contour tile on the Toolpaths tab opens a panel at the right with the same
+settings on tabs (Tool, Multi-axis, Geometry, Heights, Passes, Linking) and previews the result.
+
+```python
+bottom = next(f for f in cc.model_faces_list(id="model.1", kind="plane") if f["normal"] == [0, 0, -1])
+tp = cc.toolpath_contour(
+    geometry=[bottom["face"]], side="outside", tool=1,
+    top_from="model_top", bottom_from="selection", bottom_offset=-0.5,  # 0.5 mm below the part
+    multiple_depths=True, max_stepdown=6, stock_radial=0.3,
+    radial_passes=2, radial_stepover=2, spring_passes=1,
+    lead_in="arc", lead_in_radius=4, ramp="ramp", ramp_angle=3,
+    feed_optimization=True, optimization_angle=45, optimization_feed=50,
+)
+print(tp["moves"], tp["cut_length"], tp["time"], tp["warnings"])
+moves = cc.toolpath_get(id=tp["id"], moves=True)["move_list"]   # [{kind, to, feed}, ...]
+cc.toolpath_contour(id=tp["id"], geometry=[bottom["face"]], direction="conventional")  # regenerate
+```
+
+Heights are measured in the WCS: each is a reference (`selection`, `model_top`,
+`model_bottom`, `stock_top`, `stock_bottom`, `origin`) plus an offset. From top to bottom they are
+clearance (moves between contours), retract (between passes), feed (rapid ends, feed begins),
+top (where the material starts) and bottom (the final depth); they must not cross. Climb milling
+keeps the material on the right of the tool's travel: clockwise outside a contour, anticlockwise
+inside. Moves are `rapid`, `link`, `plunge` (plunges and ramps), `lead` and `cut`, in world mm.
+
 ## Selecting geometry
 
 Clicking in the viewport selects what is under the pointer: a vertex (corner) if one is close,
@@ -240,7 +269,7 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-114 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+118 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.outline.get`](#joboutlineget), [`job.open`](#jobopen), [`job.save`](#jobsave)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
@@ -252,7 +281,7 @@ with cosmiccam.launch(sample=True) as cc:
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
-- **toolpath**: [`toolpath.pocket`](#toolpathpocket), [`toolpath.profile`](#toolpathprofile), [`toolpath.drill`](#toolpathdrill), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
+- **toolpath**: [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport), [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.remove`](#toolpathremove)
 - **sim**: [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.speed`](#simspeed), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
 - **post**: [`post.processor.select`](#postprocessorselect), [`post.limits.check`](#postlimitscheck), [`post.gcode.export`](#postgcodeexport)
 - **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.create.spot_drill`](#toolcreatespot_drill), [`tool.create.face_mill`](#toolcreateface_mill), [`tool.create.tap`](#toolcreatetap), [`tool.create.thread_mill`](#toolcreatethread_mill), [`tool.edit`](#tooledit), [`tool.feeds`](#toolfeeds), [`tool.duplicate`](#toolduplicate), [`tool.remove`](#toolremove), [`tool.list`](#toollist), [`tool.get`](#toolget), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
@@ -1338,19 +1367,6 @@ Returns: not defined yet
 
 <sub>ribbon: Toolpaths › Strategies</sub>
 
-#### `toolpath.profile`
-
-```python
-cc.toolpath_profile()
-```
-
-Inner and outer boundary profiling (Phase 6).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Toolpaths › Strategies</sub>
-
 #### `toolpath.drill`
 
 ```python
@@ -1402,6 +1418,132 @@ Write machine-neutral cutter location data (Phase 6).
 Returns: not defined yet
 
 <sub>ribbon: Toolpaths › Output</sub>
+
+#### `toolpath.contour`
+
+```python
+cc.toolpath_contour(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, lead_feed=None, coolant=None, tool_axis=None, geometry=None, side=None, reverse=None, wcs=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, direction=None, both_ways=None, radial_passes=None, radial_stepover=None, spring_passes=None, stock_radial=None, stock_axial=None, multiple_depths=None, max_stepdown=None, feed_optimization=None, optimization_angle=None, optimization_feed=None, optimization_distance=None, tolerance=None, lead_in=None, lead_in_radius=None, lead_in_sweep=None, lead_in_length=None, lead_out_same=None, lead_out=None, lead_out_radius=None, lead_out_sweep=None, lead_out_length=None, ramp=None, ramp_angle=None, retract=None, stay_down_distance=None, rapid_links=None, link_feed=None)
+```
+
+Follow selected edges or a face outline at depth, offset by the tool radius.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Regenerate this toolpath with these settings instead of adding one |
+| `name` | string | no | Name in the job outline (default: 2D contour T<n>) |
+| `tool` | integer | no | Tool number in the active machine's library (default: the first) (1 to 9999) |
+| `spindle_rpm` | number | no | Spindle speed, rpm (default: the tool's) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
+| `lead_feed` | number | no | Lead-in and lead-out feed, mm/min (default: the cutting feed) (0 to 1e6 mm/min) |
+| `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
+| `tool_axis` | choice | no | Tool orientation (only the WCS Z axis for now) — one of wcs_z |
+| `geometry` | list | no | Edges and faces to follow (model.N/edge.N, model.N/face.N) |
+| `side` | choice | no | Cut outside or inside closed contours, or on the line (open contours: outside = left) — one of outside, inside, on |
+| `reverse` | bool | no | Run the contour the other way |
+| `wcs` | string | no | WCS to program in (default: the active one) |
+| `clearance_from` | choice | no | Clearance height reference (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `clearance_offset` | number | no | Clearance height above its reference, mm (default 15) (-1e5 to 1e5 mm) |
+| `retract_from` | choice | no | Retract height reference (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `retract_offset` | number | no | Retract height above its reference, mm (default 5) (-1e5 to 1e5 mm) |
+| `feed_height_from` | choice | no | Feed height reference: where rapid stops and feed starts (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `feed_height_offset` | number | no | Feed height above its reference, mm (default 2) (-1e5 to 1e5 mm) |
+| `top_from` | choice | no | Top height reference: where cutting starts (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `top_offset` | number | no | Top height offset, mm (default 0) (-1e5 to 1e5 mm) |
+| `bottom_from` | choice | no | Bottom height reference: the final depth (default selection) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `bottom_offset` | number | no | Bottom height offset, mm (default 0; negative goes deeper) (-1e5 to 1e5 mm) |
+| `direction` | choice | no | Climb or conventional milling (default climb) — one of climb, conventional |
+| `both_ways` | bool | no | Open contours: cut back and forth instead of returning to the start |
+| `radial_passes` | integer | no | Number of side-by-side passes (default 1) (1 to 100) |
+| `radial_stepover` | number | no | Distance between radial passes, mm (default: the tool's stepover, else 40% of Ø) (0 to 10000 mm) |
+| `spring_passes` | integer | no | Repeat the final pass this many times (default 0) (0 to 10) |
+| `stock_radial` | number | no | Stock to leave on the walls, mm (default 0) (-1000 to 1000 mm) |
+| `stock_axial` | number | no | Stock to leave on the floor, mm (default 0) (-1000 to 1000 mm) |
+| `multiple_depths` | bool | no | Step down in several depths (default false) |
+| `max_stepdown` | number | no | Deepest step per depth, mm (default: the tool's stepdown, else Ø) (0 to 10000 mm) |
+| `feed_optimization` | bool | no | Slow down at sharp direction changes (default false) |
+| `optimization_angle` | number | no | Direction change that counts as sharp, degrees (default 45) (0 to 180) |
+| `optimization_feed` | number | no | Feed at sharp changes, % of the cutting feed (default 50) (1 to 100) |
+| `optimization_distance` | number | no | Distance before and after the change to slow down over, mm (default Ø/2) (0 to 10000 mm) |
+| `tolerance` | number | no | Chord tolerance for arcs and offsets, mm (default 0.01) (0.0001 to 1 mm) |
+| `lead_in` | choice | no | Lead-in style (default arc) — one of arc, line, none |
+| `lead_in_radius` | number | no | Lead-in arc radius, mm (default Ø/2) (0 to 10000 mm) |
+| `lead_in_sweep` | number | no | Lead-in arc sweep, degrees (default 90) (0 to 180) |
+| `lead_in_length` | number | no | Lead-in line length, mm (default Ø/2) (0 to 10000 mm) |
+| `lead_out_same` | bool | no | Lead out the way the tool led in (default true) |
+| `lead_out` | choice | no | Lead-out style — one of arc, line, none |
+| `lead_out_radius` | number | no | Lead-out arc radius, mm (0 to 10000 mm) |
+| `lead_out_sweep` | number | no | Lead-out arc sweep, degrees (0 to 180) |
+| `lead_out_length` | number | no | Lead-out line length, mm (0 to 10000 mm) |
+| `ramp` | choice | no | Go down by ramping along the lead-in or by plunging (default ramp) — one of ramp, plunge |
+| `ramp_angle` | number | no | Ramp angle, degrees (default 3) (0.1 to 90) |
+| `retract` | choice | no | Between passes: retract height (minimum), clearance height (full) or stay down — one of minimum, full, stay_down |
+| `stay_down_distance` | number | no | Stay down when the next pass starts within this distance, mm (default 2 × Ø) (0 to 10000 mm) |
+| `rapid_links` | bool | no | Link at rapid traverse (default true) or at the link feed |
+| `link_feed` | number | no | Feed for links when not rapid, mm/min (default: the machine's maximum) (0 to 1e6 mm/min) |
+
+Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
+
+<sub>ribbon: Toolpaths › Strategies</sub>
+
+#### `toolpath.list`
+
+```python
+cc.toolpath_list()
+```
+
+The job's toolpaths.
+
+
+Returns: list of toolpaths, as toolpath.get returns them
+
+#### `toolpath.get`
+
+```python
+cc.toolpath_get(id=…, moves=None, limit=None)
+```
+
+One toolpath, optionally with its moves.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Toolpath id, e.g. toolpath.1 |
+| `moves` | bool | no | Include the moves {kind, to, feed} (default false) |
+| `limit` | integer | no | Most moves to include (default 100000) (1 to 1000000) |
+
+Returns: the toolpath, plus `move_list` when moves = true
+
+#### `toolpath.edit`
+
+```python
+cc.toolpath_edit(id=…)
+```
+
+The settings a toolpath was made with; in the app this opens it in the toolpath panel.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Toolpath id, e.g. toolpath.1 |
+
+Returns: the settings, as toolpath.contour takes them (pass them back with `id` to regenerate)
+
+#### `toolpath.remove`
+
+```python
+cc.toolpath_remove(id=…)
+```
+
+Delete a toolpath from the job.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Toolpath id, e.g. toolpath.1 |
+
+Returns: {"removed": id}
 
 
 ### sim

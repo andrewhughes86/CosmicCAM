@@ -10,3 +10,4 @@ workspace = true
 
 [dependencies]
 glam = { workspace = true }
+i_overlay = { workspace = true }
