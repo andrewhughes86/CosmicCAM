@@ -157,6 +157,41 @@ class ClientTests(unittest.TestCase):
         )
         cc.close()
 
+    def test_job_files_and_tabs(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.job_save(path="part.cosmic")
+        cc.job_tab_close(index=1, discard=True)
+        self.assertEqual(
+            [r["params"] for r in app.requests],
+            [
+                {"command": "job.save", "params": {"path": "part.cosmic"}},
+                {"command": "job.tab.close", "params": {"index": 1, "discard": True}},
+            ],
+        )
+        cc.close()
+
+    def test_setup_create(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.setup_create(name="Op 1", wcs="origin", stock="size", stock_size=[100, 60, 40])
+        self.assertEqual(
+            app.requests[0]["params"],
+            {
+                "command": "setup.create",
+                "params": {"name": "Op 1", "wcs": "origin", "stock": "size", "stock_size": [100, 60, 40]},
+            },
+        )
+        cc.close()
+
+    def test_type_text(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.type_text("0.25", replace=True)
+        self.assertEqual(app.requests[0]["method"], "ui.type")
+        self.assertEqual(app.requests[0]["params"], {"text": "0.25", "replace": True})
+        cc.close()
+
     def test_settings_units(self):
         app = FakeApp()
         cc = CosmicCAM(app.port, TOKEN, timeout=5)

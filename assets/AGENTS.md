@@ -21,3 +21,7 @@ Python is a development tool only, never an application dependency.
 ## Layout
 - `icons/ui/` — command and UI icons. Read `icons/ui/AGENTS.md` and
   `icons/ui/STYLE_GUIDE.md` before adding, changing or assigning any icon.
+- `icons/file/` — file-type icons the desktop shows for CosmicCAM files (`cosmic-job.svg` for
+  `.cosmic` jobs). These are full-colour artwork for file managers, not command icons: the UI
+  style guide's colour roles do not apply, but the originality and attribution rules do.
+  `packaging/linux/install-file-type.sh` registers them on Linux.

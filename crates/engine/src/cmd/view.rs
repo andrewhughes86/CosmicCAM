@@ -6,18 +6,12 @@ use CosmicCAM_render::camera::{MAX_DISTANCE, MIN_DISTANCE, wrap_angle};
 use CosmicCAM_render::{Projection, ViewPreset};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, Param, ParamKind, Placement, RibbonTab, always};
+use super::{CommandSpec, Param, ParamKind, always};
 use crate::error::{EngineError, EngineResult};
 use crate::params;
 use crate::session::{Display, MAX_FPS_LIMIT, Session, Theme, camera_json};
 
-const HOME_DISPLAY: &str = "Display";
-
-const fn small(panel: &'static str) -> Option<Placement> {
-    Some(Placement::small(RibbonTab::Home, panel))
-}
-
-/// The view tools floating down the right side of the viewport, under the view cube:
+/// The view tools floating in a row at the bottom of the viewport:
 /// (command id, menu of related commands offered on right-click).
 pub static VIEWPORT_TOOLS: &[(&str, &[&str])] = &[
     ("view.fit", &[]),
@@ -25,6 +19,8 @@ pub static VIEWPORT_TOOLS: &[(&str, &[&str])] = &[
     ("view.camera.top", &[]),
     ("view.camera.front", &[]),
     ("view.camera.right", &[]),
+    ("view.projection.toggle", &[]),
+    ("view.grid.toggle", &[]),
 ];
 
 /// Every standard view, offered from the Iso button's menu.
@@ -246,7 +242,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "view.projection.toggle",
         label: "Perspective",
         tooltip: "Switch between orthographic and perspective projection",
-        placement: small(HOME_DISPLAY),
+        placement: None,
         icon: None,
         shortcut: Some("P"),
         params: &[],
@@ -285,7 +281,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "view.theme.toggle",
         label: "Light theme",
         tooltip: "Switch between the dark and light themes",
-        placement: small(HOME_DISPLAY),
+        placement: None,
         icon: None,
         shortcut: Some("Ctrl+Shift+T"),
         params: &[],
@@ -353,7 +349,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "view.grid.toggle",
         label: "Grid",
         tooltip: "Show or hide the ground grid",
-        placement: small(HOME_DISPLAY),
+        placement: None,
         icon: None,
         shortcut: Some("G"),
         params: &[],
@@ -368,7 +364,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "view.layout.reset",
         label: "Reset layout",
         tooltip: "Put the workspace panels back where they started",
-        placement: small(HOME_DISPLAY),
+        placement: None,
         icon: None,
         shortcut: None,
         params: &[],
@@ -414,5 +410,6 @@ fn set_projection(s: &mut Session, projection: Projection) -> EngineResult<Value
 
 fn set_theme(s: &mut Session, theme: Theme) -> EngineResult<Value> {
     s.prefs.theme = theme;
+    s.prefs.revision = s.prefs.revision.wrapping_add(1);
     Ok(json!({ "theme": theme.id() }))
 }

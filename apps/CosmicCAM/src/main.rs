@@ -15,12 +15,14 @@ use std::process::ExitCode;
 use CosmicCAM_ui_egui::{Automation, LaunchOptions, Session, parse_console_line};
 
 const USAGE: &str =
-    "usage: CosmicCAM [--sample] [--run \"<command> [json]\"]... [--tab <name>] [--screenshot <file.png>] [--control <port>]
+    "usage: CosmicCAM [job.cosmic]... [--sample] [--run \"<command> [json]\"]... [--tab <name>] [--screenshot <file.png>] [--control <port>]
 
+  job.cosmic            open these job files, each in its own tab
   --sample              open with the built-in sample part
   --run <line>          run a command after start-up, e.g. --run 'view.theme.set {\"theme\":\"light\"}'
   --tab <name>          open on this ribbon tab (Home, Setup, Tooling, ...)
   --screenshot <file>   save a PNG of the window once the steps have run, then quit
+  --version             print the version and quit
   --control <port>      open the control channel for the Python API on 127.0.0.1:<port> (0 = any free port);
                         the token is read from CosmicCAM_CONTROL_TOKEN or written to
                         <data dir>/CosmicCAM/control/<port>.token";
@@ -54,9 +56,22 @@ fn main() -> ExitCode {
                 Some(path) => screenshot = Some(PathBuf::from(path)),
                 None => return usage_error("--screenshot needs a file path"),
             },
+            "-V" | "--version" => {
+                println!("CosmicCAM {}", env!("CARGO_PKG_VERSION"));
+                return ExitCode::SUCCESS;
+            }
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return ExitCode::SUCCESS;
+            }
+            // A job file to open (a file manager passes the path on its own).
+            path if !path.starts_with('-') => {
+                let line = format!("job.open {}", serde_json::json!({ "path": path }));
+                match parse_console_line(&line) {
+                    Ok(Some(step)) => steps.push(step),
+                    Ok(None) => {}
+                    Err(e) => return usage_error(&format!("{path}: {e}")),
+                }
             }
             other => return usage_error(&format!("unknown argument: {other}")),
         }

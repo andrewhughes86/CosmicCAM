@@ -131,6 +131,8 @@ pub struct Viewport {
     last_render_time: Option<f64>,
     fps: f32,
     cube_hover: Option<overlay::CubeHover>,
+    /// Stock being defined, drawn as a see-through box over the scene.
+    pub stock_preview: Option<CosmicCAM_geom::Aabb>,
     /// Scene built before the GPU existed, uploaded once it does.
     pending_upload: Option<(SceneGeometry, SceneGeometry)>,
     animating: bool,
@@ -169,6 +171,7 @@ impl Viewport {
             last_render_time: None,
             fps: 0.0,
             cube_hover: None,
+            stock_preview: None,
             pending_upload: None,
             animating: false,
         }
@@ -242,7 +245,8 @@ impl Viewport {
             if cube_response.clicked()
                 && let Some(hit) = self.cube_hover
             {
-                requests.push(("view.camera.preset".into(), serde_json::json!({ "preset": hit.preset_id() })));
+                let (yaw, pitch) = hit.view_degrees();
+                requests.push(("view.camera.set".into(), serde_json::json!({ "yaw": yaw, "pitch": pitch })));
             }
             if self.cube_hover.is_some() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -251,12 +255,14 @@ impl Viewport {
         } else {
             self.cube_hover = None;
         }
+        if let Some(stock) = self.stock_preview {
+            self.paint_stock_preview(&painter, rect, stock, tokens);
+        }
         self.paint_edges(&painter, rect, session, tokens);
         if display.wcs {
             self.paint_wcs_labels(&painter, rect, session, tokens);
         }
-        let tools_top = if display.view_cube { overlay::cube_rect(rect).bottom() + 6.0 } else { rect.top() + 12.0 };
-        view_tools(ui, rect, tools_top, session, tokens, requests);
+        view_tools(ui, rect, session, tokens, requests);
         if display.orientation_triad {
             overlay::paint_triad(&painter, overlay::triad_anchor(rect), &self.shown, tokens);
         }
@@ -470,6 +476,99 @@ impl Viewport {
                 rect.left() + (ndc.x + 1.0) * 0.5 * rect.width(),
                 rect.top() + (1.0 - ndc.y) * 0.5 * rect.height(),
             ))
+        }
+    }
+
+    /// The stock being defined: its faces that face the viewer, filled see-through so the
+    /// part shows inside it, with its edges drawn over them.
+    fn paint_stock_preview(&self, painter: &egui::Painter, rect: Rect, b: CosmicCAM_geom::Aabb, tokens: &Tokens) {
+        let cam = self.shown;
+        let radius = self.scene_bounds.radius().max(b.radius()) + cam.target.distance(self.scene_bounds.center());
+        let view_proj = cam.view_proj(rect.aspect_ratio(), radius);
+        let project = |p: Vec3| -> Option<Pos2> {
+            let clip = view_proj * p.extend(1.0);
+            if !(clip.w > 1.0e-6 && clip.is_finite()) {
+                return None;
+            }
+            let ndc = clip.truncate() / clip.w;
+            Some(pos2(
+                rect.left() + (ndc.x + 1.0) * 0.5 * rect.width(),
+                rect.top() + (1.0 - ndc.y) * 0.5 * rect.height(),
+            ))
+        };
+        let (lo, hi) = (b.min, b.max);
+        let corner = |x: bool, y: bool, z: bool| {
+            Vec3::new(if x { hi.x } else { lo.x }, if y { hi.y } else { lo.y }, if z { hi.z } else { lo.z })
+        };
+        // Each face: outward normal and its corners in order.
+        let faces = [
+            (
+                Vec3::Z,
+                [
+                    corner(false, false, true),
+                    corner(true, false, true),
+                    corner(true, true, true),
+                    corner(false, true, true),
+                ],
+            ),
+            (
+                Vec3::NEG_Z,
+                [
+                    corner(false, false, false),
+                    corner(false, true, false),
+                    corner(true, true, false),
+                    corner(true, false, false),
+                ],
+            ),
+            (
+                Vec3::X,
+                [
+                    corner(true, false, false),
+                    corner(true, true, false),
+                    corner(true, true, true),
+                    corner(true, false, true),
+                ],
+            ),
+            (
+                Vec3::NEG_X,
+                [
+                    corner(false, false, false),
+                    corner(false, false, true),
+                    corner(false, true, true),
+                    corner(false, true, false),
+                ],
+            ),
+            (
+                Vec3::Y,
+                [
+                    corner(false, true, false),
+                    corner(false, true, true),
+                    corner(true, true, true),
+                    corner(true, true, false),
+                ],
+            ),
+            (
+                Vec3::NEG_Y,
+                [
+                    corner(false, false, false),
+                    corner(true, false, false),
+                    corner(true, false, true),
+                    corner(false, false, true),
+                ],
+            ),
+        ];
+        let eye = cam.eye();
+        let perspective = cam.projection == CosmicCAM_render::Projection::Perspective;
+        let fill = tokens.accent.gamma_multiply(0.22);
+        let stroke = egui::Stroke::new(1.5, tokens.accent);
+        for (normal, pts) in faces {
+            let centre = (pts[0] + pts[2]) * 0.5;
+            let towards = if perspective { eye - centre } else { cam.eye_dir() };
+            if normal.dot(towards) <= 0.0 {
+                continue;
+            }
+            let Some(screen) = pts.iter().map(|p| project(*p)).collect::<Option<Vec<Pos2>>>() else { continue };
+            painter.add(egui::Shape::convex_polygon(screen, fill, stroke));
         }
     }
 
@@ -800,33 +899,41 @@ fn mix(base: Color32, colour: Color32, share: f32) -> Color32 {
 
 /// Size of one floating view tool button.
 const TOOL_BUTTON: f32 = 38.0;
-/// Gap between the tool column and the viewport's right edge.
-const TOOL_MARGIN: f32 = 6.0;
+/// Gap between the tool row and the viewport's bottom edge.
+const TOOL_MARGIN: f32 = 10.0;
+/// Space between two tool buttons.
+const TOOL_GAP: f32 = 4.0;
 
-/// The column of view tools floating down the right edge, under the view cube.
-fn view_tools(ui: &Ui, viewport: Rect, top: f32, session: &Session, tokens: &Tokens, requests: &mut Vec<Request>) {
-    let centre_x = viewport.right() - TOOL_MARGIN - TOOL_BUTTON / 2.0;
-    for (n, (id, menu)) in CosmicCAM_engine::cmd::VIEWPORT_TOOLS.iter().enumerate() {
+/// The row of view tools floating at the bottom centre of the viewport.
+fn view_tools(ui: &Ui, viewport: Rect, session: &Session, tokens: &Tokens, requests: &mut Vec<Request>) {
+    let tools = CosmicCAM_engine::cmd::VIEWPORT_TOOLS;
+    let width = tools.len() as f32 * (TOOL_BUTTON + TOOL_GAP) - TOOL_GAP;
+    let left = viewport.center().x - width / 2.0;
+    let centre_y = viewport.bottom() - TOOL_MARGIN - TOOL_BUTTON / 2.0;
+    for (n, (id, menu)) in tools.iter().enumerate() {
         let Some(spec) = CosmicCAM_engine::cmd::find(id) else {
             continue;
         };
         let button = Rect::from_center_size(
-            pos2(centre_x, top + TOOL_BUTTON / 2.0 + n as f32 * (TOOL_BUTTON + 4.0)),
+            pos2(left + TOOL_BUTTON / 2.0 + n as f32 * (TOOL_BUTTON + TOOL_GAP), centre_y),
             egui::vec2(TOOL_BUTTON, TOOL_BUTTON),
         );
-        if button.bottom() > viewport.bottom() - 8.0 {
-            break;
+        if button.left() < viewport.left() + 4.0 || button.right() > viewport.right() - 4.0 {
+            continue;
         }
         let enabled = session.is_enabled(spec);
         let response = ui.interact(button, ui.id().with(("view-tool", *id)), Sense::click());
+        let checked = crate::ribbon::is_checked(id, session);
         let fill = if response.is_pointer_button_down_on() {
             tokens.accent.gamma_multiply(0.3)
+        } else if checked {
+            tokens.accent.gamma_multiply(0.22)
         } else if response.hovered() {
             tokens.hover_bg
         } else {
             tokens.panel_bg.gamma_multiply(0.85)
         };
-        let stroke = egui::Stroke::new(1.0, if response.hovered() { tokens.accent } else { tokens.border });
+        let stroke = egui::Stroke::new(1.0, if response.hovered() || checked { tokens.accent } else { tokens.border });
         ui.painter().rect(button, 4.0, fill, stroke, egui::StrokeKind::Inside);
         crate::ribbon::paint_icon(ui, button.shrink(6.0), spec, tokens, enabled);
         let response = crate::ribbon::with_tooltip(response, spec, enabled);

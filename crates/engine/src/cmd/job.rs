@@ -4,10 +4,13 @@ use serde_json::{Value, json};
 
 use super::{CommandSpec, Param, ParamKind, Placement, RibbonTab, all, always, find};
 use crate::error::{EngineError, EngineResult};
+use crate::jobfile;
 use crate::params;
 use crate::session::{OutlineNode, Session};
 
 const SINCE: ParamKind = ParamKind::Integer { min: 0, max: i64::MAX };
+const TAB: ParamKind = ParamKind::Integer { min: 0, max: crate::session::MAX_TABS as i64 - 1 };
+const TABS_RETURNS: &str = "{\"active\": index, \"tabs\": [{index, name, path, modified, active}]}";
 const LIMIT: ParamKind = ParamKind::Integer { min: 1, max: crate::session::MAX_LOG as i64 };
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
@@ -22,8 +25,107 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         returns: "{\"job\": name}",
         enabled: always,
         run: |s, p| {
-            s.reset_job(params::opt_bool(p, "sample")?.unwrap_or(false));
+            s.new_document(params::opt_bool(p, "sample")?.unwrap_or(false))?;
             Ok(json!({ "job": s.job.name }))
+        },
+    },
+    CommandSpec {
+        id: "job.open",
+        label: "Open",
+        tooltip: "Open a job file (.cosmic) in a new tab",
+        placement: Some(Placement::small(RibbonTab::Home, "Job")),
+        icon: None,
+        shortcut: Some("Ctrl+O"),
+        params: &[Param::required("path", ParamKind::Str, "Job file to open (.cosmic)")],
+        returns: "{\"job\": name, \"tab\": index, \"tabs\": [...]}",
+        enabled: always,
+        run: open,
+    },
+    CommandSpec {
+        id: "job.save",
+        label: "Save",
+        tooltip: "Save the job to its file (.cosmic)",
+        placement: Some(Placement::small(RibbonTab::Home, "Job")),
+        icon: None,
+        shortcut: Some("Ctrl+S"),
+        params: &[Param::optional(
+            "path",
+            ParamKind::Str,
+            "Where to save; omit to save over the file the job came from. `.cosmic` is added when the name has no \
+             extension",
+        )],
+        returns: "{\"path\": file, \"bytes\": size}",
+        enabled: always,
+        run: save,
+    },
+    CommandSpec {
+        id: "job.save.as",
+        label: "Save as",
+        tooltip: "Save the job to a new file (.cosmic)",
+        placement: Some(Placement::small(RibbonTab::Home, "Job")),
+        icon: Some("job_save"),
+        shortcut: Some("Ctrl+Shift+S"),
+        params: &[Param::required(
+            "path",
+            ParamKind::Str,
+            "Where to save. `.cosmic` is added when the name has no extension",
+        )],
+        returns: "{\"path\": file, \"bytes\": size}",
+        enabled: always,
+        run: save,
+    },
+    CommandSpec {
+        id: "job.tab.list",
+        label: "Open documents",
+        tooltip: "The documents open in tabs",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[],
+        returns: TABS_RETURNS,
+        enabled: always,
+        run: |s, _| Ok(tabs_json(s)),
+    },
+    CommandSpec {
+        id: "job.tab.activate",
+        label: "Switch document",
+        tooltip: "Show the document in another tab",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[Param::required("index", TAB, "Tab number, from 0")],
+        returns: TABS_RETURNS,
+        enabled: always,
+        run: |s, p| {
+            s.activate_tab(tab_index(p, "index")?.unwrap_or(0))?;
+            Ok(tabs_json(s))
+        },
+    },
+    CommandSpec {
+        id: "job.tab.close",
+        label: "Close document",
+        tooltip: "Close a document's tab",
+        placement: None,
+        icon: None,
+        shortcut: Some("Ctrl+W"),
+        params: &[
+            Param::optional("index", TAB, "Tab number, from 0; omit for the active tab"),
+            Param::optional("discard", ParamKind::Bool, "Close even though it has unsaved changes"),
+        ],
+        returns: TABS_RETURNS,
+        enabled: always,
+        run: |s, p| {
+            let index = tab_index(p, "index")?.unwrap_or(s.active_tab());
+            let discard = params::opt_bool(p, "discard")?.unwrap_or(false);
+            let job = s.tab_job(index).ok_or_else(|| EngineError::InvalidParams(format!("there is no tab {index}")))?;
+            if job.is_modified() && !discard {
+                return Err(EngineError::InvalidParams(format!(
+                    "{} has unsaved changes; save it, or close it with discard",
+                    job.name
+                )));
+            }
+            s.close_tab(index)?;
+            Ok(tabs_json(s))
         },
     },
     CommandSpec {
@@ -182,4 +284,76 @@ fn log_get(s: &Session, p: &Value) -> EngineResult<Value> {
         .collect();
     let skip = entries.len().saturating_sub(limit);
     Ok(json!(entries.into_iter().skip(skip).collect::<Vec<_>>()))
+}
+
+fn tab_index(p: &Value, key: &str) -> EngineResult<Option<usize>> {
+    Ok(params::opt_f64(p, key, 0.0, (crate::session::MAX_TABS - 1) as f64)?.map(|i| i as usize))
+}
+
+fn tabs_json(s: &Session) -> Value {
+    let tabs: Vec<Value> = s
+        .tabs()
+        .into_iter()
+        .enumerate()
+        .map(|(i, t)| json!({ "index": i, "name": t.name, "path": t.path, "modified": t.modified, "active": t.active }))
+        .collect();
+    json!({ "active": s.active_tab(), "tabs": tabs })
+}
+
+/// The file name without folder or extension: a document's name.
+fn stem(path: &str) -> String {
+    std::path::Path::new(path.strip_prefix(crate::session::UPLOAD_PREFIX).unwrap_or(path))
+        .file_stem()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Untitled".into())
+}
+
+fn open(s: &mut Session, p: &Value) -> EngineResult<Value> {
+    let path = params::req_str(p, "path")?.to_owned();
+    // A file that is already open is shown, not opened twice.
+    if let Some(index) = s.tabs().iter().position(|t| t.path.as_deref() == Some(path.as_str())) {
+        s.activate_tab(index)?;
+        return Ok(json!({ "job": s.job.name, "tab": index, "tabs": tabs_json(s)["tabs"] }));
+    }
+    let text = match s.take_upload(&path) {
+        Some((_, bytes)) => String::from_utf8(bytes.to_vec())
+            .map_err(|_| EngineError::InvalidParams(format!("{path} is not a job file")))?,
+        None => {
+            let size = std::fs::metadata(&path)
+                .map_err(|e| EngineError::InvalidParams(format!("could not open {path}: {e}")))?
+                .len();
+            if size > jobfile::MAX_FILE_BYTES {
+                return Err(EngineError::InvalidParams(format!("{path} is larger than a job file can be")));
+            }
+            std::fs::read_to_string(&path)
+                .map_err(|e| EngineError::InvalidParams(format!("could not read {path}: {e}")))?
+        }
+    };
+    let (mut job, camera) = jobfile::from_str(&text)?;
+    job.name = stem(&path);
+    job.path = (!path.starts_with(crate::session::UPLOAD_PREFIX)).then(|| path.clone());
+    let tab = s.open_tab(job, camera)?;
+    Ok(json!({ "job": s.job.name, "tab": tab, "tabs": tabs_json(s)["tabs"] }))
+}
+
+fn save(s: &mut Session, p: &Value) -> EngineResult<Value> {
+    let path = match params::opt_str(p, "path")? {
+        Some(path) if !path.trim().is_empty() => {
+            let path = path.trim();
+            if std::path::Path::new(path).extension().is_some() {
+                path.to_owned()
+            } else {
+                format!("{path}.{}", jobfile::EXTENSION)
+            }
+        }
+        _ => s.job.path.clone().ok_or_else(|| {
+            EngineError::InvalidParams("this job has not been saved yet; give a path to save it to".into())
+        })?,
+    };
+    let text = jobfile::to_string(&s.job, &s.view.camera);
+    std::fs::write(&path, &text).map_err(|e| EngineError::InvalidParams(format!("could not write {path}: {e}")))?;
+    s.job.name = stem(&path);
+    s.job.path = Some(path.clone());
+    s.job.saved_edits = s.job.edits;
+    Ok(json!({ "path": path, "bytes": text.len() }))
 }

@@ -430,7 +430,7 @@ fn import_and_wcs_buttons_are_also_on_home() {
     }
     assert!(!home.iter().any(|id| id.starts_with("view.camera") || *id == "view.fit"));
     let panels: Vec<&str> = cmd::ribbon(RibbonTab::Home).iter().map(|(p, _)| *p).collect();
-    assert_eq!(panels, ["Job", "Setup", "Display", "Settings"]);
+    assert_eq!(panels, ["Job", "Setup", "Preferences"]);
     for (id, menu) in cmd::VIEWPORT_TOOLS {
         assert!(cmd::find(id).is_some(), "{id}");
         assert!(menu.iter().all(|m| cmd::find(m).is_some()));
@@ -1203,9 +1203,16 @@ fn gcode_has_a_safety_block_tool_change_and_the_moves() {
     }
     assert_eq!(lines.last(), Some(&"%"));
     // Length compensation on the first Z move: clearance, model top 42 mm + 0.5 in = 2.1535 in.
-    assert!(lines.iter().any(|l| l.starts_with("G43 Z2.1535 H1")), "{text}");
+    assert!(lines.iter().any(|l| l.starts_with("G0 G43 Z2.1535 H1")), "{text}");
+    // Every line that moves an axis names its motion.
+    for l in lines.iter().filter(|l| !l.starts_with('(') && l.split(' ').any(|w| w.starts_with(['X', 'Y', 'Z']))) {
+        assert!(
+            l.starts_with("G0 ") || l.starts_with("G1 ") || l.starts_with("G91 G28"),
+            "no motion code: {l}\n{text}"
+        );
+    }
     // Cutting feed 1000 mm/min = 39.37 in/min, written once until it changes.
-    assert!(lines.iter().any(|l| l.starts_with("G1 Z0.0000 F11.81")), "plunge feed, G1 once: {text}");
+    assert!(lines.iter().any(|l| l.starts_with("G1 Z0.0000 F11.81")), "plunge feed: {text}");
     assert!(lines.iter().any(|l| l.ends_with("F39.37")), "{text}");
     assert_eq!(text.matches("F39.37").count(), 1, "modal feed");
     // The contour sits 3 mm outside the base: X reaches ±53 mm = 2.0866 in.
@@ -1253,4 +1260,212 @@ fn gcode_refuses_a_toolpath_without_spindle_speed() {
     let r = s.execute("post.gcode.export", &json!({"path": file.path()})).unwrap_or_default();
     assert!(r["lines"].as_u64().unwrap_or(0) > 10);
     assert!(std::fs::read_to_string(file.path()).unwrap_or_default().ends_with("%\n"));
+}
+
+#[test]
+fn a_saved_job_opens_in_a_new_tab_as_it_was() {
+    let mut s = Session::with_sample();
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "feed": 800, "spindle_rpm": 9000})).is_ok());
+    assert!(s.execute("setup.wcs.create", &json!({})).is_ok());
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom]})).is_ok());
+    assert!(s.job.is_modified());
+    // A save without a path needs one the first time.
+    assert!(s.execute("job.save", &json!({})).is_err());
+    let file = TempFile::new("part.cosmic", b"");
+    let stem = file.path().trim_end_matches(".cosmic").to_owned();
+    let r = s.execute("job.save", &json!({"path": stem})).unwrap_or_default();
+    assert_eq!(r["path"], file.path());
+    assert!(!s.job.is_modified());
+    assert_eq!(s.job.name, "part");
+    let before = gcode(&mut s, json!({}));
+
+    // Closed and opened again (into the empty document the close leaves), it comes back with
+    // the same models, WCS and toolpaths.
+    assert!(s.execute("job.tab.close", &json!({})).is_ok());
+    assert!(s.job.models.is_empty());
+    assert!(s.execute("job.open", &json!({"path": file.path()})).is_ok());
+    assert_eq!(s.tabs().len(), 1);
+    assert_eq!(s.job.models.len(), 1);
+    assert_eq!(s.job.wcs.len(), 1);
+    assert_eq!(s.job.toolpaths.len(), 1);
+    assert!(!s.job.is_modified());
+    assert_eq!(gcode(&mut s, json!({})), before);
+    // A new document opens a second tab; opening the file again shows its tab instead.
+    assert!(s.execute("job.new", &Value::Null).is_ok());
+    let tabs = s.execute("job.tab.list", &Value::Null).unwrap_or_default();
+    assert_eq!(tabs["tabs"].as_array().map(Vec::len), Some(2), "{tabs}");
+    assert_eq!(tabs["active"], 1);
+    assert!(s.execute("job.open", &json!({"path": file.path()})).is_ok());
+    assert_eq!(s.tabs().len(), 2);
+    assert_eq!(s.active_tab(), 0);
+}
+
+#[test]
+fn tabs_switch_close_and_guard_unsaved_work() {
+    let mut s = Session::with_sample();
+    assert!(s.execute("job.new", &Value::Null).is_ok());
+    assert_eq!(s.tabs().len(), 2);
+    assert!(s.job.models.is_empty());
+    // A blank document is replaced, not joined, by the next new one.
+    assert!(s.execute("job.new", &Value::Null).is_ok());
+    assert_eq!(s.tabs().len(), 2);
+    let revision = s.job.revision;
+    assert!(s.execute("job.tab.activate", &json!({"index": 0})).is_ok());
+    assert_eq!(s.job.name, "Sample");
+    assert_ne!(s.job.revision, revision);
+    // Unsaved changes stop a close unless they are discarded.
+    assert!(s.execute("setup.stock.fit", &json!({})).is_ok());
+    assert!(s.tabs()[0].modified);
+    assert!(s.execute("job.tab.close", &json!({"index": 0})).is_err());
+    assert_eq!(s.tabs().len(), 2);
+    assert!(s.execute("job.tab.close", &json!({"index": 0, "discard": true})).is_ok());
+    assert_eq!(s.tabs().len(), 1);
+    assert_eq!(s.job.name, "Untitled");
+    // Closing the last tab leaves an empty document.
+    assert!(s.execute("job.tab.close", &json!({})).is_ok());
+    assert_eq!(s.tabs().len(), 1);
+    assert!(s.execute("job.tab.activate", &json!({"index": 5})).is_err());
+    // Views and selections are not changes to the job.
+    assert!(s.execute("view.fit", &Value::Null).is_ok());
+    assert!(!s.job.is_modified());
+}
+
+#[test]
+fn hostile_job_files_are_refused() {
+    let mut s = Session::with_sample();
+    let good = jobfile_text(&s);
+    let cases: Vec<String> = vec![
+        String::new(),
+        "{".into(),
+        "{}".into(),
+        r#"{"format":"CosmicCAM/99","job":{}}"#.into(),
+        r#"{"format":"CosmicCAM/1"}"#.into(),
+        good.replace("\"positions\":\"", "\"positions\":\"*"),
+        good.replace("\"triangles\":\"", "\"triangles\":\"AAAA"),
+        r#"{"format":"CosmicCAM/1","job":{"name":"x","stock":{"min":[1,1,1],"max":[0,0,0]}}}"#.into(),
+        r#"{"format":"CosmicCAM/1","job":{"name":"x","wcs":[{"id":"w","name":"w","origin":[0,0,0],"x_axis":[1,0,0],"z_axis":[1,0,0]}]}}"#.into(),
+        r#"{"format":"CosmicCAM/1","job":{"name":"x","models":[{"id":"m","name":"m","positions":"AAAAAAAAAAAAAAAA","triangles":"AQAAAAIAAAADAAAA"}]}}"#.into(),
+        r#"{"format":"CosmicCAM/1","job":{"name":"x","toolpaths":[{"id":"t","name":"t","strategy":"s","machine":"m","tool":1,"start":[0,0,0],"moves":"Bw=="}]}}"#.into(),
+    ];
+    for (i, text) in cases.iter().enumerate() {
+        let file = TempFile::new(&format!("bad{i}.cosmic"), text.as_bytes());
+        let r = s.execute("job.open", &json!({"path": file.path()}));
+        assert!(r.is_err(), "case {i} opened: {r:?}");
+        assert_eq!(s.tabs().len(), 1);
+    }
+    let file = TempFile::new("good.cosmic", good.as_bytes());
+    assert!(s.execute("job.open", &json!({"path": file.path()})).is_ok());
+    assert!(s.execute("job.open", &json!({"path": "/no/such/file.cosmic"})).is_err());
+}
+
+fn jobfile_text(s: &Session) -> String {
+    crate::jobfile::to_string(&s.job, &s.view.camera)
+}
+
+#[test]
+fn contours_start_nearest_the_entry_point() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    let start_of = |s: &mut Session, extra: Value| -> Option<[f32; 3]> {
+        let mut p = json!({"geometry": [bottom], "lead_in": "none"});
+        if let (Some(p), Some(extra)) = (p.as_object_mut(), extra.as_object()) {
+            p.extend(extra.clone());
+        }
+        let r = s.execute("toolpath.contour", &p).ok()?;
+        let id = r["id"].as_str()?.to_owned();
+        s.job.toolpaths.iter().find(|t| t.id == id).map(|t| t.start.to_array())
+    };
+    // A point picked off the right-hand side starts the contour on that side, level with it.
+    let right = start_of(&mut s, json!({"entry_from": "selection", "entry_point": [120, 10, 0]})).unwrap_or_default();
+    assert!((right[0] - 53.0).abs() < 1.0e-3 && (right[1] - 10.0).abs() < 1.0e-3, "{right:?}");
+    let left = start_of(&mut s, json!({"entry_from": "selection", "entry_point": [-120, -5, 0]})).unwrap_or_default();
+    assert!((left[0] + 53.0).abs() < 1.0e-3 && (left[1] + 5.0).abs() < 1.0e-3, "{left:?}");
+    // Selection needs the point.
+    let r = s.execute("toolpath.contour", &json!({"geometry": [bottom], "entry_from": "selection"}));
+    assert!(matches!(r, Err(EngineError::InvalidParams(ref m)) if m.contains("entry point")), "{r:?}");
+    // Origin and WCS entries are accepted.
+    assert!(start_of(&mut s, json!({"entry_from": "origin"})).is_some());
+    assert!(start_of(&mut s, json!({"entry_from": "wcs"})).is_some());
+}
+
+#[test]
+fn setups_hold_a_machine_a_wcs_and_their_stock() {
+    let mut s = Session::with_sample();
+    assert!(s.execute("setup.create", &json!({})).is_err(), "a name is required");
+    assert!(s.execute("setup.create", &json!({"name": "  "})).is_err());
+    assert!(s.execute("setup.create", &json!({"name": "Op1", "wcs": "wcs.9"})).is_err());
+    assert!(s.execute("setup.wcs.create", &json!({"name": "Vice"})).is_ok());
+    // Fitted with margins and rounded up to whole 10 mm.
+    let op1 = s
+        .execute(
+            "setup.create",
+            &json!({"name": "Op1", "wcs": "wcs.1", "stock_margin_sides": 2, "stock_margin_top": 1, "stock_round": 10}),
+        )
+        .unwrap_or_default();
+    assert_eq!(op1["id"], "setup.1");
+    assert_eq!(op1["active"], true);
+    assert_eq!(op1["machine"], "machine.1");
+    assert_eq!(op1["wcs"], "wcs.1");
+    assert_eq!(op1["stock"]["size"], json!([110.0, 70.0, 50.0]));
+    // The top stays at the model top plus the margin; rounding adds underneath.
+    assert_eq!(op1["stock"]["max"][2], 43.0);
+    assert_eq!(s.job.stock.map(|b| b.size().to_array()), Some([110.0, 70.0, 50.0]));
+
+    // A fixed size on the origin, then corners.
+    let op2 = s
+        .execute("setup.create", &json!({"name": "Op2", "wcs": "origin", "stock": "size", "stock_size": [120, 80, 50]}))
+        .unwrap_or_default();
+    assert_eq!(op2["wcs"], Value::Null);
+    assert_eq!(op2["stock"]["max"][2], 42.0);
+    assert_eq!(op2["stock"]["min"][0], -60.0);
+    assert_eq!(s.job.active_wcs, None);
+    let r = s.execute("setup.stock.box", &json!({"stock": "box", "stock_min": [-1, -1, -1], "stock_max": [1, 1, 1]}));
+    assert_eq!(r.unwrap_or_default()["size"], json!([2.0, 2.0, 2.0]));
+    assert!(s.execute("setup.stock.box", &json!({"stock": "size", "stock_size": [0, 1, 1]})).is_err());
+    assert!(
+        s.execute("setup.stock.box", &json!({"stock": "box", "stock_min": [0, 0, 0], "stock_max": [1, 1, 0]})).is_err()
+    );
+
+    // Switching setups brings back each one's stock and WCS.
+    assert!(s.execute("setup.activate", &json!({"id": "setup.1"})).is_ok());
+    assert_eq!(s.job.active_wcs.as_deref(), Some("wcs.1"));
+    assert_eq!(s.job.stock.map(|b| b.size().x), Some(110.0));
+    let group = s.outline_node("setups").map(|g| g.children).unwrap_or_default();
+    let names: Vec<String> = group.iter().map(|n| n.label.clone()).collect();
+    assert_eq!(names, ["Op1 (active)", "Op2", "Vice (active)"]);
+    assert!(s.outline_node("setup.1/stock").is_some());
+
+    // They are saved with the job.
+    let file = TempFile::new("setups.cosmic", b"");
+    assert!(s.execute("job.save", &json!({"path": file.path()})).is_ok());
+    assert!(s.execute("job.tab.close", &json!({})).is_ok());
+    assert!(s.execute("job.open", &json!({"path": file.path()})).is_ok());
+    assert_eq!(s.job.setups.len(), 2);
+    assert_eq!(s.job.active_setup.as_deref(), Some("setup.1"));
+
+    // Removing a WCS sends its setups to the origin; removing the active setup activates the next.
+    assert!(s.execute("setup.wcs.remove", &json!({"id": "wcs.1"})).is_ok());
+    assert_eq!(s.job.setup_by_id("setup.1").and_then(|st| st.wcs.clone()), None);
+    assert!(s.execute("setup.remove", &json!({"id": "setup.1"})).is_ok());
+    assert_eq!(s.job.active_setup.as_deref(), Some("setup.2"));
+    assert_eq!(s.job.stock.map(|b| b.size().x), Some(2.0));
+}
+
+#[test]
+fn a_tighter_tolerance_puts_more_points_on_curves() {
+    let mut s = sample_with_tool();
+    // The boss's cylinder face: its rim is followed as a true circle.
+    let faces = s.execute("model.faces.list", &json!({"id": "model.sample"})).unwrap_or_default();
+    let boss = faces
+        .as_array()
+        .and_then(|f| f.iter().find(|f| f["kind"] == "cylinder"))
+        .map(|f| f["face"].clone())
+        .unwrap_or_default();
+    let moves = |s: &mut Session, tolerance: f64| -> usize {
+        let r = s.execute("toolpath.contour", &json!({"geometry": [boss], "tolerance": tolerance, "lead_in": "none"}));
+        r.ok().and_then(|v| v["moves"].as_u64()).unwrap_or(0) as usize
+    };
+    let (coarse, fine) = (moves(&mut s, 0.1), moves(&mut s, 0.001));
+    assert!(coarse > 8 && fine > coarse * 4, "coarse {coarse}, fine {fine}");
 }

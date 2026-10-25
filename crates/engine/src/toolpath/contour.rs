@@ -28,6 +28,8 @@ pub const LEADS: &[&str] = &["arc", "line", "none"];
 pub const RAMPS: &[&str] = &["ramp", "plunge"];
 pub const RETRACTS: &[&str] = &["minimum", "full", "stay_down"];
 pub const TOOL_AXES: &[&str] = &["wcs_z"];
+/// Where closed contours start: mid-way along the longest side, or nearest a point.
+pub const ENTRIES: &[&str] = &["auto", "origin", "wcs", "selection"];
 /// The heights, top to bottom: (parameter prefix, default reference, default offset in mm).
 pub const HEIGHTS: &[(&str, &str, f64)] = &[
     ("clearance", "model_top", 15.0),
@@ -235,6 +237,50 @@ fn frame(s: &Session, p: &Value) -> EngineResult<(Frame, Option<String>)> {
     })
 }
 
+/// Most points one resampled circle gets.
+const MAX_CIRCLE_POINTS: usize = 20_000;
+
+/// The circle through `points` (centre, normal, radius), sampled so no chord strays more than
+/// `tolerance` from the arc. It starts where `points` does and runs the same way round.
+fn resample_circle(points: &[Vec3], center: Vec3, normal: Vec3, radius: f32, tolerance: f64) -> Vec<Vec3> {
+    let (c, n, r) = (center.as_dvec3(), normal.as_dvec3().normalize_or_zero(), f64::from(radius));
+    let Some(&first) = points.first() else { return Vec::new() };
+    let u = {
+        let d = first.as_dvec3() - c;
+        (d - n * d.dot(n)).normalize_or_zero()
+    };
+    if r <= 1.0e-9 || u == DVec3::ZERO || n == DVec3::ZERO || !r.is_finite() {
+        return points.to_vec();
+    }
+    let mut v = n.cross(u);
+    // Keep the mesh loop's direction.
+    if let Some(&second) = points.get(1)
+        && (second.as_dvec3() - c).dot(v) < 0.0
+    {
+        v = -v;
+    }
+    let step = 2.0 * (1.0 - (tolerance.max(1.0e-4) / r).min(1.0)).acos();
+    let count = if step > 1.0e-9 { (std::f64::consts::TAU / step).ceil() as usize } else { MAX_CIRCLE_POINTS };
+    let count = count.clamp(8, MAX_CIRCLE_POINTS);
+    (0..=count)
+        .map(|i| {
+            let a = std::f64::consts::TAU * i as f64 / count as f64;
+            (c + (u * a.cos() + v * a.sin()) * r).as_vec3()
+        })
+        .collect()
+}
+
+/// A cylinder face's rim loop, resampled as the circle it is when its points lie on one.
+fn circle_rim(rim: &[Vec3], axis: Vec3, radius: f32, tolerance: f64) -> Vec<Vec3> {
+    if rim.len() < 3 {
+        return rim.to_vec();
+    }
+    let n = rim.len() as f32;
+    let center = rim.iter().fold(Vec3::ZERO, |a, p| a + *p) / n;
+    let round = rim.iter().all(|p| (p.distance(center) - radius).abs() <= radius * 0.02 + 1.0e-3);
+    if round { resample_circle(rim, center, axis, radius, tolerance) } else { rim.to_vec() }
+}
+
 /// The selected geometry as contours in the WCS plane.
 fn chains(
     s: &Session,
@@ -254,7 +300,9 @@ fn chains(
             Entity::Edge(e) => {
                 let edge = m.edges.edges.get(e).ok_or_else(|| bad(format!("`geometry`: no edge `{r}`")))?;
                 match edge.kind {
-                    EdgeKind::Circle { .. } => loops.push(edge.points.clone()),
+                    EdgeKind::Circle { center, normal, radius } => {
+                        loops.push(resample_circle(&edge.points, center, normal, radius, tolerance));
+                    }
                     EdgeKind::Line { .. } => pieces.push(edge.points.clone()),
                 }
             }
@@ -275,7 +323,14 @@ fn chains(
                     _ => (!boundary.is_empty()).then_some(0),
                 };
                 match pick {
-                    Some(i) if i < boundary.len() => loops.push(boundary.swap_remove(i)),
+                    Some(i) if i < boundary.len() => {
+                        let rim = boundary.swap_remove(i);
+                        // A cylinder's rim is a true circle: follow it at the tolerance, not the mesh.
+                        loops.push(match kind {
+                            Some(FaceKind::Cylinder { axis, radius, .. }) => circle_rim(&rim, axis, radius, tolerance),
+                            _ => rim,
+                        });
+                    }
                     _ => return Err(bad(format!("`geometry`: {r} has no outline to follow"))),
                 }
             }
@@ -550,6 +605,50 @@ fn optimized_cut(pts: &[DVec2], closed: bool, feed: f64, opt: Option<(f64, f64, 
 }
 
 /// Builds the contour toolpath for `p`; `id` is the toolpath id it will carry.
+/// The point closed contours should start nearest, in the WCS plane, if one is set.
+fn entry_point(p: &Value, f: &Frame) -> EngineResult<Option<DVec2>> {
+    let at = match params::opt_str(p, "entry_from")?.unwrap_or("auto") {
+        "origin" => Some(Vec3::ZERO),
+        "wcs" => Some(f.world(DVec3::ZERO)),
+        "selection" => Some(
+            params::opt_vec3(p, "entry_point")?
+                .ok_or_else(|| bad("pick the entry point (entry_point) or choose another entry"))?,
+        ),
+        _ => None,
+    };
+    Ok(at.map(|w| f.local(w).truncate()))
+}
+
+/// Puts a vertex on the closed loop `pts` where it passes nearest `target`, and returns it.
+fn nearest_on_loop(pts: &mut Vec<DVec2>, target: DVec2) -> DVec2 {
+    let n = pts.len();
+    let mut best: Option<(f64, usize, DVec2)> = None;
+    for i in 0..n {
+        let (Some(&a), Some(&b)) = (pts.get(i), pts.get((i + 1) % n)) else { continue };
+        let ab = b - a;
+        let t = if ab.length_squared() > 1.0e-18 {
+            ((target - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let q = a + ab * t;
+        let d = q.distance(target);
+        if best.is_none_or(|(bd, ..)| d < bd) {
+            best = Some((d, i, q));
+        }
+    }
+    match best {
+        Some((_, i, q)) => {
+            let duplicate = |p: Option<&DVec2>| p.is_some_and(|p| p.distance(q) < 1.0e-6);
+            if !duplicate(pts.get(i)) && !duplicate(pts.get((i + 1) % n)) {
+                pts.insert(i + 1, q);
+            }
+            q
+        }
+        None => target,
+    }
+}
+
 pub fn generate(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
     let (set, machine_id) = settings(s, p)?;
     let (f, wcs) = frame(s, p)?;
@@ -603,6 +702,7 @@ pub fn generate(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
     }
     // Climb milling keeps the material on the right of the travel direction.
     let material_right = set.climb;
+    let entry = entry_point(p, &f)?;
 
     let mut cuts: Vec<Cut> = Vec::new();
     for (ci, chain) in chains.iter().enumerate() {
@@ -644,7 +744,7 @@ pub fn generate(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
                         }
                         // Start mid-way along the longest side, or nearest the last pass's start.
                         let n = pts.len();
-                        let start = match previous_start {
+                        let start = match previous_start.or_else(|| entry.map(|e| nearest_on_loop(&mut pts, e))) {
                             Some(prev) => (0..n).min_by(|a, b| {
                                 pts.get(*a)
                                     .map_or(f64::MAX, |p| p.distance(prev))

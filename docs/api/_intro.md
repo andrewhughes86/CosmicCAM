@@ -213,6 +213,35 @@ top (where the material starts) and bottom (the final depth); they must not cros
 keeps the material on the right of the tool's travel: clockwise outside a contour, anticlockwise
 inside. Moves are `rapid`, `link`, `plunge` (plunges and ramps), `lead` and `cut`, in world mm.
 
+## Setups and stock
+
+A setup is one way the part is held: a name, the machine it runs on, the WCS it is programmed
+in (or the world origin) and its stock. The active setup's stock and WCS are the current ones.
+
+```python
+cc.setup_create(name="Op 1", machine="machine.1", wcs="wcs.1",
+                stock="fit", stock_margin_sides=2, stock_margin_top=1, stock_round=5)
+cc.setup_create(name="Op 2", wcs="origin", stock="size", stock_size=[120, 80, 50], stock_align="top")
+cc.setup_stock_box(stock="box", stock_min=[-60, -40, -5], stock_max=[60, 40, 45])  # active setup
+cc.setup_activate(id="setup.1")
+print(cc.setup_list())
+```
+
+## Job files and tabs
+
+Jobs are saved as `.cosmic` files. Each open job is a document in its own tab; commands work on
+the active one.
+
+```python
+cc.job_save(path="bracket")                 # writes bracket.cosmic; later saves need no path
+cc.job_open(path="other.cosmic")            # opens in a new tab and shows it
+for tab in cc.job_tab_list()["tabs"]:
+    print(tab["index"], tab["name"], tab["modified"])
+cc.job_tab_activate(index=0)
+cc.job_tab_close(index=1)                   # refused while it has unsaved changes...
+cc.job_tab_close(index=1, discard=True)     # ...unless they are discarded
+```
+
 ## G-code
 
 Until the Python post-processors of Phase 8 exist, CosmicCAM writes plain, generic G-code:

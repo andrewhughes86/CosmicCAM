@@ -2,25 +2,28 @@
 
 use CosmicCAM_geom::{Vec2 as GVec2, Vec3};
 use CosmicCAM_render::OrbitCamera;
-use CosmicCAM_render::view_cube::{self, CORNER_RADIUS, CubeHit};
+use CosmicCAM_render::view_cube::{self, FacetKind};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2, pos2, vec2};
 
 use crate::theme::Tokens;
 
-const CUBE_BOX: f32 = 118.0;
+const CUBE_BOX: f32 = 136.0;
 const CUBE_MARGIN: f32 = 12.0;
 /// Pixels per cube unit; the cube's projected extent never exceeds sqrt(3).
 const CUBE_SCALE: f32 = CUBE_BOX * 0.5 / 1.9;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The cube facet under the pointer.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CubeHover {
-    pub corner: bool,
-    preset: CosmicCAM_render::ViewPreset,
+    id: u8,
+    normal: Vec3,
 }
 
 impl CubeHover {
-    pub fn preset_id(self) -> &'static str {
-        self.preset.id()
+    /// The camera yaw and pitch, in degrees, that look at this facet.
+    pub fn view_degrees(self) -> (f32, f32) {
+        let (yaw, pitch) = view_cube::view_angles(self.normal);
+        (yaw.to_degrees(), pitch.to_degrees())
     }
 }
 
@@ -41,34 +44,28 @@ fn to_cube(rect: Rect, p: Pos2) -> GVec2 {
 }
 
 pub fn cube_hit(camera: &OrbitCamera, rect: Rect, pointer: Pos2) -> Option<CubeHover> {
-    view_cube::hit(camera, to_cube(rect, pointer))
-        .map(|h| CubeHover { corner: matches!(h, CubeHit::Corner(_)), preset: h.preset() })
+    view_cube::hit(camera, to_cube(rect, pointer)).map(|f| CubeHover { id: f.id, normal: f.normal })
 }
 
+/// Paints the chamfered view cube, lit from the upper left so its faces, edges and corners
+/// read apart; the facet under the pointer is highlighted.
 pub fn paint_view_cube(painter: &Painter, rect: Rect, camera: &OrbitCamera, t: &Tokens, hover: Option<CubeHover>) {
+    let b = camera.basis();
+    let light = (b.up * 0.65 - b.right * 0.35 - b.forward * 0.7).normalize();
     let edge = Stroke::new(1.0, t.cube_edge);
-    for face in view_cube::visible_faces(camera) {
-        let hovered = hover.is_some_and(|h| !h.corner && h.preset == face.preset);
+    for facet in view_cube::visible_facets(camera) {
+        let hovered = hover.is_some_and(|h| h.id == facet.id);
         let base = if hovered { t.cube_face_hover } else { t.cube_face };
-        // Faces turned away from the viewer read a little darker.
-        let fill = lerp_color(t.cube_edge, base, 0.55 + 0.45 * face.facing);
-        let points: Vec<Pos2> = face.corners.iter().map(|&c| to_screen(rect, c)).collect();
-        painter.add(Shape::convex_polygon(points.clone(), fill, edge));
-        if face.facing > 0.3 {
-            let centre = points.iter().fold(Vec2::ZERO, |acc, p| acc + p.to_vec2()) / 4.0;
-            let size = 9.0 + 3.0 * face.facing;
-            let text = lerp_color(fill, t.cube_text, face.facing.min(1.0));
-            painter.text(centre.to_pos2(), Align2::CENTER_CENTER, face.label, FontId::proportional(size), text);
-        }
-    }
-    for corner in view_cube::visible_corners(camera) {
-        let hovered = hover.is_some_and(|h| h.corner && h.preset == corner.preset);
-        let at = to_screen(rect, corner.at);
-        let r = CORNER_RADIUS * CUBE_SCALE * 0.42;
-        if hovered {
-            painter.circle(at, r, t.cube_face_hover, Stroke::new(1.0, t.accent));
-        } else {
-            painter.circle_stroke(at, r * 0.55, Stroke::new(1.0, t.cube_edge));
+        let lit = 0.45 + 0.55 * facet.normal.dot(light).max(0.0);
+        let fill = lerp_color(lerp_color(base, Color32::BLACK, 0.5), base, lit);
+        let points: Vec<Pos2> = facet.corners.iter().map(|&c| to_screen(rect, c)).collect();
+        let stroke = if hovered { Stroke::new(1.5, t.accent) } else { edge };
+        painter.add(Shape::convex_polygon(points.clone(), fill, stroke));
+        if facet.kind == FacetKind::Face && facet.facing > 0.35 {
+            let centre = points.iter().fold(Vec2::ZERO, |acc, p| acc + p.to_vec2()) / points.len().max(1) as f32;
+            let size = 8.5 + 2.5 * facet.facing;
+            let text = lerp_color(fill, t.cube_text, facet.facing.min(1.0));
+            painter.text(centre.to_pos2(), Align2::CENTER_CENTER, facet.label, FontId::proportional(size), text);
         }
     }
 }

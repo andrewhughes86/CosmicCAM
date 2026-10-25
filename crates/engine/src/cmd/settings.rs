@@ -14,9 +14,9 @@ const SETTINGS_RETURNS: &str = "{units, theme, fps_limit}";
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "settings.open",
-        label: "Settings",
-        tooltip: "Units and other preferences",
-        placement: Some(Placement::large(RibbonTab::Home, "Settings")),
+        label: "Preferences...",
+        tooltip: "Units, theme and other preferences",
+        placement: Some(Placement::large(RibbonTab::Home, "Preferences")),
         icon: None,
         shortcut: None,
         params: &[],

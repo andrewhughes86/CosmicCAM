@@ -21,6 +21,18 @@ fn outline_node(ui: &mut Ui, node: &OutlineNode, selection: Option<&str>, reques
     let select = |requests: &mut Vec<Request>| {
         requests.push(("selection.set".into(), json!({ "id": node.id })));
     };
+    // Double-clicking a toolpath opens it for editing; a setup is made active and opened.
+    let open = |row: &egui::Response, requests: &mut Vec<Request>| {
+        if !row.double_clicked() {
+            return;
+        }
+        if node.id.starts_with("toolpath.") {
+            requests.push(("toolpath.edit".into(), json!({ "id": node.id })));
+        } else if node.id.starts_with("setup.") && !node.id.contains('/') {
+            requests.push(("setup.activate".into(), json!({ "id": node.id })));
+            requests.push(("setup.edit".into(), json!({ "id": node.id })));
+        }
+    };
     if node.children.is_empty() {
         ui.horizontal(|ui| {
             ui.add_space(18.0);
@@ -28,19 +40,18 @@ fn outline_node(ui: &mut Ui, node: &OutlineNode, selection: Option<&str>, reques
             if row.clicked() {
                 select(requests);
             }
-            // Double-clicking a toolpath opens it for editing.
-            if row.double_clicked() && node.id.starts_with("toolpath.") {
-                requests.push(("toolpath.edit".into(), json!({ "id": node.id })));
-            }
+            open(&row, requests);
         });
         return;
     }
     let id = ui.make_persistent_id(("outline", &node.id));
     CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
-            if ui.selectable_label(selected, &node.label).clicked() {
+            let row = ui.selectable_label(selected, &node.label);
+            if row.clicked() {
                 select(requests);
             }
+            open(&row, requests);
         })
         .body(|ui| {
             for child in &node.children {

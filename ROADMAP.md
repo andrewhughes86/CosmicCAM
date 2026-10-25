@@ -6,11 +6,13 @@
 | 2 | Model import & geometry ingestion | **Done except STEP/IGES** (2026-10-24) |
 | 3 | Work coordinate system (WCS) creation | **Done** (2026-10-24) |
 | 4 | Tool library & management | **In progress** (flat end mills, machine libraries 2026-10-24) |
-| 5 | Stock setup & material definition | Planned |
+| 5 | Stock setup & material definition | **In progress** (setups, box stock options 2026-10-25) |
 | 6 | Toolpath creation engine | **In progress** (2D contour 2026-10-24) |
 | 7 | Material removal simulation & verification | Planned |
 | 8 | Post-processor & G-code export | **Started** (generic G-code 2026-10-24) |
 | 9 | MCP agent integration | Planned |
+| 10 | Scripting & add-ons (scripts panel, add-on packages, isolation) | Planned |
+| 11 | VS Code integration & extension (run/debug scripts, build add-ons) | Planned |
 
 ## Phase 1 — what landed
 
@@ -30,6 +32,40 @@
 - Engine: `Session::execute` runs commands under `catch_unwind` and restores state on a panic;
   `hostile_params_never_panic` covers every command.
 - `cargo xtask ci`: fmt, clippy `-D warnings`, tests, assets, layers, ui-containers, wasm.
+
+## Version 0.1.0 (2026-10-25)
+
+- Versioning begins: Semantic Versioning, 0.x until machine-ready G-code (docs/versioning.md);
+  CHANGELOG.md; `CosmicCAM --version`; the version in the status bar.
+- README shows a recording of the whole workflow (new job → import → WCS → setup and stock →
+  2D contour). The control channel gained `ui.type` for scripted typing.
+
+## Setups and stock (2026-10-25)
+
+- `setup.create` / `setup.edit` / `setup.activate` / `setup.remove` / `setup.list` / `setup.get`:
+  a setup has a name, a machine, a WCS (or the origin) and its stock. Create setup leads the
+  Setup tab and opens a panel at the right; setups appear under Setups in the explorer
+  (double-click to activate and edit). Saved in job files.
+- Box stock (`setup.stock.box`): fit to the models with side/top/bottom margins, a fixed size
+  placed on the models (top, centre or bottom), or two corners; optional rounding up. The stock
+  is drawn see-through while it is being defined.
+- Contour tolerance also resamples circular edges and cylinder rims from the true circle, so a
+  tighter tolerance gives closer points on curves.
+
+## Job files and document tabs (2026-10-24)
+
+- `.cosmic` job files (`CosmicCAM/1`, JSON with packed meshes and toolpath moves): `job.open`,
+  `job.save`, `job.save.as`. Open, Save and Save as on Home (Ctrl+O, Ctrl+S, Ctrl+Shift+S);
+  `.cosmic` files dropped on the window open too. Hostile files are refused, never crash.
+- Each open document is a tab in the centre of the title strip; hovering shows its close
+  button. Unsaved changes are marked and asked about on close. `job.tab.list`,
+  `job.tab.activate`, `job.tab.close`.
+- Grid and projection moved to the viewport's button row; layout restore moved to Preferences.
+- `.cosmic` files have their own file-type icon (`assets/icons/file/cosmic-job.svg`);
+  `packaging/linux/install-file-type.sh` registers it and CosmicCAM as their program, and
+  `CosmicCAM job.cosmic` opens a file from the command line.
+- 2D contour: entry point (automatic, nearest the origin, the WCS origin or a picked point);
+  G-code names G0 / G1 on every line that moves.
 
 ## Python API (2026-10-24)
 
@@ -72,7 +108,7 @@
   listed under Setups in the outline and inspector.
 - Ribbon Offset, Rotate and Rename open a dialog generated from the command's parameters.
 - UI: Home now holds Import model and the WCS buttons; the view buttons moved off the ribbon to a
-  floating column under the view cube (right-click Iso for every standard view).
+  floating row at the bottom centre of the viewport (right-click Iso for every standard view).
 - WCS definition in two groups, shared by `setup.wcs.create` and `setup.wcs.align`:
   **orientation** (`model`, `z_x`, `z_y`, `x_y` or `vectors`; a plane, cylinder or edge
   selected per axis; `flip_z` / `flip_x` / `flip_y`) and **origin** (`model`, `box` with 27

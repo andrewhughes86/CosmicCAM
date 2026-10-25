@@ -215,6 +215,35 @@ top (where the material starts) and bottom (the final depth); they must not cros
 keeps the material on the right of the tool's travel: clockwise outside a contour, anticlockwise
 inside. Moves are `rapid`, `link`, `plunge` (plunges and ramps), `lead` and `cut`, in world mm.
 
+## Setups and stock
+
+A setup is one way the part is held: a name, the machine it runs on, the WCS it is programmed
+in (or the world origin) and its stock. The active setup's stock and WCS are the current ones.
+
+```python
+cc.setup_create(name="Op 1", machine="machine.1", wcs="wcs.1",
+                stock="fit", stock_margin_sides=2, stock_margin_top=1, stock_round=5)
+cc.setup_create(name="Op 2", wcs="origin", stock="size", stock_size=[120, 80, 50], stock_align="top")
+cc.setup_stock_box(stock="box", stock_min=[-60, -40, -5], stock_max=[60, 40, 45])  # active setup
+cc.setup_activate(id="setup.1")
+print(cc.setup_list())
+```
+
+## Job files and tabs
+
+Jobs are saved as `.cosmic` files. Each open job is a document in its own tab; commands work on
+the active one.
+
+```python
+cc.job_save(path="bracket")                 # writes bracket.cosmic; later saves need no path
+cc.job_open(path="other.cosmic")            # opens in a new tab and shows it
+for tab in cc.job_tab_list()["tabs"]:
+    print(tab["index"], tab["name"], tab["modified"])
+cc.job_tab_activate(index=0)
+cc.job_tab_close(index=1)                   # refused while it has unsaved changes...
+cc.job_tab_close(index=1, discard=True)     # ...unless they are discarded
+```
+
 ## G-code
 
 Until the Python post-processors of Phase 8 exist, CosmicCAM writes plain, generic G-code:
@@ -287,19 +316,19 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-119 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+129 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
-- **job**: [`job.new`](#jobnew), [`job.outline.get`](#joboutlineget), [`job.open`](#jobopen), [`job.save`](#jobsave)
+- **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
 - **session**: [`session.state.get`](#sessionstateget)
 - **command**: [`command.list`](#commandlist), [`command.describe`](#commanddescribe)
 - **console**: [`console.clear`](#consoleclear), [`console.log.get`](#consolelogget)
 - **model**: [`model.import`](#modelimport), [`model.list`](#modellist), [`model.remove`](#modelremove), [`model.faces.list`](#modelfaceslist), [`model.face.get`](#modelfaceget), [`model.pick`](#modelpick), [`model.edges.list`](#modeledgeslist), [`model.edge.get`](#modeledgeget), [`model.edge.pick`](#modeledgepick), [`model.vertices.list`](#modelverticeslist), [`model.vertex.pick`](#modelvertexpick)
-- **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.wcs.rotate`](#setupwcsrotate), [`setup.wcs.rename`](#setupwcsrename), [`setup.wcs.activate`](#setupwcsactivate), [`setup.wcs.remove`](#setupwcsremove), [`setup.wcs.list`](#setupwcslist), [`setup.wcs.get`](#setupwcsget), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.margins`](#setupstockmargins), [`setup.stock.fit`](#setupstockfit), [`setup.stock.get`](#setupstockget)
+- **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.wcs.rotate`](#setupwcsrotate), [`setup.wcs.rename`](#setupwcsrename), [`setup.wcs.activate`](#setupwcsactivate), [`setup.wcs.remove`](#setupwcsremove), [`setup.wcs.list`](#setupwcslist), [`setup.wcs.get`](#setupwcsget), [`setup.create`](#setupcreate), [`setup.edit`](#setupedit), [`setup.activate`](#setupactivate), [`setup.remove`](#setupremove), [`setup.list`](#setuplist), [`setup.get`](#setupget), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.margins`](#setupstockmargins), [`setup.stock.fit`](#setupstockfit), [`setup.stock.get`](#setupstockget)
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
-- **toolpath**: [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport), [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.remove`](#toolpathremove)
+- **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.remove`](#toolpathremove), [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
 - **sim**: [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.speed`](#simspeed), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
 - **post**: [`post.processor.select`](#postprocessorselect), [`post.limits.check`](#postlimitscheck), [`post.gcode.export`](#postgcodeexport), [`post.gcode.get`](#postgcodeget)
 - **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.create.spot_drill`](#toolcreatespot_drill), [`tool.create.face_mill`](#toolcreateface_mill), [`tool.create.tap`](#toolcreatetap), [`tool.create.thread_mill`](#toolcreatethread_mill), [`tool.edit`](#tooledit), [`tool.feeds`](#toolfeeds), [`tool.duplicate`](#toolduplicate), [`tool.remove`](#toolremove), [`tool.list`](#toollist), [`tool.get`](#toolget), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
@@ -325,6 +354,101 @@ Returns: {"job": name}
 
 <sub>shortcut `Ctrl+N` · ribbon: Home › Job</sub>
 
+#### `job.open`
+
+```python
+cc.job_open(path=…)
+```
+
+Open a job file (.cosmic) in a new tab.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | string | yes | Job file to open (.cosmic) |
+
+Returns: {"job": name, "tab": index, "tabs": [...]}
+
+<sub>shortcut `Ctrl+O` · ribbon: Home › Job</sub>
+
+#### `job.save`
+
+```python
+cc.job_save(path=None)
+```
+
+Save the job to its file (.cosmic).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | string | no | Where to save; omit to save over the file the job came from. `.cosmic` is added when the name has no extension |
+
+Returns: {"path": file, "bytes": size}
+
+<sub>shortcut `Ctrl+S` · ribbon: Home › Job</sub>
+
+#### `job.save.as`
+
+```python
+cc.job_save_as(path=…)
+```
+
+Save the job to a new file (.cosmic).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | string | yes | Where to save. `.cosmic` is added when the name has no extension |
+
+Returns: {"path": file, "bytes": size}
+
+<sub>shortcut `Ctrl+Shift+S` · ribbon: Home › Job</sub>
+
+#### `job.tab.list`
+
+```python
+cc.job_tab_list()
+```
+
+The documents open in tabs.
+
+
+Returns: {"active": index, "tabs": [{index, name, path, modified, active}]}
+
+#### `job.tab.activate`
+
+```python
+cc.job_tab_activate(index=…)
+```
+
+Show the document in another tab.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `index` | integer | yes | Tab number, from 0 (0 to 31) |
+
+Returns: {"active": index, "tabs": [{index, name, path, modified, active}]}
+
+#### `job.tab.close`
+
+```python
+cc.job_tab_close(index=None, discard=None)
+```
+
+Close a document's tab.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `index` | integer | no | Tab number, from 0; omit for the active tab (0 to 31) |
+| `discard` | bool | no | Close even though it has unsaved changes |
+
+Returns: {"active": index, "tabs": [{index, name, path, modified, active}]}
+
+<sub>shortcut `Ctrl+W`</sub>
+
 #### `job.outline.get`
 
 ```python
@@ -335,32 +459,6 @@ The job tree shown in the explorer.
 
 
 Returns: list of nodes {id, label, properties: [{name, value}], children}
-
-#### `job.open`
-
-```python
-cc.job_open()
-```
-
-Open a job file (planned).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Home › Job</sub>
-
-#### `job.save`
-
-```python
-cc.job_save()
-```
-
-Save the job (planned).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Home › Job</sub>
 
 
 ### selection
@@ -852,16 +950,140 @@ One work coordinate system.
 
 Returns: the WCS {id, name, active, origin, x_axis, y_axis, z_axis}, or null when there is none
 
+#### `setup.create`
+
+```python
+cc.setup_create(name=…, machine=None, wcs=None, activate=None, stock=None, stock_margin_sides=None, stock_margin_top=None, stock_margin_bottom=None, stock_size=None, stock_align=None, stock_min=None, stock_max=None, stock_round=None)
+```
+
+Start a setup: its name, machine, WCS and stock.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes | Setup name |
+| `machine` | string | no | Machine it runs on, e.g. machine.1 (default: the active one) |
+| `wcs` | string | no | WCS it is programmed in, e.g. wcs.1, or `origin` for the world origin (default: the active WCS) |
+| `activate` | bool | no | Make it the active setup (default true) |
+| `stock` | choice | no | How the stock is sized: fit (the models' box plus margins), size (a fixed size placed on the models), box (two corners) or none (default fit) — one of fit, size, box, none |
+| `stock_margin_sides` | number | no | Fit: extra material on the four sides, mm (default 0) (0 to 10000 mm) |
+| `stock_margin_top` | number | no | Fit and size: extra material on top, mm (default 0) (0 to 10000 mm) |
+| `stock_margin_bottom` | number | no | Fit: extra material underneath, mm (default 0) (0 to 10000 mm) |
+| `stock_size` | vec3 | no | Size: the stock's X, Y and Z size, mm — [x, y, z] in mm |
+| `stock_align` | choice | no | Size: where the stock sits on the models, centred in X and Y: its top at the model top plus the top margin, its centre on theirs, or its bottom on theirs (default top) — one of top, center, bottom |
+| `stock_min` | vec3 | no | Box: the low corner, world mm — [x, y, z] in mm |
+| `stock_max` | vec3 | no | Box: the high corner, world mm — [x, y, z] in mm |
+| `stock_round` | number | no | Fit and size: round each dimension up to a multiple of this, mm (default 0, no rounding) (0 to 1000 mm) |
+
+Returns: the setup {id, name, active, machine, wcs, stock}
+
+<sub>ribbon: Setup › Setup</sub>
+
+#### `setup.edit`
+
+```python
+cc.setup_edit(id=…, name=None, machine=None, wcs=None, stock=None, stock_margin_sides=None, stock_margin_top=None, stock_margin_bottom=None, stock_size=None, stock_align=None, stock_min=None, stock_max=None, stock_round=None)
+```
+
+Change a setup's name, machine, WCS or stock.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Setup id, e.g. setup.1 |
+| `name` | string | no | New name |
+| `machine` | string | no | Machine it runs on |
+| `wcs` | string | no | WCS it is programmed in, or `origin` |
+| `stock` | choice | no | How the stock is sized: fit (the models' box plus margins), size (a fixed size placed on the models), box (two corners) or none (default fit) — one of fit, size, box, none |
+| `stock_margin_sides` | number | no | Fit: extra material on the four sides, mm (default 0) (0 to 10000 mm) |
+| `stock_margin_top` | number | no | Fit and size: extra material on top, mm (default 0) (0 to 10000 mm) |
+| `stock_margin_bottom` | number | no | Fit: extra material underneath, mm (default 0) (0 to 10000 mm) |
+| `stock_size` | vec3 | no | Size: the stock's X, Y and Z size, mm — [x, y, z] in mm |
+| `stock_align` | choice | no | Size: where the stock sits on the models, centred in X and Y: its top at the model top plus the top margin, its centre on theirs, or its bottom on theirs (default top) — one of top, center, bottom |
+| `stock_min` | vec3 | no | Box: the low corner, world mm — [x, y, z] in mm |
+| `stock_max` | vec3 | no | Box: the high corner, world mm — [x, y, z] in mm |
+| `stock_round` | number | no | Fit and size: round each dimension up to a multiple of this, mm (default 0, no rounding) (0 to 1000 mm) |
+
+Returns: the setup {id, name, active, machine, wcs, stock}
+
+#### `setup.activate`
+
+```python
+cc.setup_activate(id=…)
+```
+
+Work in this setup: its stock, WCS and machine become the current ones.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Setup id, e.g. setup.1 |
+
+Returns: the setup {id, name, active, machine, wcs, stock}
+
+#### `setup.remove`
+
+```python
+cc.setup_remove(id=…)
+```
+
+Delete a setup.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Setup id, e.g. setup.1 |
+
+Returns: {"removed": id, "active_setup": id or null}
+
+#### `setup.list`
+
+```python
+cc.setup_list()
+```
+
+The job's setups.
+
+
+Returns: list of setups {id, name, active, machine, wcs, stock}
+
+#### `setup.get`
+
+```python
+cc.setup_get(id=…)
+```
+
+One setup.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Setup id, e.g. setup.1 |
+
+Returns: the setup {id, name, active, machine, wcs, stock}
+
 #### `setup.stock.box`
 
 ```python
-cc.setup_stock_box()
+cc.setup_stock_box(stock=None, stock_margin_sides=None, stock_margin_top=None, stock_margin_bottom=None, stock_size=None, stock_align=None, stock_min=None, stock_max=None, stock_round=None)
 ```
 
-Rectangular block stock (Phase 5).
- **Planned — not available yet.**
+Rectangular block stock for the active setup: fitted to the models, a fixed size, or two corners.
 
-Returns: not defined yet
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `stock` | choice | no | How the stock is sized: fit (the models' box plus margins), size (a fixed size placed on the models), box (two corners) or none (default fit) — one of fit, size, box, none |
+| `stock_margin_sides` | number | no | Fit: extra material on the four sides, mm (default 0) (0 to 10000 mm) |
+| `stock_margin_top` | number | no | Fit and size: extra material on top, mm (default 0) (0 to 10000 mm) |
+| `stock_margin_bottom` | number | no | Fit: extra material underneath, mm (default 0) (0 to 10000 mm) |
+| `stock_size` | vec3 | no | Size: the stock's X, Y and Z size, mm — [x, y, z] in mm |
+| `stock_align` | choice | no | Size: where the stock sits on the models, centred in X and Y: its top at the model top plus the top margin, its centre on theirs, or its bottom on theirs (default top) — one of top, center, bottom |
+| `stock_min` | vec3 | no | Box: the low corner, world mm — [x, y, z] in mm |
+| `stock_max` | vec3 | no | Box: the high corner, world mm — [x, y, z] in mm |
+| `stock_round` | number | no | Fit and size: round each dimension up to a multiple of this, mm (default 0, no rounding) (0 to 1000 mm) |
+
+Returns: the stock {shape, min, max, size}, or null for none
 
 <sub>ribbon: Setup › Stock</sub>
 
@@ -1124,7 +1346,7 @@ Switch between orthographic and perspective projection.
 
 Returns: {"projection": id}
 
-<sub>shortcut `P` · ribbon: Home › Display</sub>
+<sub>shortcut `P`</sub>
 
 #### `view.projection.set`
 
@@ -1152,7 +1374,7 @@ Switch between the dark and light themes.
 
 Returns: {"theme": id}
 
-<sub>shortcut `Ctrl+Shift+T` · ribbon: Home › Display</sub>
+<sub>shortcut `Ctrl+Shift+T`</sub>
 
 #### `view.theme.set`
 
@@ -1212,7 +1434,7 @@ Show or hide the ground grid.
 
 Returns: {"grid": bool}
 
-<sub>shortcut `G` · ribbon: Home › Display</sub>
+<sub>shortcut `G`</sub>
 
 #### `view.layout.reset`
 
@@ -1224,8 +1446,6 @@ Put the workspace panels back where they started.
 
 
 Returns: {"layout_generation": n}
-
-<sub>ribbon: Home › Display</sub>
 
 #### `view.fps_limit.set`
 
@@ -1372,75 +1592,10 @@ Returns: null
 
 ### toolpath
 
-#### `toolpath.pocket`
-
-```python
-cc.toolpath_pocket()
-```
-
-Island-aware pocket clearing (Phase 6).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Toolpaths › Strategies</sub>
-
-#### `toolpath.drill`
-
-```python
-cc.toolpath_drill()
-```
-
-Spot, peck and tapping cycles (Phase 6).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Toolpaths › Strategies</sub>
-
-#### `toolpath.waterline`
-
-```python
-cc.toolpath_waterline()
-```
-
-Z-level roughing and finishing (Phase 6).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Toolpaths › Strategies</sub>
-
-#### `toolpath.raster`
-
-```python
-cc.toolpath_raster()
-```
-
-Parallel finishing across surfaces (Phase 6).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Toolpaths › Strategies</sub>
-
-#### `toolpath.cl.export`
-
-```python
-cc.toolpath_cl_export()
-```
-
-Write machine-neutral cutter location data (Phase 6).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Toolpaths › Output</sub>
-
 #### `toolpath.contour`
 
 ```python
-cc.toolpath_contour(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, lead_feed=None, coolant=None, tool_axis=None, geometry=None, side=None, reverse=None, wcs=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, direction=None, both_ways=None, radial_passes=None, radial_stepover=None, spring_passes=None, stock_radial=None, stock_axial=None, multiple_depths=None, max_stepdown=None, feed_optimization=None, optimization_angle=None, optimization_feed=None, optimization_distance=None, tolerance=None, lead_in=None, lead_in_radius=None, lead_in_sweep=None, lead_in_length=None, lead_out_same=None, lead_out=None, lead_out_radius=None, lead_out_sweep=None, lead_out_length=None, ramp=None, ramp_angle=None, retract=None, stay_down_distance=None, rapid_links=None, link_feed=None)
+cc.toolpath_contour(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, lead_feed=None, coolant=None, tool_axis=None, geometry=None, side=None, reverse=None, wcs=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, direction=None, both_ways=None, radial_passes=None, radial_stepover=None, spring_passes=None, stock_radial=None, stock_axial=None, multiple_depths=None, max_stepdown=None, feed_optimization=None, optimization_angle=None, optimization_feed=None, optimization_distance=None, tolerance=None, entry_from=None, entry_point=None, lead_in=None, lead_in_radius=None, lead_in_sweep=None, lead_in_length=None, lead_out_same=None, lead_out=None, lead_out_radius=None, lead_out_sweep=None, lead_out_length=None, ramp=None, ramp_angle=None, retract=None, stay_down_distance=None, rapid_links=None, link_feed=None)
 ```
 
 Follow selected edges or a face outline at depth, offset by the tool radius.
@@ -1484,7 +1639,9 @@ Follow selected edges or a face outline at depth, offset by the tool radius.
 | `optimization_angle` | number | no | Direction change that counts as sharp, degrees (default 45) (0 to 180) |
 | `optimization_feed` | number | no | Feed at sharp changes, % of the cutting feed (default 50) (1 to 100) |
 | `optimization_distance` | number | no | Distance before and after the change to slow down over, mm (default Ø/2) (0 to 10000 mm) |
-| `tolerance` | number | no | Chord tolerance for arcs and offsets, mm (default 0.01) (0.0001 to 1 mm) |
+| `tolerance` | number | no | How far the path may stray from true curves (circles, arcs, rounded corners), mm; smaller gives more, closer points (default 0.01) (0.0001 to 1 mm) |
+| `entry_from` | choice | no | Where closed contours start: auto (mid-way along the longest side), nearest the world origin, nearest the WCS origin, or nearest entry_point (selection) — one of auto, origin, wcs, selection |
+| `entry_point` | vec3 | no | Entry point for entry_from selection, world mm — [x, y, z] in mm |
 | `lead_in` | choice | no | Lead-in style (default arc) — one of arc, line, none |
 | `lead_in_radius` | number | no | Lead-in arc radius, mm (default Ø/2) (0 to 10000 mm) |
 | `lead_in_sweep` | number | no | Lead-in arc sweep, degrees (default 90) (0 to 180) |
@@ -1562,6 +1719,71 @@ Delete a toolpath from the job.
 | `id` | string | yes | Toolpath id, e.g. toolpath.1 |
 
 Returns: {"removed": id}
+
+#### `toolpath.pocket`
+
+```python
+cc.toolpath_pocket()
+```
+
+Island-aware pocket clearing (Phase 6).
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+<sub>ribbon: Toolpaths › Strategies</sub>
+
+#### `toolpath.drill`
+
+```python
+cc.toolpath_drill()
+```
+
+Spot, peck and tapping cycles (Phase 6).
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+<sub>ribbon: Toolpaths › Strategies</sub>
+
+#### `toolpath.waterline`
+
+```python
+cc.toolpath_waterline()
+```
+
+Z-level roughing and finishing (Phase 6).
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+<sub>ribbon: Toolpaths › Strategies</sub>
+
+#### `toolpath.raster`
+
+```python
+cc.toolpath_raster()
+```
+
+Parallel finishing across surfaces (Phase 6).
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+<sub>ribbon: Toolpaths › Strategies</sub>
+
+#### `toolpath.cl.export`
+
+```python
+cc.toolpath_cl_export()
+```
+
+Write machine-neutral cutter location data (Phase 6).
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+<sub>ribbon: Toolpaths › Output</sub>
 
 
 ### sim
@@ -2189,12 +2411,12 @@ Returns: {"pane": "library"}
 cc.settings_open()
 ```
 
-Units and other preferences.
+Units, theme and other preferences.
 
 
 Returns: {units, theme, fps_limit}
 
-<sub>ribbon: Home › Settings</sub>
+<sub>ribbon: Home › Preferences</sub>
 
 #### `settings.get`
 

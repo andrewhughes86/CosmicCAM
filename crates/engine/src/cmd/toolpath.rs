@@ -6,7 +6,9 @@ use super::{CommandSpec, Param, ParamKind, Placement, RibbonTab, always};
 use crate::error::{EngineError, EngineResult};
 use crate::params;
 use crate::session::Session;
-use crate::toolpath::contour::{self, COOLANTS, DIRECTIONS, HEIGHT_REFS, LEADS, RAMPS, RETRACTS, SIDES, TOOL_AXES};
+use crate::toolpath::contour::{
+    self, COOLANTS, DIRECTIONS, ENTRIES, HEIGHT_REFS, LEADS, RAMPS, RETRACTS, SIDES, TOOL_AXES,
+};
 use crate::toolpath::{MAX_TOOLPATHS, Toolpath};
 
 const LENGTH: ParamKind = ParamKind::Length { min: 0.0, max: 10_000.0 };
@@ -136,9 +138,17 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             Param::optional(
                 "tolerance",
                 ParamKind::Length { min: 0.0001, max: 1.0 },
-                "Chord tolerance for arcs and offsets, mm (default 0.01)",
+                "How far the path may stray from true curves (circles, arcs, rounded corners), mm; smaller gives more, \
+                 closer points (default 0.01)",
             ),
             // Linking
+            Param::optional(
+                "entry_from",
+                ParamKind::Choice(ENTRIES),
+                "Where closed contours start: auto (mid-way along the longest side), nearest the world origin, \
+                 nearest the WCS origin, or nearest entry_point (selection)",
+            ),
+            Param::optional("entry_point", ParamKind::Vec3, "Entry point for entry_from selection, world mm"),
             Param::optional("lead_in", ParamKind::Choice(LEADS), "Lead-in style (default arc)"),
             Param::optional("lead_in_radius", LENGTH, "Lead-in arc radius, mm (default Ø/2)"),
             Param::optional("lead_in_sweep", ANGLE, "Lead-in arc sweep, degrees (default 90)"),

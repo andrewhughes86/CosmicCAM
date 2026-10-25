@@ -16,3 +16,4 @@ path = "src/main.rs"
 CosmicCAM-ui-egui = { workspace = true }
 eframe = { workspace = true, features = ["accesskit", "default_fonts", "wgpu", "wayland", "x11"] }
 env_logger = { workspace = true }
+serde_json = { workspace = true }

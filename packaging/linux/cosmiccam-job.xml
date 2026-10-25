@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Registers CosmicCAM job files (.cosmic) with the desktop's file type database. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-cosmiccam-job">
+    <comment>CosmicCAM job</comment>
+    <sub-class-of type="application/json"/>
+    <icon name="application-x-cosmiccam-job"/>
+    <glob pattern="*.cosmic"/>
+    <magic priority="60">
+      <match type="string" value="&quot;format&quot;:&quot;CosmicCAM/" offset="0:64"/>
+    </magic>
+  </mime-type>
+</mime-info>

@@ -5,16 +5,19 @@ being built to turn CAD geometry (B-Rep models, meshes and 2D boundaries) into C
 material-removal simulations and machine-specific G-code. Everything it does can be driven from
 Python.
 
-![CosmicCAM showing the sample part in the dark theme](docs/images/cosmiccam-current.png)
+![CosmicCAM: a new job, importing a model, creating a WCS, a setup with its stock and a 2D contour toolpath](docs/images/cosmiccam-workflow.gif)
 
-*Current state: the desktop shell with ribbon, dockable panes and the wgpu 3D viewport, showing
-the built-in sample part. STL and OBJ models can now be imported.*
+*A new job, start to finish: import a model, create a WCS from a face and an edge, create a
+setup with fitted stock, then a 2D contour toolpath around the part.*
 
 ## Where the project is
 
-**Early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart from STEP/IGES import. CosmicCAM can't drive a
-machine yet: it imports models, defines WCS, stock, machines and tools, and makes 2D contour
-toolpaths and exports them as generic G-code; machine-specific post-processors come later.
+**Version 0.1.0, early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart
+from STEP/IGES import. CosmicCAM imports models, defines WCS, setups, stock, machines and tools,
+makes 2D contour toolpaths and exports them as generic G-code. It has no machine-specific
+post-processors or simulation yet, so **check its G-code before running it on a machine**. See
+[CHANGELOG.md](CHANGELOG.md) for what is in each version and [docs/versioning.md](docs/versioning.md)
+for how versions are numbered (1.0.0 comes with machine-ready G-code).
 
 | Phase | Milestone | Status |
 | --- | --- | --- |
@@ -22,25 +25,35 @@ toolpaths and exports them as generic G-code; machine-specific post-processors c
 | 2 | Model import & geometry ingestion (STL/OBJ, STEP/IGES) | **Done except STEP/IGES** |
 | 3 | Work coordinate system (WCS) creation | **Done** |
 | 4 | Tool library & management | **In progress** |
-| 5 | Stock setup & material definition | Planned |
+| 5 | Stock setup & material definition | **In progress** (setups, box stock) |
 | 6 | Toolpath creation (2.5D and 3-axis strategies) | **In progress** (2D contour) |
 | 7 | Material-removal simulation & verification | Planned |
 | 8 | Post-processors & G-code export | **Started** (generic G-code) |
 | 9 | MCP agent integration | Planned |
+| 10 | Scripting & add-ons | Planned |
+| 11 | VS Code integration & extension | Planned |
 
 ### What works today
 - **Desktop app** (eframe + wgpu):
-  - A ribbon with Home, Setup, Tooling, Toolpaths, Simulation and Export tabs, and 40 original icons.
+  - A ribbon with Home, Setup, Machine, Tooling, Toolpaths, Simulation and Export tabs and original
+    icons; the tab strip doubles as the title bar, with document tabs and the window controls.
   - Viewport, Explorer, Inspector and Console panes you can drag, stack and resize.
-  - A dark theme (default) and a high-contrast light theme.
+  - A dark theme (default) and a high-contrast light theme, chosen in Preferences.
 - **Model import:** binary and ASCII STL and Wavefront OBJ, from the Import model button
   (Ctrl+I), drag-and-drop onto the window or `model.import` in scripts. Files are read in mm,
   cm, m or inches.
+- **Setups and stock:** Create setup names a setup and picks its machine, WCS (or the origin) and
+  stock: fitted to the model with margins, a fixed size, or two corners, rounded up if wanted, and
+  shown see-through while it is defined.
 - **First toolpath, 2D contour:** follow edges or a face outline at depth with radial and axial
-  passes, stock to leave, leads, ramps and feed optimization; set up in a panel with a live preview.
+  passes, stock to leave, leads, ramps, feed optimization, an entry point and a tolerance that
+  follows true circles; set up in a panel with a live preview.
+- **Job files:** save and open jobs as `.cosmic` files, each open job in its own tab; on Linux,
+  `packaging/linux/install-file-type.sh` gives `.cosmic` files their own icon and opens them in
+  CosmicCAM.
 - **G-code:** generic G-code export with a safety block, tool changes, work offsets and length
   compensation (Export tab); machine-specific post-processors come later.
-- **Units:** inches (default) or millimetres everywhere in the app, from Settings on the Home tab;
+- **Units:** inches (default) or millimetres everywhere in the app, from Preferences on the Home tab;
   scripts and the API always use millimetres.
 - **Machines and tools:** several machine configurations, each with its own tool library of flat
   end mills (geometry, cutting data, offsets), saved automatically; import and export as JSON.
@@ -49,11 +62,12 @@ toolpaths and exports them as generic G-code; machine-specific post-processors c
   holes, edges, corners, box points); the active one is drawn in full colour in the viewport.
 - **3D viewport:**
   - Shaded models with feature edges, stock outline, ground grid and a WCS marker.
-  - A clickable view cube with a column of view buttons under it, and a corner orientation marker.
+  - A chamfered view cube (click any face, edge or corner for that view), a row of view buttons at
+    the bottom of the viewport, and a corner orientation marker.
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 119 commands. Each command has a typed parameter schema that the engine checks before
+  the same 129 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.
@@ -63,7 +77,8 @@ toolpaths and exports them as generic G-code; machine-specific post-processors c
   - There is no `unwrap`/`panic` in production code.
 
 ### Placeholders
-Commands for later phases ( stock, tools, toolpaths, simulation, post-processing)
+Commands for later phases (cylinder stock, more tool types, toolpath strategies, simulation,
+post-processing)
 already appear in the ribbon and the API. They are disabled and report "not available yet" so the
 full surface is visible and scriptable ahead of time.
 
@@ -99,6 +114,8 @@ cargo run --release -p CosmicCAM -- --sample
 | `--control <port>` | Open the control channel for the Python API (`0` picks a free port) |
 | `--run "<command> <json>"` | Run a command after start-up (repeatable) |
 | `--tab <name>` | Open on a ribbon tab |
+| `--version` | Print the version and quit |
+| `job.cosmic` | Open a job file (each in its own tab) |
 | `--screenshot <file.png>` | Save a window capture once start-up steps have run, then quit |
 
 The console pane accepts the same commands, e.g. `view.camera.preset {"preset": "top"}`.

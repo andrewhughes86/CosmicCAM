@@ -118,6 +118,10 @@ class CosmicCAM(Commands):
         """Clicks the left mouse button at window point (x, y), as a user would."""
         return self.request("ui.click", {"x": x, "y": y})
 
+    def type_text(self, text: str, replace: bool = False) -> Any:
+        """Types text into the focused field, as a user would; replace=True selects what it holds first."""
+        return self.request("ui.type", {"text": text, "replace": replace})
+
     def start(self, command: str) -> Any:
         """Starts a command's interactive tool, as a toolbar click would."""
         return self.request("ui.start", {"command": command})

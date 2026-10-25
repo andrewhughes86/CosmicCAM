@@ -8,7 +8,7 @@ Any code adapted from other projects (MIT OR Apache-2.0) is noted in ATTRIBUTION
 
 ## Product name
 CosmicCAM everywhere: crates `CosmicCAM-*`, binaries `CosmicCAM` and `CosmicCAM-cli`,
-`.CosmicCAM` job files, the `CosmicCAM/N` format tag, `CosmicCAM_*` environment variables,
+`.cosmic` job files, the `CosmicCAM/N` format tag, `CosmicCAM_*` environment variables,
 settings and recovery folders, the MCP server name, docs, CI and packaging. 
 
 ## Start every session here

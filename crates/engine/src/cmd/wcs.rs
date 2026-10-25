@@ -224,6 +224,10 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             if s.job.active_wcs.as_deref() == Some(id) {
                 s.job.active_wcs = s.job.wcs.first().map(|w| w.id.clone());
             }
+            // Setups programmed in it fall back to the origin.
+            for st in s.job.setups.iter_mut().filter(|st| st.wcs.as_deref() == Some(id)) {
+                st.wcs = None;
+            }
             if s.view.selection.as_deref() == Some(id) {
                 s.view.selection = None;
             }

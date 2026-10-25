@@ -11,6 +11,7 @@ mod model;
 mod planned;
 mod post;
 mod settings;
+mod setup;
 mod stock;
 mod tool;
 mod toolpath;
@@ -355,12 +356,14 @@ pub fn all() -> impl Iterator<Item = &'static CommandSpec> {
         .chain(wcs::COMMANDS.iter())
         .chain(view::COMMANDS.iter())
         .chain(ui::COMMANDS.iter())
+        // Working toolpath strategies come before the planned ones so they lead the gallery.
+        .chain(toolpath::COMMANDS.iter())
+        .chain(setup::COMMANDS.iter())
         .chain(planned::COMMANDS.iter())
         .chain(stock::COMMANDS.iter())
         .chain(tool::COMMANDS.iter())
         .chain(machine::COMMANDS.iter())
         .chain(settings::COMMANDS.iter())
-        .chain(toolpath::COMMANDS.iter())
         .chain(post::COMMANDS.iter());
     #[cfg(test)]
     let registered = registered.chain(test_only::COMMANDS.iter());
@@ -381,7 +384,10 @@ pub static EXTRA_PLACEMENTS: &[(&str, Placement)] = &[
 
 /// Panel order on tabs where first-seen order is not the order wanted. Panels not listed
 /// follow in first-seen order.
-const PANEL_ORDER: &[(RibbonTab, &[&str])] = &[(RibbonTab::Home, &["Job", "Setup", "Display", "Settings"])];
+const PANEL_ORDER: &[(RibbonTab, &[&str])] = &[
+    (RibbonTab::Home, &["Job", "Setup", "Display", "Settings"]),
+    (RibbonTab::Setup, &["Setup", "Model", "Coordinates", "Stock"]),
+];
 
 /// Every ribbon button: each command's own placement, then the extra ones.
 pub fn placements() -> impl Iterator<Item = (&'static CommandSpec, Placement)> {

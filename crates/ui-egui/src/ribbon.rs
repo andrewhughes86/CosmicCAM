@@ -52,10 +52,18 @@ pub fn show(ui: &mut Ui, session: &Session, tokens: &Tokens, requests: &mut Vec<
 }
 
 fn tab_strip(ui: &mut Ui, session: &Session, tokens: &Tokens, active: RibbonTab, requests: &mut Vec<Request>) {
-    let (strip, _) = ui.allocate_exact_size(vec2(ui.available_width(), TAB_HEIGHT), Sense::hover());
+    // The strip doubles as the window's title bar: drag it to move the window.
+    let (strip, background) = ui.allocate_exact_size(vec2(ui.available_width(), TAB_HEIGHT), Sense::click_and_drag());
     let painter = ui.painter_at(strip);
     painter.rect_filled(strip, 0.0, tokens.raised_bg);
     painter.hline(strip.x_range(), strip.bottom() - 0.5, Stroke::new(1.0, tokens.border));
+    #[cfg(not(target_arch = "wasm32"))]
+    let right = window_controls(ui, strip, tokens, &background);
+    #[cfg(target_arch = "wasm32")]
+    let right = {
+        let _ = &background;
+        strip.right()
+    };
 
     let font = FontId::proportional(13.0);
     let brand = painter.layout_no_wrap("CosmicCAM".into(), font.clone(), tokens.accent);
@@ -88,13 +96,182 @@ fn tab_strip(ui: &mut Ui, session: &Session, tokens: &Tokens, active: RibbonTab,
         }
         x = rect.right() + 2.0;
     }
-    painter.text(
-        pos2(strip.right() - 10.0, strip.center().y),
-        Align2::RIGHT_CENTER,
-        &session.job.name,
-        font,
-        tokens.text_muted,
-    );
+    document_tabs(ui, session, tokens, Rect::from_x_y_ranges(x + 12.0..=right - 12.0, strip.y_range()), requests);
+}
+
+/// Width of the close button on a document tab.
+const DOC_CLOSE: f32 = 18.0;
+
+/// Widest a document tab grows; longer names are cut short.
+const DOC_TAB_MAX: f32 = 200.0;
+
+/// One tab per open document, after the ribbon tabs, each as wide as its name plus room for
+/// the close button it shows while the pointer is over it.
+fn document_tabs(ui: &Ui, session: &Session, tokens: &Tokens, space: Rect, requests: &mut Vec<Request>) {
+    let painter = ui.painter_at(space);
+    let font = FontId::proportional(12.5);
+    let tabs = session.tabs();
+    let labels: Vec<Arc<Galley>> = tabs
+        .iter()
+        .map(|t| {
+            let name = if t.modified { format!("{} \u{2022}", t.name) } else { t.name.clone() };
+            painter.layout_no_wrap(name, font.clone(), tokens.text)
+        })
+        .collect();
+    let widths: Vec<f32> = labels.iter().map(|g| (g.size().x + 14.0 + DOC_CLOSE).min(DOC_TAB_MAX)).collect();
+    let mut x = space.left();
+    for (i, ((tab, label), width)) in tabs.iter().zip(&labels).zip(&widths).enumerate() {
+        let rect = Rect::from_min_size(pos2(x, space.top() + 3.0), vec2(*width, space.height() - 5.0));
+        x = rect.right() + 2.0;
+        if rect.right() > space.right() {
+            break;
+        }
+        let response = ui.interact(rect, Id::new(("document-tab", i)), Sense::click());
+        let hovered = response.hovered();
+        let fill = if tab.active {
+            tokens.panel_bg
+        } else if hovered {
+            tokens.hover_bg
+        } else {
+            tokens.raised_bg
+        };
+        painter.rect(rect, 4.0, fill, Stroke::new(1.0, tokens.border), egui::StrokeKind::Inside);
+        if tab.active {
+            painter.hline(rect.x_range().shrink(6.0), rect.bottom() - 1.5, Stroke::new(2.0, tokens.accent));
+        }
+        let text_color = if tab.active { tokens.text } else { tokens.text_muted };
+        let text_space = rect.width() - 14.0 - DOC_CLOSE;
+        let galley = if label.size().x > text_space { truncate(ui, &tab.name, text_space) } else { label.clone() };
+        painter.galley(pos2(rect.left() + 10.0, rect.center().y - galley.size().y / 2.0), galley, text_color);
+        let close =
+            Rect::from_center_size(pos2(rect.right() - 4.0 - DOC_CLOSE / 2.0, rect.center().y), vec2(16.0, 16.0));
+        let close_response = ui.interact(close, Id::new(("document-tab-close", i)), Sense::click());
+        if hovered || close_response.hovered() {
+            let c = close.center();
+            if close_response.hovered() {
+                painter.rect_filled(close, 3.0, tokens.hover_bg);
+            }
+            let ink = Stroke::new(1.2, if close_response.hovered() { tokens.text } else { tokens.text_muted });
+            painter.line_segment([c + vec2(-3.5, -3.5), c + vec2(3.5, 3.5)], ink);
+            painter.line_segment([c + vec2(-3.5, 3.5), c + vec2(3.5, -3.5)], ink);
+        }
+        let tooltip = tab.path.clone().unwrap_or_else(|| format!("{} (not saved yet)", tab.name));
+        let response = response.on_hover_text(tooltip);
+        if close_response.clicked() || response.middle_clicked() {
+            requests.push(("job.tab.close".into(), serde_json::json!({ "index": i })));
+        } else if response.clicked() && !tab.active {
+            requests.push(("job.tab.activate".into(), serde_json::json!({ "index": i })));
+        }
+    }
+}
+
+/// Width of one window control button.
+#[cfg(not(target_arch = "wasm32"))]
+const WINDOW_BUTTON: f32 = 44.0;
+
+/// Minimize, maximize and close at the right of the tab strip, which stands in for the title bar
+/// (the window has no system decorations). Returns where the strip's free space ends.
+#[cfg(not(target_arch = "wasm32"))]
+fn window_controls(ui: &Ui, strip: Rect, tokens: &Tokens, background: &Response) -> f32 {
+    use egui::ViewportCommand;
+    let ctx = ui.ctx();
+    let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+    if background.double_clicked() {
+        ctx.send_viewport_cmd(ViewportCommand::Maximized(!maximized));
+    } else if background.drag_started() {
+        ctx.send_viewport_cmd(ViewportCommand::StartDrag);
+    }
+    let painter = ui.painter_at(strip);
+    let ink = Stroke::new(1.2, tokens.text);
+    let mut x = strip.right();
+    for button in ["close", "maximize", "minimize"] {
+        let rect = Rect::from_min_max(pos2(x - WINDOW_BUTTON, strip.top()), pos2(x, strip.bottom() - 1.0));
+        x = rect.left();
+        let response = ui.interact(rect, Id::new(("window-control", button)), Sense::click());
+        if response.hovered() {
+            painter.rect_filled(rect, 0.0, if button == "close" { tokens.error } else { tokens.hover_bg });
+        }
+        let c = rect.center();
+        let h = 5.0;
+        match button {
+            "close" => {
+                let ink = if response.hovered() { Stroke::new(1.2, Color32::WHITE) } else { ink };
+                painter.line_segment([c + vec2(-h, -h), c + vec2(h, h)], ink);
+                painter.line_segment([c + vec2(-h, h), c + vec2(h, -h)], ink);
+            }
+            "maximize" if maximized => {
+                // Restore: two overlapping windows.
+                painter.rect_stroke(
+                    Rect::from_min_max(c + vec2(-h, -h + 2.0), c + vec2(h - 2.0, h)),
+                    0.0,
+                    ink,
+                    egui::StrokeKind::Middle,
+                );
+                painter.line_segment([c + vec2(-h + 2.0, -h), c + vec2(h, -h)], ink);
+                painter.line_segment([c + vec2(h, -h), c + vec2(h, h - 2.0)], ink);
+            }
+            "maximize" => {
+                painter.rect_stroke(
+                    Rect::from_center_size(c, vec2(2.0 * h, 2.0 * h)),
+                    0.0,
+                    ink,
+                    egui::StrokeKind::Middle,
+                );
+            }
+            _ => {
+                painter.line_segment([c + vec2(-h, 0.0), c + vec2(h, 0.0)], ink);
+            }
+        }
+        let response = response.on_hover_text(match button {
+            "close" => "Close",
+            "maximize" if maximized => "Restore",
+            "maximize" => "Maximize",
+            _ => "Minimize",
+        });
+        if response.clicked() {
+            ctx.send_viewport_cmd(match button {
+                "close" => ViewportCommand::Close,
+                "maximize" => ViewportCommand::Maximized(!maximized),
+                _ => ViewportCommand::Minimized(true),
+            });
+        }
+    }
+    x
+}
+
+/// Lets the window, which has no system frame, be resized from its edges and corners.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn resize_edges(ctx: &egui::Context) {
+    use egui::{CursorIcon, ResizeDirection, ViewportCommand};
+    const GRIP: f32 = 5.0;
+    let (maximized, pointer, pressed, screen) = ctx.input(|i| {
+        (
+            i.viewport().maximized.unwrap_or(false) || i.viewport().fullscreen.unwrap_or(false),
+            i.pointer.hover_pos(),
+            i.pointer.primary_pressed(),
+            i.content_rect(),
+        )
+    });
+    let Some(p) = pointer.filter(|_| !maximized) else {
+        return;
+    };
+    let (w, e) = (p.x - screen.left() < GRIP, screen.right() - p.x < GRIP);
+    let (n, s) = (p.y - screen.top() < GRIP, screen.bottom() - p.y < GRIP);
+    let (direction, cursor) = match (n, s, w, e) {
+        (true, _, true, _) => (ResizeDirection::NorthWest, CursorIcon::ResizeNorthWest),
+        (true, _, _, true) => (ResizeDirection::NorthEast, CursorIcon::ResizeNorthEast),
+        (_, true, true, _) => (ResizeDirection::SouthWest, CursorIcon::ResizeSouthWest),
+        (_, true, _, true) => (ResizeDirection::SouthEast, CursorIcon::ResizeSouthEast),
+        (true, ..) => (ResizeDirection::North, CursorIcon::ResizeNorth),
+        (_, true, ..) => (ResizeDirection::South, CursorIcon::ResizeSouth),
+        (_, _, true, _) => (ResizeDirection::West, CursorIcon::ResizeWest),
+        (_, _, _, true) => (ResizeDirection::East, CursorIcon::ResizeEast),
+        _ => return,
+    };
+    ctx.set_cursor_icon(cursor);
+    if pressed {
+        ctx.send_viewport_cmd(ViewportCommand::BeginResize(direction));
+    }
 }
 
 fn separator(ui: &mut Ui, tokens: &Tokens) {
@@ -435,8 +612,9 @@ fn tooltip(ui: &mut Ui, spec: &CommandSpec) {
 }
 
 /// Toggle commands show as pressed while their state is on.
-fn is_checked(id: &str, session: &Session) -> bool {
+pub(crate) fn is_checked(id: &str, session: &Session) -> bool {
     match id {
+        "view.grid.toggle" => session.prefs.display.grid,
         "view.projection.toggle" => session.view.camera.projection == Projection::Perspective,
         "view.theme.toggle" => session.prefs.theme == Theme::Light,
         _ => false,

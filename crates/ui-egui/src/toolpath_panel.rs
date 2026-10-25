@@ -79,6 +79,8 @@ pub struct ToolpathPanel {
     heights: Vec<(String, Option<f64>)>,
     dirty: bool,
     error: Option<String>,
+    /// The next viewport click sets the entry point.
+    picking_entry: bool,
 }
 
 impl ToolpathPanel {
@@ -113,6 +115,7 @@ impl ToolpathPanel {
             heights: Vec::new(),
             dirty: true,
             error: None,
+            picking_entry: false,
         };
         panel.refresh(session);
         panel
@@ -155,11 +158,16 @@ impl ToolpathPanel {
 
     /// What the viewport picks and draws while the panel is open.
     pub fn mode(&self, session: &Session) -> PickMode {
+        let entry = self.entry_point().filter(|_| self.tab == Tab::Linking);
         let mut mode = PickMode {
-            accept: (self.tab == Tab::Geometry).then_some(Accept::Axis),
+            accept: if self.picking_entry {
+                Some(Accept::Point)
+            } else {
+                (self.tab == Tab::Geometry).then_some(Accept::Axis)
+            },
             picked: Vec::new(),
             picked_edges: Vec::new(),
-            picked_points: Vec::new(),
+            picked_points: entry.into_iter().collect(),
             preview: None,
             independent_of: Vec::new(),
             path: self.preview.as_ref().ok().map(|(start, moves, _)| (*start, Arc::clone(moves))),
@@ -176,6 +184,13 @@ impl ToolpathPanel {
 
     /// A click in the viewport (Geometry tab) adds the edge or face, or removes it if picked.
     pub fn picked(&mut self, hit: PickHit, session: &Session) {
+        if self.picking_entry {
+            self.picking_entry = false;
+            self.values.insert("entry_from".into(), json!("selection"));
+            self.values.insert("entry_point".into(), json!(hit.point.to_array()));
+            self.refresh(session);
+            return;
+        }
         let reference = match (hit.edge, hit.face) {
             (Some(e), _) => Entity::Edge(e).reference(&hit.model),
             (None, Some(f)) => Entity::Face(f).reference(&hit.model),
@@ -207,7 +222,7 @@ impl ToolpathPanel {
             });
             ui.separator();
             // The settings scroll; the summary and buttons stay at the bottom.
-            let footer = 110.0;
+            let footer = 130.0;
             // Fill the panel so the buttons sit at its bottom.
             let body = (ui.available_height() - footer).max(120.0);
             egui::ScrollArea::vertical().max_height(body).min_scrolled_height(body).auto_shrink([false, false]).show(
@@ -225,7 +240,8 @@ impl ToolpathPanel {
                 },
             );
             ui.separator();
-            match (&self.error, &self.preview) {
+            // The summary and messages sit centred over the buttons.
+            ui.vertical_centered(|ui| match (&self.error, &self.preview) {
                 (Some(e), _) => {
                     ui.label(RichText::new(e).color(tokens.error));
                 }
@@ -246,19 +262,30 @@ impl ToolpathPanel {
                     ui.label(RichText::new(e).color(tokens.warning));
                 }
                 _ => {}
-            }
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                let ready = self.preview.is_ok();
-                if ui.add_enabled(ready, egui::Button::new(RichText::new("  OK  ").strong())).clicked() {
-                    result.0 = Some(("toolpath.contour".to_owned(), self.params()));
-                }
-                if ui.button("Cancel").clicked() {
-                    result.1 = false;
-                }
             });
+            ui.add_space(8.0);
+            let (ok, cancel) = ok_cancel(ui, self.preview.is_ok());
+            if ok {
+                result.0 = Some(("toolpath.contour".to_owned(), self.params()));
+            }
+            if cancel {
+                result.1 = false;
+            }
         });
         result
+    }
+
+    /// The picked entry point, when the entry is set from a selection.
+    fn entry_point(&self) -> Option<Vec3> {
+        if self.values.get("entry_from").and_then(Value::as_str) != Some("selection") {
+            return None;
+        }
+        let a = self.values.get("entry_point")?.as_array()?;
+        let c: Vec<f32> = a.iter().filter_map(Value::as_f64).map(|v| v as f32).collect();
+        match c.as_slice() {
+            [x, y, z] => Some(Vec3::new(*x, *y, *z)),
+            _ => None,
+        }
     }
 
     // ---- field helpers -------------------------------------------------------------------
@@ -535,6 +562,9 @@ impl ToolpathPanel {
             c
         };
         egui::Grid::new("tp-passes").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+            let tolerance_help = "How far the toolpath may stray from the true curve: arcs, circles and rounded \
+                                  corners get more, closer points as this gets smaller. Straight lines are unaffected.";
+            changed |= Self::row(ui, "Tolerance", tolerance_help, |ui| len(ui, self, "tolerance", &u.plain(0.01)));
             let dirs = [("climb", "Climb"), ("conventional", "Conventional")];
             changed |= Self::row(ui, "Direction", "Climb keeps the material on the right of the tool's travel", |ui| {
                 self.choice(ui, "direction", &dirs, "climb")
@@ -569,9 +599,6 @@ impl ToolpathPanel {
             changed |= Self::row(ui, "Slow-down distance", "Before and after the change", |ui| {
                 len(ui, self, "optimization_distance", "Ø/2")
             });
-            changed |= Self::row(ui, "Tolerance", "Chord tolerance for arcs and offsets", |ui| {
-                len(ui, self, "tolerance", &u.plain(0.01))
-            });
         });
         changed
     }
@@ -597,6 +624,39 @@ impl ToolpathPanel {
             c
         };
         egui::Grid::new("tp-linking").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+            ui.label(RichText::new("Entry point").strong());
+            ui.end_row();
+            let entries = [("auto", "Automatic"), ("origin", "Origin"), ("wcs", "WCS"), ("selection", "Selection")];
+            let entry_help = "Where each closed contour starts: mid-way along its longest side (Automatic), or as \
+                              near as it passes to the world origin, the WCS origin or a point you pick";
+            let entry_changed = Self::row(ui, "From", entry_help, |ui| self.choice(ui, "entry_from", &entries, "auto"));
+            changed |= entry_changed;
+            let from_selection = self.values.get("entry_from").and_then(Value::as_str) == Some("selection");
+            if entry_changed {
+                // Choosing Selection starts picking straight away when there is no point yet.
+                self.picking_entry = from_selection && self.entry_point().is_none();
+            }
+            if !from_selection {
+                self.picking_entry = false;
+            } else {
+                let point = self.entry_point();
+                let picking = self.picking_entry;
+                Self::row(ui, "", "", |ui| {
+                    let label = if picking { "Click a point in the viewport…" } else { "Pick point" };
+                    if ui.selectable_label(picking, label).clicked() {
+                        self.picking_entry = !picking;
+                    }
+                    if let Some(p) = point.filter(|_| !picking) {
+                        ui.label(format!(
+                            "{}, {}, {}",
+                            u.fmt_len(f64::from(p.x)),
+                            u.fmt_len(f64::from(p.y)),
+                            u.fmt_len(f64::from(p.z))
+                        ));
+                    }
+                    false
+                });
+            }
             ui.label(RichText::new("Lead-in").strong());
             ui.end_row();
             changed |= Self::row(ui, "Style", "", |ui| self.choice(ui, "lead_in", &leads, "arc"));
@@ -666,4 +726,18 @@ impl ToolpathPanel {
 fn trim(v: f64) -> String {
     let s = format!("{v:.4}");
     s.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+/// The OK and Cancel buttons centred at the foot of a side panel: (OK clicked, Cancel clicked).
+pub(crate) fn ok_cancel(ui: &mut Ui, ready: bool) -> (bool, bool) {
+    const BUTTON: egui::Vec2 = egui::vec2(120.0, 34.0);
+    const GAP: f32 = 12.0;
+    ui.horizontal(|ui| {
+        ui.add_space(((ui.available_width() - 2.0 * BUTTON.x - GAP) / 2.0).max(0.0));
+        let ok = ui.add_enabled(ready, egui::Button::new(RichText::new("OK").strong().size(15.0)).min_size(BUTTON));
+        ui.add_space(GAP);
+        let cancel = ui.add(egui::Button::new(RichText::new("Cancel").size(15.0)).min_size(BUTTON));
+        (ok.clicked(), cancel.clicked())
+    })
+    .inner
 }

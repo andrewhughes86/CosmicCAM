@@ -463,6 +463,37 @@ impl Wcs {
     }
 }
 
+/// A setup: one way the part is held on one machine, with the WCS it is programmed in and the
+/// stock it is cut from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Setup {
+    /// Outline id, `setup.<n>`.
+    pub id: String,
+    pub name: String,
+    /// The machine (`machine.<n>`) it runs on.
+    pub machine: String,
+    /// The WCS it is programmed in; None for the world origin.
+    pub wcs: Option<String>,
+    /// The raw material, once defined.
+    pub stock: Option<Aabb>,
+}
+
+impl Setup {
+    pub fn to_json(&self, active: bool) -> Value {
+        json!({
+            "id": self.id,
+            "name": self.name,
+            "active": active,
+            "machine": self.machine,
+            "wcs": self.wcs,
+            "stock": self.stock.as_ref().map_or(Value::Null, stock_json),
+        })
+    }
+}
+
+/// Most setups one job holds.
+pub const MAX_SETUPS: usize = 256;
+
 #[derive(Clone, Debug)]
 pub struct JobState {
     pub name: String,
@@ -484,6 +515,15 @@ pub struct JobState {
     pub stock: Option<Aabb>,
     pub toolpaths: Vec<crate::toolpath::Toolpath>,
     pub(crate) next_toolpath: u64,
+    pub setups: Vec<Setup>,
+    /// The setup being worked on: its stock is `stock`, its WCS the active one.
+    pub active_setup: Option<String>,
+    pub(crate) next_setup: u64,
+    /// The job file it was opened from or last saved to.
+    pub path: Option<String>,
+    /// Counts changes to the job; it is unsaved while this differs from `saved_edits`.
+    pub edits: u64,
+    pub saved_edits: u64,
 }
 
 impl Default for JobState {
@@ -501,11 +541,46 @@ impl Default for JobState {
             stock: None,
             toolpaths: Vec::new(),
             next_toolpath: 1,
+            setups: Vec::new(),
+            active_setup: None,
+            next_setup: 1,
+            path: None,
+            edits: 0,
+            saved_edits: 0,
         }
     }
 }
 
 impl JobState {
+    /// Changed since it was opened or saved.
+    pub fn is_modified(&self) -> bool {
+        self.edits != self.saved_edits
+    }
+
+    /// Nothing in it yet and nothing to lose: a new tab may replace it.
+    pub fn is_blank(&self) -> bool {
+        self.path.is_none()
+            && self.models.is_empty()
+            && self.toolpaths.is_empty()
+            && self.wcs.is_empty()
+            && !self.is_modified()
+    }
+
+    /// Sets the stock, which belongs to the active setup when there is one.
+    pub(crate) fn set_stock(&mut self, stock: Option<Aabb>) {
+        self.stock = stock;
+        if let Some(id) = self.active_setup.clone()
+            && let Some(setup) = self.setups.iter_mut().find(|st| st.id == id)
+        {
+            setup.stock = stock;
+        }
+        self.setup_changed();
+    }
+
+    pub fn setup_by_id(&self, id: &str) -> Option<&Setup> {
+        self.setups.iter().find(|st| st.id == id)
+    }
+
     pub(crate) fn geometry_changed(&mut self) {
         self.revision = self.revision.wrapping_add(1);
     }
@@ -694,8 +769,31 @@ pub struct Session {
     pub view: ViewState,
     pub job: JobState,
     pub ui: UiState,
+    /// Open documents (tabs). The active one lives in `job` and `view`; its slot is `None`.
+    tabs: Vec<Option<ParkedDoc>>,
+    active_tab: usize,
     log: Vec<LogEntry>,
     next_seq: u64,
+}
+
+/// Most documents open at once.
+pub const MAX_TABS: usize = 32;
+
+/// A document that is open in a tab but not shown.
+#[derive(Clone, Debug)]
+struct ParkedDoc {
+    job: JobState,
+    camera: OrbitCamera,
+    selection: Option<String>,
+}
+
+/// One open document, as `job.tab.list` reports it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TabInfo {
+    pub name: String,
+    pub path: Option<String>,
+    pub modified: bool,
+    pub active: bool,
 }
 
 impl Session {
@@ -774,6 +872,9 @@ impl Session {
         let snapshot = self.clone();
         match catch_unwind(AssertUnwindSafe(|| (spec.run)(self, params))) {
             Ok(result) => {
+                if result.is_ok() && changes_job(spec.id) {
+                    self.job.edits = self.job.edits.wrapping_add(1);
+                }
                 if result.is_err() {
                     // Commands validate before they change anything, but never leave half an edit.
                     *self = Session { log: std::mem::take(&mut self.log), next_seq: self.next_seq, ..snapshot };
@@ -844,19 +945,146 @@ impl Session {
     }
 
     /// Starts a new job, keeping preferences, UI state and the command log.
-    pub(crate) fn reset_job(&mut self, sample: bool) {
-        let mut fresh = if sample { Session::with_sample() } else { Session::new() };
-        fresh.prefs = self.prefs.clone();
-        fresh.library = self.library.clone();
-        fresh.job.revision = self.job.revision.wrapping_add(1);
-        fresh.job.setup_revision = self.job.setup_revision.wrapping_add(1);
-        fresh.view.layout_generation = self.view.layout_generation;
-        fresh.view.aspect = self.view.aspect;
-        fresh.view.camera.projection = self.view.camera.projection;
-        fresh.ui = self.ui.clone();
-        fresh.log = std::mem::take(&mut self.log);
-        fresh.next_seq = self.next_seq;
-        *self = fresh;
+    /// Opens a new, empty document (or the sample part) in its own tab.
+    pub(crate) fn new_document(&mut self, sample: bool) -> EngineResult<usize> {
+        let fresh = if sample { Session::with_sample() } else { Session::new() };
+        self.open_tab(fresh.job, Some(fresh.view.camera))
+    }
+
+    /// The open documents, in tab order.
+    pub fn tabs(&self) -> Vec<TabInfo> {
+        let count = self.tabs.len().max(1);
+        (0..count)
+            .map(|i| {
+                let job = match self.tabs.get(i) {
+                    Some(Some(doc)) => &doc.job,
+                    _ => &self.job,
+                };
+                TabInfo {
+                    name: job.name.clone(),
+                    path: job.path.clone(),
+                    modified: job.is_modified(),
+                    active: i == self.active_tab.min(count - 1),
+                }
+            })
+            .collect()
+    }
+
+    pub fn active_tab(&self) -> usize {
+        self.active_tab
+    }
+
+    /// The tab list always holds the active document.
+    fn ensure_tabs(&mut self) {
+        if self.tabs.is_empty() {
+            self.tabs.push(None);
+            self.active_tab = 0;
+        }
+    }
+
+    /// Shows `doc`, giving it revisions past `drawn` (the revisions of the document shown
+    /// until now) so the viewport rebuilds its scene.
+    fn show_doc(&mut self, doc: ParkedDoc, drawn: (u64, u64)) {
+        let mut job = doc.job;
+        job.revision = job.revision.max(drawn.0).wrapping_add(1);
+        job.setup_revision = job.setup_revision.max(drawn.1).wrapping_add(1);
+        self.job = job;
+        let projection = self.view.camera.projection;
+        self.view.camera = doc.camera;
+        self.view.camera.projection = projection;
+        self.view.selection = doc.selection;
+    }
+
+    fn drawn(&self) -> (u64, u64) {
+        (self.job.revision, self.job.setup_revision)
+    }
+
+    fn park_active(&mut self) -> ParkedDoc {
+        ParkedDoc {
+            job: std::mem::take(&mut self.job),
+            camera: self.view.camera,
+            selection: self.view.selection.take(),
+        }
+    }
+
+    /// Opens `job` in a new tab and shows it. A blank active document is replaced instead.
+    pub(crate) fn open_tab(&mut self, job: JobState, camera: Option<OrbitCamera>) -> EngineResult<usize> {
+        self.ensure_tabs();
+        let camera = camera.unwrap_or(self.view.camera);
+        let drawn = self.drawn();
+        if self.job.is_blank() && !self.job.sample_loaded {
+            self.show_doc(ParkedDoc { job, camera, selection: None }, drawn);
+            return Ok(self.active_tab);
+        }
+        if self.tabs.len() >= MAX_TABS {
+            return Err(EngineError::InvalidParams(format!(
+                "at most {MAX_TABS} documents can be open; close one first"
+            )));
+        }
+        let current = self.park_active();
+        if let Some(slot) = self.tabs.get_mut(self.active_tab) {
+            *slot = Some(current);
+        }
+        self.tabs.push(None);
+        self.active_tab = self.tabs.len() - 1;
+        self.show_doc(ParkedDoc { job, camera, selection: None }, drawn);
+        Ok(self.active_tab)
+    }
+
+    /// Shows the document in tab `index`.
+    pub(crate) fn activate_tab(&mut self, index: usize) -> EngineResult<()> {
+        self.ensure_tabs();
+        if index >= self.tabs.len() {
+            return Err(EngineError::InvalidParams(format!("there is no tab {index}")));
+        }
+        if index == self.active_tab {
+            return Ok(());
+        }
+        let incoming = self
+            .tabs
+            .get_mut(index)
+            .and_then(Option::take)
+            .ok_or_else(|| EngineError::Internal("tab has no document".into()))?;
+        let drawn = self.drawn();
+        let current = self.park_active();
+        if let Some(slot) = self.tabs.get_mut(self.active_tab) {
+            *slot = Some(current);
+        }
+        self.active_tab = index;
+        self.show_doc(incoming, drawn);
+        Ok(())
+    }
+
+    /// Closes tab `index`. Closing the last one leaves a new, empty document.
+    pub(crate) fn close_tab(&mut self, index: usize) -> EngineResult<()> {
+        self.ensure_tabs();
+        if index >= self.tabs.len() {
+            return Err(EngineError::InvalidParams(format!("there is no tab {index}")));
+        }
+        if self.tabs.len() == 1 {
+            let (camera, drawn) = (self.view.camera, self.drawn());
+            self.show_doc(ParkedDoc { job: JobState::default(), camera, selection: None }, drawn);
+            return Ok(());
+        }
+        if index == self.active_tab {
+            let next = if index + 1 < self.tabs.len() { index + 1 } else { index - 1 };
+            self.activate_tab(next)?;
+        }
+        self.tabs.remove(index);
+        if self.active_tab > index {
+            self.active_tab -= 1;
+        }
+        Ok(())
+    }
+
+    /// The job and camera of tab `index`, active or not.
+    pub fn tab_job(&self, index: usize) -> Option<&JobState> {
+        match self.tabs.get(index) {
+            Some(Some(doc)) => Some(&doc.job),
+            Some(None) => Some(&self.job),
+            None if index == 0 && self.tabs.is_empty() => Some(&self.job),
+            None => None,
+        }
     }
 
     pub fn log_seq(&self) -> u64 {
@@ -949,7 +1177,44 @@ impl Session {
                 ],
             }
         });
-        stock.into_iter().chain(self.wcs_nodes()).collect()
+        if self.job.setups.is_empty() {
+            return stock.into_iter().chain(self.wcs_nodes()).collect();
+        }
+        // With setups, each one holds its stock; the coordinate systems follow.
+        self.job.setups.iter().map(|st| self.setup_node(st)).chain(self.wcs_nodes()).collect()
+    }
+
+    fn setup_node(&self, st: &Setup) -> OutlineNode {
+        let u = self.prefs.units;
+        let active = self.job.active_setup.as_deref() == Some(&st.id);
+        let machine = self.library.machine(&st.machine).map_or_else(|| st.machine.clone(), |m| m.name.clone());
+        let wcs = st
+            .wcs
+            .as_deref()
+            .map_or_else(|| "Origin".to_owned(), |id| self.job.wcs_by_id(id).map_or(id.to_owned(), |w| w.name.clone()));
+        let stock = st.stock.map(|b| OutlineNode {
+            id: format!("{}/stock", st.id),
+            label: "Stock".into(),
+            children: Vec::new(),
+            properties: vec![
+                ("Shape".into(), "Box".into()),
+                ("Size".into(), u.fmt_size(b.size().to_array())),
+                ("Min".into(), u.fmt_point(b.min.to_array())),
+                ("Max".into(), u.fmt_point(b.max.to_array())),
+            ],
+        });
+        OutlineNode {
+            id: st.id.clone(),
+            label: if active { format!("{} (active)", st.name) } else { st.name.clone() },
+            children: stock.into_iter().collect(),
+            properties: vec![
+                ("Name".into(), st.name.clone()),
+                ("Active".into(), if active { "Yes" } else { "No" }.into()),
+                ("Machine".into(), machine),
+                ("WCS".into(), wcs),
+                ("Stock".into(), st.stock.map_or("None".into(), |b| u.fmt_size(b.size().to_array()))),
+            ],
+        }
     }
 
     fn wcs_nodes(&self) -> Vec<OutlineNode> {
@@ -1120,4 +1385,12 @@ fn face_summary(map: &FaceMap) -> String {
         count("cylinder"),
         count("freeform")
     )
+}
+
+/// Commands that change the job itself (not the view, the library or the preferences), which
+/// leaves it with unsaved changes.
+fn changes_job(id: &str) -> bool {
+    let area = id.split('.').next().unwrap_or_default();
+    let last = id.rsplit('.').next().unwrap_or_default();
+    matches!(area, "model" | "setup" | "toolpath") && !matches!(last, "get" | "list" | "pick")
 }

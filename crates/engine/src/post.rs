@@ -2,6 +2,8 @@
 //! configurations of Phase 8 replace it. It writes plain RS-274 milling code: a safety
 //! block, then for each toolpath a tool change, spindle and coolant, the work offset of the
 //! toolpath's WCS, tool length compensation and the moves as G0 / G1, then an end block.
+//! Every line that moves an axis starts with its motion code; feeds are written only when
+//! they change.
 //!
 //! Coordinates are in the toolpath's WCS (the machine's G54, G55, … for the first, second, …
 //! WCS of the job; G54 for toolpaths in world coordinates), in inches or millimetres.
@@ -198,12 +200,11 @@ pub fn gcode(s: &Session, ids: &[String], opt: &Options) -> EngineResult<String>
         // Over the start at clearance, then length compensation on the first Z move.
         let start = f.local(tp.start);
         w.line(&format!("G0 X{} Y{}", n(start.x), n(start.y)));
-        w.line(&format!("G43 Z{} H{}", n(start.z), tool.length_offset));
+        w.line(&format!("G0 G43 Z{} H{}", n(start.z), tool.length_offset));
         if let Some(c) = coolant {
             w.line(c);
         }
         let mut at = start;
-        let mut last_g: Option<u8> = Some(0);
         let mut last_f: Option<String> = None;
         for mv in tp.moves.iter() {
             let p = f.local(mv.to);
@@ -213,16 +214,13 @@ pub fn gcode(s: &Session, ids: &[String], opt: &Options) -> EngineResult<String>
                 .map(|(axis, new, _)| format!("{axis}{}", n(new)))
                 .collect();
             at = p;
-            // A move that changes no axis writes nothing, and changes no modal state.
+            // A move that changes no axis writes nothing.
             if axes.is_empty() {
                 continue;
             }
+            // Every move names its motion (G0 or G1), even where the controller would keep it.
             let g = if mv.kind == MoveKind::Rapid { 0 } else { 1 };
-            let mut words: Vec<String> = Vec::new();
-            if last_g != Some(g) {
-                words.push(format!("G{g}"));
-                last_g = Some(g);
-            }
+            let mut words = vec![format!("G{g}")];
             words.extend(axes);
             if g == 1 {
                 let fv = feed(f64::from(mv.feed));

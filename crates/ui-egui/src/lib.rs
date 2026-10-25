@@ -22,6 +22,7 @@ pub mod navigation;
 mod panes;
 mod param_form;
 mod ribbon;
+mod setup_panel;
 pub mod theme;
 mod tool_view;
 mod toolpath_panel;
@@ -46,6 +47,8 @@ pub fn native_options() -> eframe::NativeOptions {
     eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("CosmicCAM")
+            // The ribbon's tab strip is the title bar, with its own window controls.
+            .with_decorations(false)
             .with_app_id(APP_ID)
             .with_inner_size([1600.0, 1000.0])
             .with_min_inner_size([960.0, 600.0]),

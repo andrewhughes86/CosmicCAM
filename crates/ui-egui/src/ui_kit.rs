@@ -174,8 +174,11 @@ impl Window {
         open: &mut bool,
         add: impl FnOnce(&mut Ui) -> R,
     ) -> Option<R> {
-        egui::Window::new(self.title)
+        let title = self.title.clone();
+        let mut close = false;
+        let shown = egui::Window::new(self.title)
             .open(open)
+            .title_bar(false)
             .collapsible(false)
             .resizable(self.size.is_some())
             .max_size(ctx.content_rect().size() * 0.95)
@@ -186,8 +189,58 @@ impl Window {
             } else {
                 ctx.content_rect().center()
             })
-            .frame(Container::new(Surface::Dialog).frame(t))
-            .show(ctx, add)
-            .and_then(|r| r.inner)
+            .frame(Container::new(Surface::Dialog).frame(t).inner_margin(Margin::ZERO))
+            .show(ctx, |ui| {
+                // A compact title bar, the height of the main window's tab strip. It is painted
+                // once the content has set the window's width.
+                let spacing = ui.spacing().item_spacing;
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let top = ui.cursor().min;
+                ui.add_space(TITLE_HEIGHT);
+                let inner = Frame::new()
+                    .inner_margin(Margin::same(12))
+                    .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing = spacing;
+                        add(ui)
+                    })
+                    .inner;
+                let bar = egui::Rect::from_min_max(top, egui::pos2(ui.min_rect().right(), top.y + TITLE_HEIGHT));
+                close = title_bar(ui, t, bar, &title);
+                inner
+            })
+            .and_then(|r| r.inner);
+        if close {
+            *open = false;
+        }
+        shown
     }
+}
+
+/// Height of a window's title bar.
+const TITLE_HEIGHT: f32 = 24.0;
+
+/// Paints a window's title bar into `bar`; true when its close button was clicked.
+fn title_bar(ui: &Ui, t: &Tokens, bar: egui::Rect, title: &str) -> bool {
+    let painter = ui.painter();
+    painter.rect_filled(bar, CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, t.raised_bg);
+    painter.hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0, t.border));
+    painter.text(
+        egui::pos2(bar.left() + 10.0, bar.center().y),
+        egui::Align2::LEFT_CENTER,
+        title,
+        egui::FontId::proportional(13.0),
+        t.text,
+    );
+    let button = egui::Rect::from_min_max(egui::pos2(bar.right() - 32.0, bar.top()), bar.right_bottom());
+    let response = ui.interact(button, ui.id().with("window-close"), egui::Sense::click());
+    let ink = if response.hovered() {
+        painter.rect_filled(button.shrink2(egui::vec2(4.0, 3.0)), 3.0, t.error);
+        Stroke::new(1.2, egui::Color32::WHITE)
+    } else {
+        Stroke::new(1.2, t.text_muted)
+    };
+    let (c, h) = (button.center(), 4.0);
+    painter.line_segment([c + egui::vec2(-h, -h), c + egui::vec2(h, h)], ink);
+    painter.line_segment([c + egui::vec2(-h, h), c + egui::vec2(h, -h)], ink);
+    response.on_hover_text("Close").clicked()
 }

@@ -43,15 +43,29 @@ struct SyntheticClick {
     reply: Option<Incoming>,
 }
 
+/// Text typed into the focused field through the control channel, after any queued clicks.
+struct SyntheticText {
+    text: String,
+    /// Select what the field holds first, so the text replaces it.
+    replace: bool,
+    reply: Option<Incoming>,
+}
+
+/// Longest text one `ui.type` request may type.
+const MAX_TYPED_CHARS: usize = 4096;
+
 pub struct CosmicApp {
     session: Session,
     clicks: Vec<SyntheticClick>,
+    typing: Vec<SyntheticText>,
     dock: DockState<Tab>,
     layout_generation: u64,
     viewport: Viewport,
     console: ConsoleState,
     /// The toolpath editor panel, while one is open.
     toolpath_panel: Option<crate::toolpath_panel::ToolpathPanel>,
+    /// The setup editor panel, while one is open.
+    setup_panel: Option<crate::setup_panel::SetupPanel>,
     /// The tool library window: open or not, and its preview state.
     library_open: bool,
     settings_open: bool,
@@ -65,6 +79,8 @@ pub struct CosmicApp {
     status: Option<String>,
     /// A success worth telling the user about (e.g. a file written), shown when there is no failure.
     notice: Option<String>,
+    /// A document tab waiting for the user to confirm closing it without saving.
+    confirm_close: Option<usize>,
     shortcuts: Vec<(KeyboardShortcut, &'static str)>,
     automation: Automation,
     control: Option<ControlServer>,
@@ -105,16 +121,18 @@ impl CosmicApp {
             }
         }
         let saved_library = session.library.revision;
-        // Saved preferences: the display units.
-        if let Some(units) = cc
-            .storage
-            .and_then(|s| s.get_string(SETTINGS_KEY))
-            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-            .and_then(|v| {
-                v.get("units").and_then(Value::as_str).and_then(CosmicCAM_engine::units::DisplayUnits::from_id)
-            })
+        // Saved preferences: the display units and the theme.
+        if let Some(saved) =
+            cc.storage.and_then(|s| s.get_string(SETTINGS_KEY)).and_then(|t| serde_json::from_str::<Value>(&t).ok())
         {
-            session.prefs.units = units;
+            if let Some(units) =
+                saved.get("units").and_then(Value::as_str).and_then(CosmicCAM_engine::units::DisplayUnits::from_id)
+            {
+                session.prefs.units = units;
+            }
+            if let Some(theme) = saved.get("theme").and_then(Value::as_str).and_then(Theme::from_id) {
+                session.prefs.theme = theme;
+            }
         }
         let saved_prefs = session.prefs.revision;
         if let Some(tab) = &automation.ribbon_tab {
@@ -139,12 +157,14 @@ impl CosmicApp {
         Self {
             session,
             clicks: Vec::new(),
+            typing: Vec::new(),
             dock: dock::default_layout(),
             layout_generation,
             viewport: Viewport::new(),
             console: ConsoleState::default(),
             library_open: false,
             toolpath_panel: None,
+            setup_panel: None,
             settings_open: false,
             saved_prefs,
             library: LibraryState::default(),
@@ -153,6 +173,7 @@ impl CosmicApp {
             applied_theme: None,
             status: startup_status,
             notice: None,
+            confirm_close: None,
             shortcuts: cmd::all().filter_map(|c| Some((parse_shortcut(c.shortcut?)?, c.id))).collect(),
             automation,
             control,
@@ -175,6 +196,27 @@ impl CosmicApp {
                 return;
             }
             self.toolpath_panel = Some(crate::toolpath_panel::ToolpathPanel::new(&self.session, editing));
+            self.setup_panel = None;
+            self.status = None;
+            return;
+        }
+        // Create setup and Box stock open the setup panel; so does editing a setup by id alone.
+        let edit_setup = id == "setup.edit" && params.as_object().is_some_and(|p| p.len() == 1);
+        if (params.is_null() && matches!(id, "setup.create" | "setup.stock.box")) || edit_setup {
+            use crate::setup_panel::{SetupPanel, SetupTarget};
+            let target = match id {
+                "setup.create" => SetupTarget::Create,
+                "setup.stock.box" => SetupTarget::Stock,
+                _ => match params.get("id").and_then(Value::as_str) {
+                    Some(sid) if self.session.job.setup_by_id(sid).is_some() => SetupTarget::Edit(sid.to_owned()),
+                    _ => {
+                        self.status = Some("that setup no longer exists".into());
+                        return;
+                    }
+                },
+            };
+            self.setup_panel = Some(SetupPanel::new(&self.session, target));
+            self.toolpath_panel = None;
             self.status = None;
             return;
         }
@@ -183,7 +225,17 @@ impl CosmicApp {
             self.settings_open = true;
             return;
         }
-        if params.is_null() && tools::has_start(id) {
+        // Closing a document with unsaved changes asks first.
+        if id == "job.tab.close" && params.get("discard").is_none() {
+            let index = params.get("index").and_then(Value::as_u64).map_or(self.session.active_tab(), |i| i as usize);
+            if self.session.tab_job(index).is_some_and(|j| j.is_modified()) {
+                self.confirm_close = Some(index);
+                return;
+            }
+        }
+        // Save asks where only the first time; after that it saves over the job's file.
+        let saves_in_place = id == "job.save" && self.session.job.path.is_some();
+        if params.is_null() && tools::has_start(id) && !saves_in_place {
             self.status = self.tools.start(id, &self.session).err();
             return;
         }
@@ -196,6 +248,9 @@ impl CosmicApp {
                         result["lines"].as_u64().unwrap_or(0),
                         result["path"].as_str().unwrap_or_default()
                     )),
+                    "job.save" | "job.save.as" => {
+                        Some(format!("Saved {}", result["path"].as_str().unwrap_or_default()))
+                    }
                     "tool.library.export" => {
                         Some(format!("Wrote the tool library to {}", result["path"].as_str().unwrap_or_default()))
                     }
@@ -257,6 +312,22 @@ impl CosmicApp {
                     (Some(_), Some(_)) => incoming.err("busy", "too many clicks queued"),
                     _ => incoming.err("invalid_params", "`x` and `y` must be numbers (window points)"),
                 }
+            }
+            "ui.type" => match p.get("text").and_then(Value::as_str) {
+                Some(text) if text.chars().count() <= MAX_TYPED_CHARS && self.typing.len() < 16 => {
+                    let replace = p.get("replace").and_then(Value::as_bool).unwrap_or(false);
+                    self.typing.push(SyntheticText { text: text.to_owned(), replace, reply: Some(incoming) });
+                    ctx.request_repaint();
+                }
+                Some(_) => incoming.err("invalid_params", "`text` is too long, or too much typing is queued"),
+                None => incoming.err("invalid_params", "`text` must be a string"),
+            },
+            "ui.start"
+                if matches!(p.get("command").and_then(Value::as_str), Some("setup.create" | "setup.stock.box")) =>
+            {
+                let command = p.get("command").and_then(Value::as_str).unwrap_or_default().to_owned();
+                self.run(&command, &Value::Null);
+                incoming.ok(json!({ "started": command }));
             }
             "ui.start" if p.get("command").and_then(Value::as_str) == Some("toolpath.contour") => {
                 self.toolpath_panel = Some(crate::toolpath_panel::ToolpathPanel::new(&self.session, None));
@@ -369,6 +440,24 @@ impl CosmicApp {
 impl eframe::App for CosmicApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         let Some(click) = self.clicks.first_mut() else {
+            // Typing waits for the clicks before it, which usually focus the field.
+            if !self.typing.is_empty() {
+                let typed = self.typing.remove(0);
+                if typed.replace {
+                    raw_input.events.push(Event::Key {
+                        key: egui::Key::A,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: Modifiers::COMMAND,
+                    });
+                }
+                raw_input.events.push(Event::Text(typed.text.clone()));
+                if let Some(reply) = typed.reply {
+                    reply.ok(json!({ "typed": typed.text }));
+                }
+                ctx.request_repaint();
+            }
             return;
         };
         let button = |pressed| Event::PointerButton {
@@ -404,7 +493,10 @@ impl eframe::App for CosmicApp {
     /// Also written every few seconds by eframe and on exit.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         storage.set_string(LIBRARY_KEY, self.session.library_json().to_string());
-        storage.set_string(SETTINGS_KEY, json!({ "units": self.session.prefs.units.id() }).to_string());
+        storage.set_string(
+            SETTINGS_KEY,
+            json!({ "units": self.session.prefs.units.id(), "theme": self.session.prefs.theme.id() }).to_string(),
+        );
         self.saved_library = self.session.library.revision;
         self.saved_prefs = self.session.prefs.revision;
     }
@@ -435,6 +527,8 @@ impl eframe::App for CosmicApp {
             self.captures.push(Capture { path, reply: None, then_quit: true });
         }
         self.service_captures(&ctx);
+        #[cfg(not(target_arch = "wasm32"))]
+        ribbon::resize_edges(&ctx);
         ribbon::show(ui, &self.session, tokens, &mut requests);
 
         let status = self.status.clone();
@@ -449,12 +543,13 @@ impl eframe::App for CosmicApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
                         RichText::new(format!(
-                            "{} theme  ·  {}  ·  Z up  ·  {fps:.0} fps",
+                            "{} theme  ·  {}  ·  Z up  ·  {fps:.0} fps  ·  v{}",
                             match self.session.prefs.theme {
                                 Theme::Dark => "Dark",
                                 Theme::Light => "Light",
                             },
-                            self.session.prefs.units.length()
+                            self.session.prefs.units.length(),
+                            env!("CARGO_PKG_VERSION")
                         ))
                         .color(tokens.text_muted),
                     );
@@ -477,6 +572,21 @@ impl eframe::App for CosmicApp {
                 self.toolpath_panel = None;
             }
         }
+        if let Some(panel) = &mut self.setup_panel {
+            let (request, keep) = panel.show(ui, &self.session, tokens);
+            if let Some((id, params)) = request {
+                match self.session.execute(&id, &params) {
+                    Ok(_) => {
+                        self.status = None;
+                        self.setup_panel = None;
+                    }
+                    Err(e) => panel.fail(e.to_string()),
+                }
+            } else if !keep {
+                self.setup_panel = None;
+            }
+        }
+        self.viewport.stock_preview = self.setup_panel.as_ref().and_then(|p| p.preview_stock());
         self.viewport.pick_mode = match &self.toolpath_panel {
             Some(panel) => Some(panel.mode(&self.session)),
             None => self.tools.pick_mode(),
@@ -513,30 +623,77 @@ impl eframe::App for CosmicApp {
         if self.settings_open {
             let mut open = true;
             let units = self.session.prefs.units;
-            crate::ui_kit::Window::dialog("Settings").show(&ctx, tokens, &mut open, |ui| {
-                ui.set_min_width(300.0);
-                ui.label(RichText::new("Units").strong());
-                ui.label(
-                    RichText::new(
-                        "Lengths, positions and feeds are shown and typed in these units everywhere in the app. \
-                                   Scripts and the API always use millimetres.",
-                    )
-                    .small()
-                    .color(tokens.text_muted),
-                );
-                for choice in
-                    [CosmicCAM_engine::units::DisplayUnits::Inches, CosmicCAM_engine::units::DisplayUnits::Millimetres]
-                {
-                    if ui.radio(units == choice, choice.label()).clicked() && units != choice {
-                        requests.push(("settings.units.set".into(), json!({ "units": choice.id() })));
+            crate::ui_kit::Window::dialog("Preferences...").show(&ctx, tokens, &mut open, |ui| {
+                ui.set_min_size(vec2(560.0, 380.0));
+                egui::Grid::new("preferences").num_columns(2).spacing(vec2(12.0, 8.0)).show(ui, |ui| {
+                    ui.label("Units:");
+                    egui::ComboBox::from_id_salt("pref-units").selected_text(units.label()).width(160.0).show_ui(
+                        ui,
+                        |ui| {
+                            for choice in [
+                                CosmicCAM_engine::units::DisplayUnits::Inches,
+                                CosmicCAM_engine::units::DisplayUnits::Millimetres,
+                            ] {
+                                if ui.selectable_label(units == choice, choice.label()).clicked() && units != choice {
+                                    requests.push(("settings.units.set".into(), json!({ "units": choice.id() })));
+                                }
+                            }
+                        },
+                    );
+                    ui.end_row();
+                    ui.label("Theme:");
+                    let theme = self.session.prefs.theme;
+                    let name = |t: Theme| match t {
+                        Theme::Dark => "Dark",
+                        Theme::Light => "Light",
+                    };
+                    egui::ComboBox::from_id_salt("pref-theme").selected_text(name(theme)).width(160.0).show_ui(
+                        ui,
+                        |ui| {
+                            for choice in [Theme::Dark, Theme::Light] {
+                                if ui.selectable_label(theme == choice, name(choice)).clicked() && theme != choice {
+                                    requests.push(("view.theme.set".into(), json!({ "theme": choice.id() })));
+                                }
+                            }
+                        },
+                    );
+                    ui.end_row();
+                    ui.label("Layout:");
+                    if ui.button("Restore").on_hover_text("Put the panels back where they started").clicked() {
+                        requests.push(("view.layout.reset".into(), Value::Null));
                     }
-                }
-                ui.add_space(8.0);
-                if ui.button("Close").clicked() {
-                    self.settings_open = false;
-                }
+                    ui.end_row();
+                });
             });
             self.settings_open &= open;
+        }
+        if let Some(index) = self.confirm_close {
+            let mut open = true;
+            let job = self.session.tab_job(index);
+            let name = job.map(|j| j.name.clone()).unwrap_or_default();
+            let has_file = job.is_some_and(|j| j.path.is_some());
+            crate::ui_kit::Window::dialog("Unsaved changes").show(&ctx, tokens, &mut open, |ui| {
+                ui.label(format!("{name} has changes that are not saved."));
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if has_file && ui.button("Save and close").clicked() {
+                        requests.push(("job.tab.activate".into(), json!({ "index": index })));
+                        requests.push(("job.save".into(), json!({})));
+                        requests.push(("job.tab.close".into(), json!({ "index": index })));
+                        self.confirm_close = None;
+                    }
+                    if ui.button("Close without saving").clicked() {
+                        requests.push(("job.tab.close".into(), json!({ "index": index, "discard": true })));
+                        self.confirm_close = None;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.confirm_close = None;
+                    }
+                });
+            });
+            if !open || job.is_none() {
+                self.confirm_close = None;
+            }
         }
         if self.library_open {
             let mut open = true;

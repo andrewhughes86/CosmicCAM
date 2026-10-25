@@ -14,6 +14,7 @@ another project (MIT OR Apache-2.0 compatible only) and every asset file in the 
 
 | Path | Author / source | License |
 | --- | --- | --- |
+| `assets/icons/file/cosmic-job.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/job_new.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/job_open.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/job_save.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
@@ -25,6 +26,7 @@ another project (MIT OR Apache-2.0 compatible only) and every asset file in the 
 | `assets/icons/ui/design/svg/post_limits_check.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/post_processor_select.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/settings_open.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/setup_create.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/setup_stock_box.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/setup_stock_cylinder.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/setup_stock_fit.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
@@ -63,6 +65,6 @@ another project (MIT OR Apache-2.0 compatible only) and every asset file in the 
 | `assets/icons/ui/design/svg/view_layout_reset.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/view_projection_toggle.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/view_theme_toggle.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
-| `docs/images/cosmiccam-current.png` | CosmicCAM contributors (screenshot of CosmicCAM itself) | MIT OR Apache-2.0 |
+| `docs/images/cosmiccam-workflow.gif` | CosmicCAM contributors (recording of CosmicCAM itself) | MIT OR Apache-2.0 |
 
 The UI uses egui's bundled default fonts, which ship inside the `epaint_default_fonts` dependency (OFL / Apache-2.0 / Ubuntu Font Licence) and are listed in THIRD-PARTY-LICENSES.txt.

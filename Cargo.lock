@@ -9,6 +9,7 @@ dependencies = [
  "CosmicCAM-ui-egui",
  "eframe",
  "env_logger",
+ "serde_json",
 ]
 
 [[package]]

@@ -21,7 +21,8 @@ pub fn has_start(id: &str) -> bool {
 }
 
 /// Commands whose `path` comes from a file dialog.
-const FILE_COMMANDS: &[&str] = &["tool.library.import", "tool.library.export", "post.gcode.export"];
+const FILE_COMMANDS: &[&str] =
+    &["tool.library.import", "tool.library.export", "post.gcode.export", "job.open", "job.save", "job.save.as"];
 
 /// Commands started by the WCS panel.
 const WCS_COMMANDS: &[&str] = &["setup.wcs.create", "setup.wcs.align"];
@@ -103,11 +104,11 @@ impl Tools {
                 Ok(())
             }
             "tool.library.import" => {
-                self.pending = Some(Pending::File("tool.library.import", pick_file(&LIBRARY_IN)?));
+                self.pending = Some(Pending::File("tool.library.import", pick_file(&LIBRARY_IN, None)?));
                 Ok(())
             }
             "tool.library.export" => {
-                self.pending = Some(Pending::File("tool.library.export", pick_file(&LIBRARY_OUT)?));
+                self.pending = Some(Pending::File("tool.library.export", pick_file(&LIBRARY_OUT, None)?));
                 Ok(())
             }
             "post.gcode.export" => {
@@ -123,7 +124,24 @@ impl Tools {
                     // Check there is something to export before asking where to put it.
                     let mut trial = session.clone();
                     trial.execute("post.gcode.get", &serde_json::Value::Null).map_err(|e| e.to_string())?;
-                    self.pending = Some(Pending::File("post.gcode.export", pick_file(&GCODE_OUT)?));
+                    self.pending = Some(Pending::File("post.gcode.export", pick_file(&GCODE_OUT, None)?));
+                    Ok(())
+                }
+            }
+            "job.open" => {
+                self.pending = Some(Pending::File("job.open", pick_file(&JOB_IN, None)?));
+                Ok(())
+            }
+            "job.save" | "job.save.as" => {
+                let name = format!("{}.{}", session.job.name, CosmicCAM_engine::jobfile::EXTENSION);
+                // The browser has no file paths: the job file is downloaded instead.
+                #[cfg(target_arch = "wasm32")]
+                {
+                    download(&name, &CosmicCAM_engine::jobfile::to_string(&session.job, &session.view.camera))
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    self.pending = Some(Pending::File("job.save.as", pick_file(&JOB_OUT, Some(name))?));
                     Ok(())
                 }
             }
@@ -207,8 +225,8 @@ impl Tools {
             }
         }
         requests.extend(choices.into_iter().map(|choice| match choice {
-            ImportChoice::Path(path) => import_request(&path.display().to_string()),
-            ImportChoice::Upload { name, bytes } => import_request(&session.stage_upload(&name, bytes)),
+            ImportChoice::Path(path) => open_request(&path.display().to_string()),
+            ImportChoice::Upload { name, bytes } => open_request(&session.stage_upload(&name, bytes)),
         }));
         requests
     }
@@ -233,13 +251,17 @@ impl Tools {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let _ = &self.drops.0;
-            files.iter().map(|f| import_request(&f.path().display().to_string())).collect()
+            files.iter().map(|f| open_request(&f.path().display().to_string())).collect()
         }
     }
 }
 
-fn import_request(path: &str) -> Request {
-    ("model.import".into(), json!({ "path": path }))
+/// A file to open: job files open in a tab, anything else is imported as a model.
+fn open_request(path: &str) -> Request {
+    let job = std::path::Path::new(path)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(CosmicCAM_engine::jobfile::EXTENSION));
+    (if job { "job.open" } else { "model.import" }.into(), json!({ "path": path }))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -284,6 +306,15 @@ const LIBRARY_OUT: FileKind = FileKind {
     extensions: &["json", "JSON"],
     save_as: Some("tools.json"),
 };
+const JOB_IN: FileKind =
+    FileKind { title: "Open job", filter: "CosmicCAM job (.cosmic)", extensions: &["cosmic", "COSMIC"], save_as: None };
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+const JOB_OUT: FileKind = FileKind {
+    title: "Save job",
+    filter: "CosmicCAM job (.cosmic)",
+    extensions: &["cosmic", "COSMIC"],
+    save_as: Some("job.cosmic"),
+};
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 const GCODE_OUT: FileKind = FileKind {
     title: "Export G-code",
@@ -292,13 +323,14 @@ const GCODE_OUT: FileKind = FileKind {
     save_as: Some("program.nc"),
 };
 
-/// An open or save dialog; the chosen path arrives on the channel.
+/// An open or save dialog; the chosen path arrives on the channel. `name` overrides the
+/// suggested file name of a save dialog.
 #[cfg(not(target_arch = "wasm32"))]
-fn pick_file(kind: &FileKind) -> Result<Receiver<Option<PathBuf>>, String> {
+fn pick_file(kind: &FileKind, name: Option<String>) -> Result<Receiver<Option<PathBuf>>, String> {
     let (tx, rx) = channel();
     let dialog = rfd::FileDialog::new().set_title(kind.title).add_filter(kind.filter, kind.extensions);
     let save = kind.save_as.is_some();
-    let dialog = match kind.save_as {
+    let dialog = match name.as_deref().or(kind.save_as).filter(|_| save) {
         Some(name) => dialog.set_file_name(name),
         None => dialog,
     };
@@ -318,8 +350,8 @@ fn pick_file(kind: &FileKind) -> Result<Receiver<Option<PathBuf>>, String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn pick_file(kind: &FileKind) -> Result<Receiver<Option<PathBuf>>, String> {
-    let _ = (kind.filter, kind.extensions, kind.save_as);
+fn pick_file(kind: &FileKind, name: Option<String>) -> Result<Receiver<Option<PathBuf>>, String> {
+    let _ = (kind.filter, kind.extensions, kind.save_as, name);
     Err(format!("{} is not available in the browser yet", kind.title))
 }
 

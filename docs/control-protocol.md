@@ -40,6 +40,7 @@ One JSON object per line in each direction. Requests are answered in order.
 | `engine.state` | — | Same as the `session.state.get` command |
 | `ui.screenshot` | `{path}` (ends in `.png`) | `{path, width, height}` once the next settled frame is saved; the window must be visible |
 | `ui.click` | `{x, y}` (window points) | `{x, y}` once a left click there has been played out (move, press, release over three frames) |
+| `ui.type` | `{text, replace?}` | `{typed}` once `text` has been typed into the focused field (after any queued clicks, which usually focus it); `replace: true` selects the field's contents first |
 | `ui.start` | `{command}` | `{started}`: starts a command's interactive tool as a toolbar click would. `model.import` opens the file dialog and imports the chosen file; `setup.wcs.create` and `setup.wcs.align` open the WCS panel, which takes selections from clicks in the viewport; `setup.wcs.offset`, `setup.wcs.rotate` and `setup.wcs.rename` open a dialog for their parameters. Other commands: `not_supported`; a dialog already open: `busy` |
 
 Programmatic calls never open dialogs: `engine.execute` runs the command directly. Window and

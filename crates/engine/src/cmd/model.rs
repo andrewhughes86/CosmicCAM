@@ -70,8 +70,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             }
             if id == SAMPLE_MODEL_ID {
                 s.job.sample_loaded = false;
-                s.job.stock = None;
-                s.job.setup_changed();
+                s.job.set_stock(None);
             }
             if s.view.selection.as_deref() == Some(id) {
                 s.view.selection = None;
@@ -316,8 +315,7 @@ fn import(s: &mut Session, p: &Value) -> EngineResult<Value> {
     // The placeholder part stands in for a real model; the first import replaces it.
     // The sample's stock goes with it; a real model gets its own.
     if s.job.sample_loaded {
-        s.job.stock = None;
-        s.job.setup_changed();
+        s.job.set_stock(None);
     }
     s.job.sample_loaded = false;
     s.job.models.retain(|m| m.id != SAMPLE_MODEL_ID);

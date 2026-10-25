@@ -11,6 +11,7 @@
 
 pub mod cmd;
 pub mod error;
+pub mod jobfile;
 pub mod library;
 pub mod params;
 pub mod post;

@@ -37,13 +37,10 @@ const fn gallery(tab: RibbonTab, panel: &'static str) -> Option<Placement> {
     Some(Placement::gallery(tab, panel))
 }
 
-use RibbonTab::{Export, Home, Setup, Simulation, Toolpaths};
+use RibbonTab::{Export, Setup, Simulation, Toolpaths};
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
-    planned!("job.open", "Open", "Open a job file (planned)", small(Home, "Job")),
-    planned!("job.save", "Save", "Save the job (planned)", small(Home, "Job")),
     // Setup (Phases 3 and 5)
-    planned!("setup.stock.box", "Box stock", "Rectangular block stock (Phase 5)", large(Setup, "Stock")),
     planned!("setup.stock.cylinder", "Cylinder stock", "Round bar stock (Phase 5)", large(Setup, "Stock")),
     planned!("setup.stock.margins", "Margins", "Extra stock around chosen faces (Phase 5)", small(Setup, "Stock")),
     // Toolpaths (Phase 6)

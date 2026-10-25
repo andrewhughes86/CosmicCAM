@@ -55,7 +55,6 @@ fn fit(s: &mut Session, p: &Value) -> EngineResult<Value> {
     if !(stock.min.is_finite() && stock.max.is_finite()) {
         return Err(EngineError::InvalidParams("the stock would be out of range".into()));
     }
-    s.job.stock = Some(stock);
-    s.job.setup_changed();
+    s.job.set_stock(Some(stock));
     Ok(json!(stock_json(&stock)))
 }
