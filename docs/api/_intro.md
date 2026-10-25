@@ -30,6 +30,14 @@ cc = cosmiccam.connect(5800)              # token from $CosmicCAM_CONTROL_TOKEN 
 `launch()` finds the executable through `$COSMICCAM_EXECUTABLE`, then `CosmicCAM` on `PATH`,
 then `target/release` in this checkout.
 
+## Units
+
+Commands take and return **millimetres** (and mm/min for feeds), always. The units preference
+(`cc.settings_units_set(units="in")`, or Settings on the Home tab; inches by default) only
+changes what the app shows and what its dialogs accept, so a script means the same thing on
+every machine. Parameters that are lengths or feeds say so in their schema (`"unit": "mm"` or
+`"mm/min"` in `command.describe`).
+
 ## Calling commands
 
 ```python
@@ -141,6 +149,40 @@ cc.setup_wcs_create(origin="stock", origin_box="top_front_left")
 ```
 
 The sample part comes with stock; importing a model replaces the sample and its stock.
+
+## Machines and tool libraries
+
+Every machine configuration owns its own tool library. Open it with `cc.tool_library_open()`
+(its own window in the app, with a to-scale preview of the tool under the pointer). The active machine is the one the
+Tooling tab and the tool commands work on; switch with `machine.activate`. The library is kept
+across jobs and saved by the app after every change (a file in the user data folder on the
+desktop, browser storage on the web). A new installation starts with one "Generic 3-axis mill".
+
+```python
+router = cc.machine_create(name="Router", travel_x=1200, travel_y=800, travel_z=150,
+                           max_spindle_rpm=24000, max_feed=15000, tool_capacity=8)
+cc.tool_create_flat(diameter=6, flutes=3, flute_length=18, overall_length=50,
+                    spindle_rpm=12000, feed=1200, plunge_feed=300, stepover=2, stepdown=6)
+cc.tool_create_flat(diameter=3.175, flutes=2, name="1/8in upcut", number=5)
+for t in cc.tool_list():
+    print(t["number"], t["name"], t["diameter"])
+cc.tool_feeds(number=5, spindle_rpm=18000, feed=900)
+cc.tool_edit(number=5, new_number=6)            # renumber
+cc.tool_duplicate(number=6)                     # copy to the lowest free number
+cc.tool_library_export(path="router-tools.json")
+cc.machine_duplicate(name="Router (spare)")     # a copy with the whole library
+cc.machine_activate(id="machine.1")
+cc.tool_library_import(path="router-tools.json", replace=True)
+```
+
+Only flat end mills can be created so far. Ball, bull nose, chamfer, drill, spot drill, face
+mill, tap and thread mill are listed (`tool.create.ball`, …) and report "not supported yet".
+Tools are checked against their machine: a spindle speed or feed above the machine's limits
+is refused, and so is lowering a machine's limits below a tool in its library. Tools are named
+`<machine id>/tool.<number>` for `selection.set`, so the inspector can show one.
+
+Controller dialect and post-processing are part of the Python machine configurations planned
+for Phase 8; a machine's `post` field will name its post module.
 
 ## Selecting geometry
 

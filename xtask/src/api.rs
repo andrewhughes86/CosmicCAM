@@ -53,7 +53,7 @@ fn py_type(p: &Param) -> String {
     match p.kind {
         ParamKind::Str => "str".into(),
         ParamKind::Bool => "bool".into(),
-        ParamKind::Number { .. } => "float".into(),
+        ParamKind::Number { .. } | ParamKind::Length { .. } | ParamKind::Rate { .. } => "float".into(),
         ParamKind::Integer { .. } => "int".into(),
         ParamKind::Choice(choices) => {
             format!("Literal[{}]", choices.iter().map(|c| format!("{c:?}")).collect::<Vec<_>>().join(", "))
@@ -65,6 +65,8 @@ fn py_type(p: &Param) -> String {
 fn range(p: &Param) -> String {
     match p.kind {
         ParamKind::Number { min, max } => format!(" ({} to {})", num(min), num(max)),
+        ParamKind::Length { min, max } => format!(" ({} to {} mm)", num(min), num(max)),
+        ParamKind::Rate { min, max } => format!(" ({} to {} mm/min)", num(min), num(max)),
         ParamKind::Integer { min, max } if max == i64::MAX => format!(" (≥ {min})"),
         ParamKind::Integer { min, max } => format!(" ({min} to {max})"),
         ParamKind::Choice(choices) => format!(" — one of {}", choices.join(", ")),

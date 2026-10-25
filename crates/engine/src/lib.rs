@@ -11,8 +11,10 @@
 
 pub mod cmd;
 pub mod error;
+pub mod library;
 pub mod params;
 pub mod session;
+pub mod units;
 
 pub use cmd::{ButtonSize, CommandSpec, Param, ParamKind, Placement, RibbonTab};
 pub use error::{EngineError, EngineResult, error_json};

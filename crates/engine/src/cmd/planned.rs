@@ -37,10 +37,7 @@ const fn gallery(tab: RibbonTab, panel: &'static str) -> Option<Placement> {
     Some(Placement::gallery(tab, panel))
 }
 
-use RibbonTab::{Export, Home, Setup, Simulation, Tooling, Toolpaths};
-
-const TOOL_TYPES: &[&str] =
-    &["tool.create.flat", "tool.create.ball", "tool.create.bull", "tool.create.chamfer", "tool.create.drill"];
+use RibbonTab::{Export, Home, Setup, Simulation, Toolpaths};
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
     planned!("job.open", "Open", "Open a job file (planned)", small(Home, "Job")),
@@ -49,32 +46,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     planned!("setup.stock.box", "Box stock", "Rectangular block stock (Phase 5)", large(Setup, "Stock")),
     planned!("setup.stock.cylinder", "Cylinder stock", "Round bar stock (Phase 5)", large(Setup, "Stock")),
     planned!("setup.stock.margins", "Margins", "Extra stock around chosen faces (Phase 5)", small(Setup, "Stock")),
-    // Tooling (Phase 4)
-    planned!(
-        "tool.create",
-        "New tool",
-        "Define a cutting tool (Phase 4)",
-        Some(Placement::large(Tooling, "Tools").with_menu(TOOL_TYPES))
-    ),
-    planned!("tool.create.flat", "Flat end mill", "Define a flat end mill (Phase 4)", None),
-    planned!("tool.create.ball", "Ball nose", "Define a ball nose cutter (Phase 4)", None),
-    planned!("tool.create.bull", "Bull nose", "Define a corner radius cutter (Phase 4)", None),
-    planned!("tool.create.chamfer", "Chamfer mill", "Define a chamfer mill (Phase 4)", None),
-    planned!("tool.create.drill", "Drill", "Define a drill (Phase 4)", None),
-    planned!(
-        "tool.feeds",
-        "Feeds & speeds",
-        "Spindle speed, feed, plunge and stepover per tool (Phase 4)",
-        small(Tooling, "Tools")
-    ),
-    planned!(
-        "tool.library.open",
-        "Tool library",
-        "Browse and edit tool libraries (Phase 4)",
-        large(Tooling, "Library")
-    ),
-    planned!("tool.library.import", "Import", "Load a tool library file (Phase 4)", small(Tooling, "Library")),
-    planned!("tool.library.export", "Export", "Save a tool library file (Phase 4)", small(Tooling, "Library")),
     // Toolpaths (Phase 6)
     planned!("toolpath.pocket", "Pocket", "Island-aware pocket clearing (Phase 6)", gallery(Toolpaths, "Strategies")),
     planned!(

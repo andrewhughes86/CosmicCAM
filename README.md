@@ -21,7 +21,7 @@ G-code output so far.
 | 1 | Desktop UI & theme engine | **Done** |
 | 2 | Model import & geometry ingestion (STL/OBJ, STEP/IGES) | **Done except STEP/IGES** |
 | 3 | Work coordinate system (WCS) creation | **Done** |
-| 4 | Tool library & management | Planned |
+| 4 | Tool library & management | **In progress** |
 | 5 | Stock setup & material definition | Planned |
 | 6 | Toolpath creation (2.5D and 3-axis strategies) | Planned |
 | 7 | Material-removal simulation & verification | Planned |
@@ -36,6 +36,10 @@ G-code output so far.
 - **Model import:** binary and ASCII STL and Wavefront OBJ, from the Import model button
   (Ctrl+I), drag-and-drop onto the window or `model.import` in scripts. Files are read in mm,
   cm, m or inches.
+- **Units:** inches (default) or millimetres everywhere in the app, from Settings on the Home tab;
+  scripts and the API always use millimetres.
+- **Machines and tools:** several machine configurations, each with its own tool library of flat
+  end mills (geometry, cutting data, offsets), saved automatically; import and export as JSON.
 - **Work coordinate systems:** create, place on the part (top centre, corners…), offset,
   rotate and align WCS, setting each axis and the origin by clicking faces and edges (planes,
   holes, edges, corners, box points); the active one is drawn in full colour in the viewport.
@@ -45,7 +49,7 @@ G-code output so far.
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 94 commands. Each command has a typed parameter schema that the engine checks before
+  the same 111 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.

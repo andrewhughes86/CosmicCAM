@@ -119,6 +119,28 @@ class ClientTests(unittest.TestCase):
         )
         cc.close()
 
+    def test_tool_and_machine_commands(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.machine_create(name="Router", max_spindle_rpm=30000)
+        cc.tool_create_flat(diameter=6, flutes=3, spindle_rpm=12000, feed=1200)
+        cc.tool_edit(number=1, new_number=4)
+        sent = [r["params"] for r in app.requests]
+        self.assertEqual(sent[0], {"command": "machine.create", "params": {"name": "Router", "max_spindle_rpm": 30000}})
+        self.assertEqual(
+            sent[1],
+            {"command": "tool.create.flat", "params": {"diameter": 6, "flutes": 3, "spindle_rpm": 12000, "feed": 1200}},
+        )
+        self.assertEqual(sent[2], {"command": "tool.edit", "params": {"number": 1, "new_number": 4}})
+        cc.close()
+
+    def test_settings_units(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.settings_units_set(units="mm")
+        self.assertEqual(app.requests[0]["params"], {"command": "settings.units.set", "params": {"units": "mm"}})
+        cc.close()
+
     def test_click_sends_ui_click(self):
         app = FakeApp()
         cc = CosmicCAM(app.port, TOKEN, timeout=5)

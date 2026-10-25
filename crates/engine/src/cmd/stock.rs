@@ -8,7 +8,7 @@ use crate::error::{EngineError, EngineResult};
 use crate::params;
 use crate::session::{Session, stock_json};
 
-const MARGIN: ParamKind = ParamKind::Number { min: 0.0, max: 10_000.0 };
+const MARGIN: ParamKind = ParamKind::Length { min: 0.0, max: 10_000.0 };
 const MAX_MARGIN: f64 = 10_000.0;
 
 pub(super) static COMMANDS: &[CommandSpec] = &[

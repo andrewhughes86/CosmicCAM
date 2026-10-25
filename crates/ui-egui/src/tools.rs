@@ -17,14 +17,31 @@ use crate::wcs_tool::WcsTool;
 
 /// Commands with an interactive start.
 pub fn has_start(id: &str) -> bool {
-    id == "model.import" || FORM_COMMANDS.contains(&id) || WCS_COMMANDS.contains(&id)
+    id == "model.import" || FORM_COMMANDS.contains(&id) || WCS_COMMANDS.contains(&id) || FILE_COMMANDS.contains(&id)
 }
+
+/// Commands whose `path` comes from a file dialog.
+const FILE_COMMANDS: &[&str] = &["tool.library.import", "tool.library.export"];
 
 /// Commands started by the WCS panel.
 const WCS_COMMANDS: &[&str] = &["setup.wcs.create", "setup.wcs.align"];
 
 /// Commands started by a dialog generated from their parameters.
-const FORM_COMMANDS: &[&str] = &["setup.wcs.offset", "setup.wcs.rotate", "setup.wcs.rename"];
+const FORM_COMMANDS: &[&str] = &[
+    "setup.wcs.offset",
+    "setup.wcs.rotate",
+    "setup.wcs.rename",
+    "tool.create",
+    "tool.create.flat",
+    "tool.edit",
+    "tool.feeds",
+    "tool.duplicate",
+    "tool.remove",
+    "machine.create",
+    "machine.edit",
+    "machine.duplicate",
+    "machine.remove",
+];
 
 /// File types offered by the model import dialog: (label, extensions).
 const MODEL_FILTERS: &[(&str, &[&str])] = &[
@@ -49,6 +66,8 @@ pub enum Pending {
     Form(Box<ParamForm>),
     /// The WCS panel, picking geometry in the viewport.
     Pick(Box<WcsTool>),
+    /// A file dialog choosing `path` for a command.
+    File(&'static str, Receiver<Option<PathBuf>>),
 }
 
 pub struct Tools {
@@ -81,6 +100,14 @@ impl Tools {
                 }
                 let command = if id == "setup.wcs.align" { "setup.wcs.align" } else { "setup.wcs.create" };
                 self.pending = Some(Pending::Pick(Box::new(WcsTool::new(command, session))));
+                Ok(())
+            }
+            "tool.library.import" => {
+                self.pending = Some(Pending::File("tool.library.import", pick_json_file(false)?));
+                Ok(())
+            }
+            "tool.library.export" => {
+                self.pending = Some(Pending::File("tool.library.export", pick_json_file(true)?));
                 Ok(())
             }
             other if FORM_COMMANDS.contains(&other) => {
@@ -150,13 +177,23 @@ impl Tools {
                 Err(TryRecvError::Disconnected) => self.pending = None,
             }
         }
-        choices
-            .into_iter()
-            .map(|choice| match choice {
-                ImportChoice::Path(path) => import_request(&path.display().to_string()),
-                ImportChoice::Upload { name, bytes } => import_request(&session.stage_upload(&name, bytes)),
-            })
-            .collect()
+        let mut requests = Vec::new();
+        if let Some(Pending::File(command, rx)) = &self.pending {
+            let command = *command;
+            match rx.try_recv() {
+                Err(TryRecvError::Empty) => {}
+                Ok(path) => {
+                    self.pending = None;
+                    requests.extend(path.map(|p| (command.to_owned(), json!({ "path": p.display().to_string() }))));
+                }
+                Err(TryRecvError::Disconnected) => self.pending = None,
+            }
+        }
+        requests.extend(choices.into_iter().map(|choice| match choice {
+            ImportChoice::Path(path) => import_request(&path.display().to_string()),
+            ImportChoice::Upload { name, bytes } => import_request(&session.stage_upload(&name, bytes)),
+        }));
+        requests
     }
 
     /// Files dropped on the window. On the desktop they have paths; in the browser their
@@ -208,6 +245,34 @@ fn pick_model_file() -> Result<Receiver<Option<ImportChoice>>, String> {
         })
         .map_err(|e| format!("could not open the file dialog: {e}"))?;
     Ok(rx)
+}
+
+/// An open or save dialog for a tool library file.
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_json_file(save: bool) -> Result<Receiver<Option<PathBuf>>, String> {
+    let (tx, rx) = channel();
+    let dialog = rfd::FileDialog::new()
+        .set_title(if save { "Export tool library" } else { "Import tool library" })
+        .add_filter("Tool library (JSON)", &["json", "JSON"]);
+    let dialog = if save { dialog.set_file_name("tools.json") } else { dialog };
+    let pick = move || if save { dialog.save_file() } else { dialog.pick_file() };
+    #[cfg(target_os = "macos")]
+    {
+        let _ = tx.send(pick());
+    }
+    #[cfg(not(target_os = "macos"))]
+    std::thread::Builder::new()
+        .name("library-dialog".into())
+        .spawn(move || {
+            let _ = tx.send(pick());
+        })
+        .map_err(|e| format!("could not open the file dialog: {e}"))?;
+    Ok(rx)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_json_file(_save: bool) -> Result<Receiver<Option<PathBuf>>, String> {
+    Err("importing and exporting tool library files is not available in the browser yet".into())
 }
 
 /// The browser's file picker; the chosen file's bytes arrive on the channel.

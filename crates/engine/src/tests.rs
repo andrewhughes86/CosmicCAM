@@ -430,7 +430,7 @@ fn import_and_wcs_buttons_are_also_on_home() {
     }
     assert!(!home.iter().any(|id| id.starts_with("view.camera") || *id == "view.fit"));
     let panels: Vec<&str> = cmd::ribbon(RibbonTab::Home).iter().map(|(p, _)| *p).collect();
-    assert_eq!(panels, ["Job", "Setup", "Display"]);
+    assert_eq!(panels, ["Job", "Setup", "Display", "Settings"]);
     for (id, menu) in cmd::VIEWPORT_TOOLS {
         assert!(cmd::find(id).is_some(), "{id}");
         assert!(menu.iter().all(|m| cmd::find(m).is_some()));
@@ -826,7 +826,7 @@ fn faces_edges_and_vertices_can_be_selected_and_inspected() {
     let props = node["properties"].as_array().cloned().unwrap_or_default();
     let prop = |name: &str| props.iter().find(|p| p["name"] == name).map(|p| p["value"].clone()).unwrap_or_default();
     assert_eq!(prop("Type"), "Boss");
-    assert_eq!(prop("Diameter"), "24.000 mm");
+    assert_eq!(prop("Diameter"), "0.9449 in", "inches by default");
     assert!(s.execute("selection.set", &json!({"id": r.top_front_edge})).is_ok());
     let node = s.execute("selection.get", &Value::Null).unwrap_or_default();
     assert!(node["label"].as_str().is_some_and(|l| l.contains("line")), "{node}");
@@ -871,4 +871,163 @@ fn staged_uploads_import_by_name() {
     assert!(matches!(s.execute("model.import", &json!({"path": path})), Err(EngineError::Import(_))));
     let bad = s.stage_upload("part.step", b"ISO-10303-21;".to_vec());
     assert!(matches!(s.execute("model.import", &json!({"path": bad})), Err(EngineError::Import(_))));
+}
+
+#[test]
+fn a_new_session_has_one_generic_machine() {
+    let mut s = Session::new();
+    let machines = s.execute("machine.list", &Value::Null).unwrap_or_default();
+    assert_eq!(machines.as_array().map(Vec::len), Some(1));
+    assert_eq!(machines[0]["active"], true);
+    assert_eq!(machines[0]["tools"], 0);
+}
+
+#[test]
+fn flat_end_mills_go_into_the_active_machines_library() {
+    let mut s = Session::new();
+    let t = s.execute("tool.create.flat", &json!({"diameter": 6})).unwrap_or_default();
+    assert_eq!(t["number"], 1);
+    assert_eq!(t["name"], "Ø0.2362 in flat end mill", "named in the user's units");
+    assert_eq!(t["type"], "flat");
+    assert_eq!(t["flutes"], 3);
+    assert_eq!(t["flute_length"], 18.0);
+    assert_eq!(t["length_offset"], 1);
+    assert_eq!(s.view.selection.as_deref(), Some("machine.1/tool.1"));
+    let t2 = s
+        .execute(
+            "tool.create",
+            &json!({"diameter": 3.175, "flutes": 2, "spindle_rpm": 18000, "feed": 900, "name": "1/8in upcut", "number": 12}),
+        )
+        .unwrap_or_default();
+    assert_eq!(t2["number"], 12);
+    // The lowest free number is used next.
+    assert_eq!(s.execute("tool.create.flat", &json!({"diameter": 10})).unwrap_or_default()["number"], 2);
+    let list = s.execute("tool.list", &Value::Null).unwrap_or_default();
+    let numbers: Vec<u64> = list.as_array().into_iter().flatten().filter_map(|t| t["number"].as_u64()).collect();
+    assert_eq!(numbers, [1, 2, 12]);
+    // The inspector shows a selected tool.
+    assert!(s.execute("selection.set", &json!({"id": "machine.1/tool.12"})).is_ok());
+    let node = s.execute("selection.get", &Value::Null).unwrap_or_default();
+    assert_eq!(node["label"], "T12 1/8in upcut");
+
+    // Refused: duplicate numbers, other tool types, impossible geometry, limits over the machine's.
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "number": 1})).is_err());
+    assert!(matches!(
+        s.execute("tool.create", &json!({"diameter": 6, "type": "ball"})),
+        Err(EngineError::NotSupported(_))
+    ));
+    assert!(matches!(s.execute("tool.create.ball", &Value::Null), Err(EngineError::Disabled(_))));
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "flute_length": 30, "overall_length": 20})).is_err());
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "spindle_rpm": 90000})).is_err(), "over 24000 rpm");
+    assert!(s.execute("tool.create.flat", &json!({})).is_err(), "diameter is required");
+    assert_eq!(s.execute("tool.list", &Value::Null).unwrap_or_default().as_array().map(Vec::len), Some(3));
+}
+
+#[test]
+fn tools_can_be_edited_renumbered_copied_and_deleted() {
+    let mut s = Session::new();
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 8})).is_ok());
+    let t = s
+        .execute("tool.feeds", &json!({"number": 1, "spindle_rpm": 9000, "feed": 1500, "stepdown": 8}))
+        .unwrap_or_default();
+    assert_eq!(t["spindle_rpm"], 9000.0);
+    assert!(s.execute("tool.feeds", &json!({"number": 1, "stepdown": 99})).is_err(), "deeper than the flutes");
+    let t = s.execute("tool.edit", &json!({"number": 1, "new_number": 5, "name": "Roughing 8"})).unwrap_or_default();
+    assert_eq!(t["number"], 5);
+    assert_eq!(s.view.selection.as_deref(), Some("machine.1/tool.5"), "selection follows the renumber");
+    let copy = s.execute("tool.duplicate", &json!({"number": 5})).unwrap_or_default();
+    assert_eq!(copy["number"], 1);
+    assert_eq!(copy["name"], "Roughing 8");
+    assert!(s.execute("tool.remove", &json!({"number": 5})).is_ok());
+    assert!(s.execute("tool.get", &json!({"number": 5})).is_err());
+    assert!(s.execute("tool.get", &json!({"number": 1})).is_ok());
+}
+
+#[test]
+fn each_machine_has_its_own_library() {
+    let mut s = Session::new();
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 6})).is_ok());
+    let router = s
+        .execute("machine.create", &json!({"name": "Router", "max_spindle_rpm": 30000, "travel_x": 1200}))
+        .unwrap_or_default();
+    assert_eq!(router["id"], "machine.2");
+    assert_eq!(router["active"], true);
+    assert_eq!(s.execute("tool.list", &Value::Null).unwrap_or_default(), json!([]), "a new machine starts empty");
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "spindle_rpm": 28000})).is_ok());
+    assert_eq!(
+        s.execute("tool.list", &json!({"machine": "machine.1"})).unwrap_or_default().as_array().map(Vec::len),
+        Some(1)
+    );
+    // Lowering the router's limit below a tool's speed is refused.
+    assert!(s.execute("machine.edit", &json!({"max_spindle_rpm": 20000})).is_err());
+    assert!(s.execute("machine.edit", &json!({"name": "Big router", "tool_capacity": 8})).is_ok());
+    let copy = s.execute("machine.duplicate", &json!({"id": "machine.2"})).unwrap_or_default();
+    assert_eq!(copy["name"], "Big router copy");
+    assert_eq!(copy["tools"], 1);
+    assert!(s.execute("machine.activate", &json!({"id": "machine.1"})).is_ok());
+    assert!(s.execute("machine.remove", &json!({"id": "machine.3"})).is_ok());
+    assert!(s.execute("machine.remove", &json!({"id": "machine.2"})).is_ok());
+    assert!(s.execute("machine.remove", &json!({"id": "machine.1"})).is_err(), "the last machine stays");
+    // The library survives a new job.
+    assert!(s.execute("job.new", &Value::Null).is_ok());
+    assert_eq!(s.execute("tool.list", &Value::Null).unwrap_or_default().as_array().map(Vec::len), Some(1));
+    assert!(s.execute("machine.library.open", &Value::Null).is_ok());
+    assert!(s.take_ui_requests().contains(&crate::UiRequest::ShowPane(crate::Pane::Library)));
+}
+
+#[test]
+fn libraries_save_load_import_and_export() {
+    let mut s = Session::new();
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "feed": 1000})).is_ok());
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 10})).is_ok());
+    let saved = s.library_json();
+    let mut other = Session::new();
+    assert_eq!(other.load_library(&saved), Ok(Vec::new()));
+    assert_eq!(other.execute("tool.list", &Value::Null).unwrap_or_default().as_array().map(Vec::len), Some(2));
+    assert!(other.load_library(&json!({"nope": 1})).is_err());
+
+    let dir = TempFile::new("tools.json", b"");
+    assert!(s.execute("tool.library.export", &json!({"path": dir.path()})).is_ok());
+    assert!(s.execute("machine.create", &json!({"name": "Second"})).is_ok());
+    let r = s.execute("tool.library.import", &json!({"path": dir.path()})).unwrap_or_default();
+    assert_eq!(r["imported"], 2);
+    assert!(s.execute("tool.library.import", &json!({"path": dir.path()})).is_err(), "numbers already taken");
+    assert!(s.execute("tool.library.import", &json!({"path": dir.path(), "replace": true})).is_ok());
+    let garbage = TempFile::new("bad.json", b"{\"format\": \"CosmicCAM-tools/1\", \"tools\": [{\"number\": 1}]}");
+    assert!(s.execute("tool.library.import", &json!({"path": garbage.path()})).is_err());
+    assert!(s.execute("tool.library.import", &json!({"path": "/dev/zero"})).is_err());
+}
+
+#[test]
+fn units_change_what_is_shown_but_not_the_api() {
+    let mut s = Session::with_sample();
+    assert_eq!(s.execute("settings.get", &Value::Null).unwrap_or_default()["units"], "in");
+    let r = sample_refs(&mut s);
+    let diameter = |s: &mut Session| {
+        assert!(s.execute("selection.set", &json!({"id": r.boss})).is_ok());
+        let node = s.execute("selection.get", &Value::Null).unwrap_or_default();
+        node["properties"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|p| p["name"] == "Diameter")
+            .map(|p| p["value"].clone())
+    };
+    assert_eq!(diameter(&mut s), Some(json!("0.9449 in")));
+    assert!(s.execute("settings.units.set", &json!({"units": "mm"})).is_ok());
+    assert_eq!(diameter(&mut s), Some(json!("24.000 mm")));
+    assert!(
+        s.outline_node("job").is_some_and(|n| n.properties.iter().any(|(k, v)| k == "Units" && v == "Millimetres"))
+    );
+    // Commands and their results stay in millimetres either way.
+    assert!(s.execute("settings.units.set", &json!({"units": "in"})).is_ok());
+    let t = s.execute("tool.create.flat", &json!({"diameter": 6})).unwrap_or_default();
+    assert_eq!(t["diameter"], 6.0);
+    assert!(s.execute("settings.units.set", &json!({"units": "furlong"})).is_err());
+    assert_eq!(s.execute("session.state.get", &Value::Null).unwrap_or_default()["units"], "in");
+}
+
+#[test]
+fn the_machine_tab_sits_between_setup_and_tooling() {
+    assert_eq!(&RibbonTab::IDS[..4], &["home", "setup", "machine", "tooling"]);
 }

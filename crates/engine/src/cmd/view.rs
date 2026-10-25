@@ -54,7 +54,7 @@ pub(crate) const PRESET_IDS: &[&str] = &[
 ];
 
 const DEGREES: ParamKind = ParamKind::Number { min: -1.0e6, max: 1.0e6 };
-const MILLIMETRES: ParamKind = ParamKind::Number { min: -1.0e9, max: 1.0e9 };
+const MILLIMETRES: ParamKind = ParamKind::Length { min: -1.0e9, max: 1.0e9 };
 const CAMERA_RETURNS: &str = "camera {target, distance, yaw, pitch, projection, eye}";
 
 const DISPLAY_PARAMS: &[Param] = &[

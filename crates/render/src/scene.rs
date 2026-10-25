@@ -197,10 +197,12 @@ fn box_corners(b: &Aabb) -> [Vec3; 8] {
     ]
 }
 
-/// Ground grid on the XY plane covering `around` with some margin.
-pub fn grid(around: &Aabb, palette: &ScenePalette) -> SceneGeometry {
-    const MINOR: f32 = 10.0;
-    const MAJOR_EVERY: i32 = 5;
+/// Ground grid on the XY plane covering `around` with some margin: 10 mm lines with a major
+/// line every 50 mm, or with `inch`, 0.5 in lines with a major line every inch.
+pub fn grid(around: &Aabb, palette: &ScenePalette, inch: bool) -> SceneGeometry {
+    let (minor, major_every): (f32, i32) = if inch { (12.7, 2) } else { (10.0, 5) };
+    #[allow(non_snake_case)]
+    let (MINOR, MAJOR_EVERY) = (minor, major_every);
     const MAX_LINES_PER_AXIS: i32 = 400;
     let mut g = SceneGeometry::default();
     let reach = if around.is_empty() {
@@ -338,7 +340,7 @@ mod tests {
     #[test]
     fn buffers_are_well_formed() {
         let p = palette();
-        for g in [sample_part(&p, true, true), grid(&Aabb::EMPTY, &p), wcs_triad(Vec3::ZERO, 20.0, &p)] {
+        for g in [sample_part(&p, true, true), grid(&Aabb::EMPTY, &p, false), wcs_triad(Vec3::ZERO, 20.0, &p)] {
             assert_eq!(g.triangles.len() % 3, 0);
             assert_eq!(g.lines.len() % 2, 0);
             assert!(g.triangles.iter().chain(&g.lines).all(|v| v.pos.iter().all(|c| c.is_finite())));
@@ -360,7 +362,7 @@ mod tests {
     #[test]
     fn grid_is_capped_for_huge_scenes() {
         let huge = Aabb::new(Vec3::splat(-1.0e9), Vec3::splat(1.0e9));
-        let g = grid(&huge, &palette());
+        let g = grid(&huge, &palette(), false);
         assert!(g.lines.len() <= 4 * 801 + 8);
     }
 

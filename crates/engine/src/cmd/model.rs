@@ -211,7 +211,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             Param::required("direction", ParamKind::Vec3, "Ray direction"),
             Param::optional(
                 "radius",
-                ParamKind::Number { min: 0.0001, max: 1.0e6 },
+                ParamKind::Length { min: 0.0001, max: 1.0e6 },
                 "How far from the ray an edge may be, mm (default 1)",
             ),
         ],
@@ -257,7 +257,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             Param::required("direction", ParamKind::Vec3, "Ray direction"),
             Param::optional(
                 "radius",
-                ParamKind::Number { min: 0.0001, max: 1.0e6 },
+                ParamKind::Length { min: 0.0001, max: 1.0e6 },
                 "How far from the ray a vertex may be, mm (default 1)",
             ),
         ],

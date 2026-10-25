@@ -2,13 +2,18 @@
 //! values typed in use it: the form collects the values, the app runs the command with
 //! them, and the form stays open showing the error if the command refuses them.
 
+use CosmicCAM_engine::units::DisplayUnits;
 use CosmicCAM_engine::{CommandSpec, Param, ParamKind, Session};
 use egui::{RichText, Ui};
 use serde_json::{Map, Value, json};
 
 use crate::Request;
 use crate::theme::Tokens;
+use crate::tool_view::{self, ToolShape};
 use crate::ui_kit::Window;
+
+/// Forms that draw the tool being defined.
+const TOOL_FORMS: &[&str] = &["tool.create", "tool.create.flat", "tool.edit"];
 
 /// Shown in choice boxes for an optional parameter left unset.
 const DEFAULT_LABEL: &str = "(default)";
@@ -19,29 +24,45 @@ enum Field {
     Bool(Option<bool>),
     Choice(Option<usize>),
     Vec3([String; 3]),
-    /// A WCS picked from the job, for `setup.wcs.*` commands' `id`.
-    Wcs(Option<usize>),
+    /// One of the form's listed items: a WCS (`setup.wcs.*` ids) or a machine.
+    Pick(Option<usize>),
 }
 
 pub struct ParamForm {
     spec: &'static CommandSpec,
     fields: Vec<(&'static Param, Field)>,
-    /// (id, name) of the job's WCS when the form opened.
-    wcs: Vec<(String, String)>,
+    /// (id, name) of what pickers choose from: the job's WCS or the machines.
+    options: Vec<(String, String)>,
+    /// Lengths and feeds are typed in these units and sent in millimetres.
+    units: DisplayUnits,
     error: Option<String>,
     open: bool,
 }
 
 impl ParamForm {
     pub fn new(spec: &'static CommandSpec, session: &Session) -> Self {
-        let wcs: Vec<(String, String)> = session.job.wcs.iter().map(|w| (w.id.clone(), w.name.clone())).collect();
-        let active = session.job.active_wcs.as_deref().and_then(|a| wcs.iter().position(|(id, _)| id == a));
+        let machines = spec.id.starts_with("machine.") || spec.params.iter().any(|p| p.name == "machine");
+        let (options, active): (Vec<(String, String)>, Option<&str>) = if machines {
+            let list = session.library.machines.iter().map(|m| (m.id.clone(), m.name.clone())).collect();
+            (list, session.library.active.as_deref())
+        } else {
+            let list = session.job.wcs.iter().map(|w| (w.id.clone(), w.name.clone())).collect();
+            (list, session.job.active_wcs.as_deref())
+        };
+        let active = active.and_then(|a| options.iter().position(|(id, _)| id == a));
+        let is_pick = |p: &Param| {
+            (p.name == "id" && (spec.id.starts_with("setup.wcs.") || spec.id.starts_with("machine.")))
+                || (p.name == "machine" && machines)
+        };
+        let units = session.prefs.units;
+        let initial = prefill(spec, session);
         let fields = spec
             .params
             .iter()
             .map(|p| {
                 let field = match p.kind {
-                    _ if p.name == "id" && spec.id.starts_with("setup.wcs.") => Field::Wcs(active),
+                    _ if is_pick(p) => Field::Pick(active),
+                    _ if initial.contains_key(p.name) => initial_field(p, initial.get(p.name), units),
                     ParamKind::Bool => Field::Bool(p.required.then_some(false)),
                     ParamKind::Choice(_) => Field::Choice(p.required.then_some(0)),
                     ParamKind::Vec3 if p.required => Field::Vec3(["0".into(), "0".into(), "0".into()]),
@@ -52,7 +73,7 @@ impl ParamForm {
                 (p, field)
             })
             .collect();
-        Self { spec, fields, wcs, error: None, open: true }
+        Self { spec, fields, options, units, error: None, open: true }
     }
 
     /// The command failed with these values; keep the form open and say why.
@@ -73,12 +94,30 @@ impl ParamForm {
                 ui.set_min_width(360.0);
                 ui.label(RichText::new(self.spec.tooltip).color(tokens.text_muted));
                 ui.add_space(8.0);
-                egui::Grid::new(("param-form", self.spec.id)).num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-                    for (param, field) in &mut self.fields {
-                        let label = ui.label(label_for(param));
-                        label.on_hover_text(param.doc);
-                        edit_field(ui, self.spec.id, param, field, &self.wcs);
-                        ui.end_row();
+                // Leave room for the title, notes and buttons on short windows.
+                let max_height = (ctx.content_rect().height() - 240.0).clamp(160.0, 480.0);
+                let units = self.units;
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        egui::ScrollArea::vertical().max_height(max_height).show(ui, |ui| {
+                            egui::Grid::new(("param-form", self.spec.id)).num_columns(3).spacing([10.0, 6.0]).show(
+                                ui,
+                                |ui| {
+                                    for (param, field) in &mut self.fields {
+                                        let label = ui.label(label_for(param));
+                                        label.on_hover_text(param.doc);
+                                        edit_field(ui, self.spec.id, param, field, &self.options);
+                                        ui.label(RichText::new(unit_suffix(param, units)).color(tokens.text_muted));
+                                        ui.end_row();
+                                    }
+                                },
+                            );
+                        });
+                    });
+                    if TOOL_FORMS.contains(&self.spec.id) {
+                        // Spacing, not a separator: a vertical separator would stretch the window.
+                        ui.add_space(12.0);
+                        tool_view::draw(ui, self.tool_shape(), units, tokens, egui::vec2(260.0, max_height.min(380.0)));
                     }
                 });
                 if let Some(e) = &self.error {
@@ -111,6 +150,26 @@ impl ParamForm {
         }
     }
 
+    /// The tool the fields describe, in millimetres, filling blanks as the engine would.
+    fn tool_shape(&self) -> Option<ToolShape> {
+        let value = |name: &str| -> Option<f64> {
+            self.fields.iter().find(|(p, _)| p.name == name).and_then(|(_, f)| match f {
+                Field::Text(t) => t.trim().parse::<f64>().ok(),
+                _ => None,
+            })
+        };
+        let len = |name: &str| value(name).map(|v| self.units.to_mm(v));
+        let diameter = len("diameter")?;
+        let flute_length = len("flute_length").unwrap_or(3.0 * diameter);
+        Some(ToolShape {
+            diameter,
+            shank_diameter: len("shank_diameter").unwrap_or(diameter),
+            flute_length,
+            overall_length: len("overall_length").unwrap_or(flute_length + (2.0 * diameter).max(15.0)),
+            flutes: value("flutes").map_or(if diameter < 3.0 { 2 } else { 3 }, |f| f.clamp(1.0, 32.0) as u32),
+        })
+    }
+
     /// The command's parameters from the fields; unset optional fields are left out.
     fn params(&self) -> Result<Value, String> {
         let mut out = Map::new();
@@ -120,6 +179,11 @@ impl ParamForm {
                 Field::Text(t) => Some(match p.kind {
                     ParamKind::Number { .. } => {
                         json!(t.trim().parse::<f64>().map_err(|_| format!("{} must be a number", label_for(p)))?)
+                    }
+                    // Typed in the user's units, sent in millimetres.
+                    ParamKind::Length { .. } | ParamKind::Rate { .. } => {
+                        let v = t.trim().parse::<f64>().map_err(|_| format!("{} must be a number", label_for(p)))?;
+                        json!(self.units.to_mm(v))
                     }
                     ParamKind::Integer { .. } => {
                         json!(t.trim().parse::<i64>().map_err(|_| format!("{} must be a whole number", label_for(p)))?)
@@ -139,12 +203,13 @@ impl ParamForm {
                         *slot = if text.is_empty() {
                             0.0
                         } else {
-                            text.parse().map_err(|_| format!("{} needs three numbers", label_for(p)))?
+                            let v: f64 = text.parse().map_err(|_| format!("{} needs three numbers", label_for(p)))?;
+                            self.units.to_mm(v)
                         };
                     }
                     Some(json!(xyz))
                 }
-                Field::Wcs(i) => i.and_then(|i| self.wcs.get(i)).map(|(id, _)| json!(id)),
+                Field::Pick(i) => i.and_then(|i| self.options.get(i)).map(|(id, _)| json!(id)),
             };
             match value {
                 Some(v) => {
@@ -158,6 +223,79 @@ impl ParamForm {
     }
 }
 
+/// Values a form opens with: the selected tool for tool edits, the active machine for
+/// machine edits, the next free number and a common size for new tools.
+fn prefill(spec: &CommandSpec, session: &Session) -> Map<String, Value> {
+    let selected_tool = session.view.selection.as_deref().and_then(|id| session.tool_by_ref(id));
+    let source: Option<Value> = match spec.id {
+        "tool.edit" | "tool.feeds" | "tool.duplicate" | "tool.remove" => selected_tool.map(|(m, t)| t.to_json(&m.id)),
+        // A common size in the user's units: 1/4 in or 6 mm.
+        "tool.create" | "tool.create.flat" => session.library.active_machine().map(|m| {
+            let diameter = if session.prefs.units == DisplayUnits::Inches { 6.35 } else { 6.0 };
+            json!({ "number": m.next_tool_number(), "diameter": diameter, "type": "flat" })
+        }),
+        "machine.edit" => session.library.active_machine().map(|m| {
+            json!({
+                "name": m.name, "description": m.description, "kind": m.kind,
+                "travel_x": m.travel[0], "travel_y": m.travel[1], "travel_z": m.travel[2],
+                "max_spindle_rpm": m.max_spindle_rpm, "max_feed": m.max_feed, "tool_capacity": m.tool_capacity,
+            })
+        }),
+        _ => None,
+    };
+    let mut out = Map::new();
+    if let Some(Value::Object(src)) = source {
+        for p in spec.params {
+            match src.get(p.name) {
+                // Tool edits leave cutting data that is not set blank, not "0".
+                Some(Value::Number(n))
+                    if n.as_f64() == Some(0.0) && spec.id.starts_with("tool.") && p.name != "number" => {}
+                Some(v) if !v.is_null() => {
+                    out.insert(p.name.to_owned(), v.clone());
+                }
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// The unit shown after a field: "in", "mm/min", or nothing.
+fn unit_suffix(p: &Param, units: DisplayUnits) -> &'static str {
+    match p.kind {
+        ParamKind::Length { .. } | ParamKind::Vec3 => units.length(),
+        ParamKind::Rate { .. } => units.rate(),
+        _ if p.name == "spindle_rpm" => "rpm",
+        _ => "",
+    }
+}
+
+/// A field showing `value` (millimetres, shown in `units` for lengths and feeds).
+fn initial_field(p: &Param, value: Option<&Value>, units: DisplayUnits) -> Field {
+    if let (ParamKind::Length { .. } | ParamKind::Rate { .. }, Some(mm)) = (p.kind, value.and_then(Value::as_f64)) {
+        return Field::Text(units.plain(mm));
+    }
+    let text = |v: &Value| match v {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.as_f64().map_or_else(
+            || n.to_string(),
+            |f| {
+                let s = format!("{f:.4}");
+                s.trim_end_matches('0').trim_end_matches('.').to_owned()
+            },
+        ),
+        other => other.to_string(),
+    };
+    match (p.kind, value) {
+        (ParamKind::Bool, v) => Field::Bool(v.and_then(Value::as_bool)),
+        (ParamKind::Choice(choices), v) => {
+            Field::Choice(v.and_then(Value::as_str).and_then(|s| choices.iter().position(|c| *c == s)))
+        }
+        (_, Some(v)) => Field::Text(text(v)),
+        (_, None) => Field::Text(String::new()),
+    }
+}
+
 /// "z_axis" → "Z axis".
 fn label_for(p: &Param) -> String {
     let words = p.name.replace('_', " ");
@@ -165,7 +303,7 @@ fn label_for(p: &Param) -> String {
     chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
 }
 
-fn edit_field(ui: &mut Ui, command: &str, p: &Param, field: &mut Field, wcs: &[(String, String)]) {
+fn edit_field(ui: &mut Ui, command: &str, p: &Param, field: &mut Field, list: &[(String, String)]) {
     let combo = |ui: &mut Ui, salt: &str, current: &mut Option<usize>, options: &[String], optional: bool| {
         let text = current.and_then(|i| options.get(i)).map_or(DEFAULT_LABEL, String::as_str).to_owned();
         egui::ComboBox::from_id_salt((command, p.name, salt)).selected_text(text).width(220.0).show_ui(ui, |ui| {
@@ -205,9 +343,9 @@ fn edit_field(ui: &mut Ui, command: &str, p: &Param, field: &mut Field, wcs: &[(
                 }
             });
         }
-        Field::Wcs(i) => {
-            let options: Vec<String> = wcs.iter().map(|(_, name)| name.clone()).collect();
-            combo(ui, "wcs", i, &options, !p.required);
+        Field::Pick(i) => {
+            let options: Vec<String> = list.iter().map(|(_, name)| name.clone()).collect();
+            combo(ui, "pick", i, &options, !p.required);
         }
     }
 }

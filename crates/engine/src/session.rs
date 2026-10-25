@@ -113,6 +113,10 @@ impl Default for Display {
 #[derive(Clone, Debug)]
 pub struct Preferences {
     pub theme: Theme,
+    /// Units lengths and feeds are shown in (the API stays in millimetres).
+    pub units: crate::units::DisplayUnits,
+    /// Bumped when a saved preference changes, so the app knows to save.
+    pub revision: u64,
     /// Upper bound on viewport frames per second while animating.
     pub fps_limit: u32,
     pub display: Display,
@@ -120,7 +124,13 @@ pub struct Preferences {
 
 impl Default for Preferences {
     fn default() -> Self {
-        Self { theme: Theme::Dark, fps_limit: DEFAULT_FPS_LIMIT, display: Display::default() }
+        Self {
+            theme: Theme::Dark,
+            units: crate::units::DisplayUnits::default(),
+            revision: 0,
+            fps_limit: DEFAULT_FPS_LIMIT,
+            display: Display::default(),
+        }
     }
 }
 
@@ -131,11 +141,13 @@ pub enum Pane {
     Explorer,
     Inspector,
     Console,
+    /// Machines and the active machine's tools.
+    Library,
 }
 
 impl Pane {
-    pub const ALL: [Self; 4] = [Self::Viewport, Self::Explorer, Self::Inspector, Self::Console];
-    pub const IDS: &'static [&'static str] = &["viewport", "explorer", "inspector", "console"];
+    pub const ALL: [Self; 5] = [Self::Viewport, Self::Explorer, Self::Inspector, Self::Console, Self::Library];
+    pub const IDS: &'static [&'static str] = &["viewport", "explorer", "inspector", "console", "library"];
 
     pub fn id(self) -> &'static str {
         match self {
@@ -143,6 +155,7 @@ impl Pane {
             Self::Explorer => "explorer",
             Self::Inspector => "inspector",
             Self::Console => "console",
+            Self::Library => "library",
         }
     }
 
@@ -664,6 +677,8 @@ const MAX_UPLOADS: usize = 8;
 
 #[derive(Clone, Debug, Default)]
 pub struct Session {
+    /// Machines and their tool libraries; kept across jobs and saved by the app.
+    pub library: crate::library::MachineLibrary,
     /// Files handed to the app without a path (browser uploads), by name, until imported.
     uploads: Vec<(String, Arc<Vec<u8>>)>,
     pub prefs: Preferences,
@@ -806,6 +821,7 @@ impl Session {
                 "stock": self.job.stock.as_ref().map_or(Value::Null, stock_json),
             },
             "theme": self.prefs.theme.id(),
+            "units": self.prefs.units.id(),
             "fps_limit": self.prefs.fps_limit,
             "display": self.prefs.display.to_json(),
             "camera": camera_json(c),
@@ -822,6 +838,7 @@ impl Session {
     pub(crate) fn reset_job(&mut self, sample: bool) {
         let mut fresh = if sample { Session::with_sample() } else { Session::new() };
         fresh.prefs = self.prefs.clone();
+        fresh.library = self.library.clone();
         fresh.job.revision = self.job.revision.wrapping_add(1);
         fresh.job.setup_revision = self.job.setup_revision.wrapping_add(1);
         fresh.view.layout_generation = self.view.layout_generation;
@@ -846,10 +863,8 @@ impl Session {
             properties,
         };
         let mut models = Vec::new();
-        let extents = |b: Aabb| {
-            let size = b.size();
-            format!("{:.1} × {:.1} × {:.1} mm", size.x, size.y, size.z)
-        };
+        let u = self.prefs.units;
+        let extents = |b: Aabb| u.fmt_size(b.size().to_array());
         for m in &self.job.models {
             models.push(leaf(
                 &m.id,
@@ -875,7 +890,7 @@ impl Session {
         vec![OutlineNode {
             id: "job".into(),
             label: format!("Job: {}", self.job.name),
-            properties: vec![("Name".into(), self.job.name.clone()), ("Units".into(), "Millimetres".into())],
+            properties: vec![("Name".into(), self.job.name.clone()), ("Units".into(), u.label().into())],
             children: vec![
                 group("models", "Models", models),
                 group("setups", "Setups", self.setup_nodes()),
@@ -887,7 +902,7 @@ impl Session {
 
     /// The stock, then each WCS.
     fn setup_nodes(&self) -> Vec<OutlineNode> {
-        let v = |p: Vec3| format!("{:.3}, {:.3}, {:.3}", p.x, p.y, p.z);
+        let u = self.prefs.units;
         let stock = self.job.stock.map(|b| {
             let size = b.size();
             OutlineNode {
@@ -896,9 +911,9 @@ impl Session {
                 children: Vec::new(),
                 properties: vec![
                     ("Shape".into(), "Box".into()),
-                    ("Size".into(), format!("{:.2} × {:.2} × {:.2} mm", size.x, size.y, size.z)),
-                    ("Min".into(), v(b.min)),
-                    ("Max".into(), v(b.max)),
+                    ("Size".into(), u.fmt_size(size.to_array())),
+                    ("Min".into(), u.fmt_point(b.min.to_array())),
+                    ("Max".into(), u.fmt_point(b.max.to_array())),
                 ],
             }
         });
@@ -906,6 +921,7 @@ impl Session {
     }
 
     fn wcs_nodes(&self) -> Vec<OutlineNode> {
+        let u = self.prefs.units;
         let v = |p: Vec3| format!("{:.3}, {:.3}, {:.3}", p.x, p.y, p.z);
         self.job
             .wcs
@@ -919,7 +935,7 @@ impl Session {
                     properties: vec![
                         ("Name".into(), w.name.clone()),
                         ("Active".into(), if active { "Yes" } else { "No" }.into()),
-                        ("Origin".into(), format!("{} mm", v(w.origin))),
+                        ("Origin".into(), u.fmt_point(w.origin.to_array())),
                         ("X axis".into(), v(w.x_axis)),
                         ("Y axis".into(), v(w.y_axis())),
                         ("Z axis".into(), v(w.z_axis)),
@@ -932,7 +948,11 @@ impl Session {
     /// The selected item as the inspector shows it: an outline node, or a face, edge or
     /// vertex of a model.
     pub fn selection_node(&self, id: &str) -> Option<OutlineNode> {
+        let u = self.prefs.units;
         if let Some(node) = self.outline_node(id) {
+            return Some(node);
+        }
+        if let Some(node) = self.tool_node(id) {
             return Some(node);
         }
         let (m, entity) = self.job.entity(id)?;
@@ -943,17 +963,17 @@ impl Session {
                 let mut props = vec![
                     ("Model".into(), m.name.clone()),
                     ("Kind".into(), face.kind.id().into()),
-                    ("Area".into(), format!("{:.3} mm²", face.area)),
-                    ("Centre".into(), v(face.centroid)),
+                    ("Area".into(), u.fmt_area(f64::from(face.area))),
+                    ("Centre".into(), u.fmt_point(face.centroid.to_array())),
                 ];
                 match face.kind {
                     FaceKind::Plane { normal, .. } => props.push(("Normal".into(), v(normal))),
                     FaceKind::Cylinder { base, axis, radius, length, hole } => props.extend([
                         ("Type".into(), if hole { "Hole" } else { "Boss" }.into()),
-                        ("Diameter".into(), format!("{:.3} mm", radius * 2.0)),
-                        ("Length".into(), format!("{:.3} mm", length)),
+                        ("Diameter".into(), u.fmt_len(f64::from(radius) * 2.0)),
+                        ("Length".into(), u.fmt_len(f64::from(length))),
                         ("Axis".into(), v(axis)),
-                        ("Axis base".into(), v(base)),
+                        ("Axis base".into(), u.fmt_point(base.to_array())),
                     ]),
                     FaceKind::Freeform => {}
                 }
@@ -964,17 +984,17 @@ impl Session {
                 let mut props = vec![
                     ("Model".into(), m.name.clone()),
                     ("Kind".into(), edge.kind.id().into()),
-                    ("Length".into(), format!("{:.3} mm", edge.length)),
+                    ("Length".into(), u.fmt_len(f64::from(edge.length))),
                 ];
                 match edge.kind {
                     EdgeKind::Line { start, end } => props.extend([
-                        ("Start".into(), v(start)),
-                        ("End".into(), v(end)),
+                        ("Start".into(), u.fmt_point(start.to_array())),
+                        ("End".into(), u.fmt_point(end.to_array())),
                         ("Direction".into(), v(edge.kind.direction())),
                     ]),
                     EdgeKind::Circle { center, normal, radius } => props.extend([
-                        ("Centre".into(), v(center)),
-                        ("Diameter".into(), format!("{:.3} mm", radius * 2.0)),
+                        ("Centre".into(), u.fmt_point(center.to_array())),
+                        ("Diameter".into(), u.fmt_len(f64::from(radius) * 2.0)),
                         ("Normal".into(), v(normal)),
                     ]),
                 }
@@ -982,10 +1002,63 @@ impl Session {
             }
             Entity::Vertex(i) => {
                 let p = m.edges.vertices.get(i)?;
-                (format!("Vertex {i}"), vec![("Model".into(), m.name.clone()), ("Position".into(), v(*p))])
+                (
+                    format!("Vertex {i}"),
+                    vec![("Model".into(), m.name.clone()), ("Position".into(), u.fmt_point(p.to_array()))],
+                )
             }
         };
         Some(OutlineNode { id: id.to_owned(), label, children: Vec::new(), properties })
+    }
+
+    /// The machine and tool a `<machine id>/tool.<n>` reference names.
+    pub fn tool_by_ref(&self, reference: &str) -> Option<(&crate::library::Machine, &crate::library::Tool)> {
+        let (machine, number) = reference.rsplit_once("/tool.")?;
+        let m = self.library.machine(machine)?;
+        let t = m.tool(number.parse().ok()?)?;
+        Some((m, t))
+    }
+
+    /// A tool as the inspector shows it.
+    fn tool_node(&self, id: &str) -> Option<OutlineNode> {
+        let (m, t) = self.tool_by_ref(id)?;
+        let u = self.prefs.units;
+        let mm = |v: f64| u.fmt_len(v);
+        let not_set = |v: f64, shown: String| if v > 0.0 { shown } else { "not set".into() };
+        Some(OutlineNode {
+            id: id.to_owned(),
+            label: format!("T{} {}", t.number, t.name),
+            children: Vec::new(),
+            properties: vec![
+                ("Machine".into(), m.name.clone()),
+                ("Type".into(), t.kind.clone()),
+                ("Diameter".into(), mm(t.diameter)),
+                ("Flutes".into(), t.flutes.to_string()),
+                ("Flute length".into(), mm(t.flute_length)),
+                ("Overall length".into(), mm(t.overall_length)),
+                ("Shank diameter".into(), mm(t.shank_diameter)),
+                ("Material".into(), t.material.clone()),
+                ("Spindle speed".into(), not_set(t.spindle_rpm, format!("{} rpm", t.spindle_rpm))),
+                ("Feed".into(), not_set(t.feed, u.fmt_rate(t.feed))),
+                ("Plunge feed".into(), not_set(t.plunge_feed, u.fmt_rate(t.plunge_feed))),
+                ("Stepover".into(), not_set(t.stepover, u.fmt_len(t.stepover))),
+                ("Stepdown".into(), not_set(t.stepdown, u.fmt_len(t.stepdown))),
+                ("Offsets".into(), format!("H{} D{}", t.length_offset, t.diameter_offset)),
+            ],
+        })
+    }
+
+    /// The machine library as the app saves it.
+    pub fn library_json(&self) -> Value {
+        self.library.to_json()
+    }
+
+    /// Replaces the machine library with a saved one. Returns what was dropped as invalid.
+    pub fn load_library(&mut self, saved: &Value) -> Result<Vec<String>, String> {
+        let (mut library, dropped) = crate::library::MachineLibrary::from_json(saved)?;
+        library.revision = self.library.revision;
+        self.library = library;
+        Ok(dropped)
     }
 
     /// Finds an outline node by id.

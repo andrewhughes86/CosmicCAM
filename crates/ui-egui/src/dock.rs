@@ -19,10 +19,12 @@ fn title(tab: Tab) -> &'static str {
         Pane::Explorer => "Explorer",
         Pane::Inspector => "Inspector",
         Pane::Console => "Console",
+        Pane::Library => "Tool library",
     }
 }
 
-/// Viewport in the middle, explorer over inspector on the left, console along the bottom.
+/// Viewport in the middle, explorer over inspector on the left, console along the bottom. The
+/// tool library is a window of its own, not a dock pane.
 pub fn default_layout() -> DockState<Tab> {
     let mut state = DockState::new(vec![Pane::Viewport]);
     let tree = state.main_surface_mut();
@@ -55,6 +57,10 @@ pub fn show(state: &mut DockState<Tab>, pane: Pane) {
     let main_leaf = |state: &DockState<Tab>, p: Pane| {
         state.find_tab(&p).filter(|path| path.surface == SurfaceIndex::main()).map(|path| path.node)
     };
+    // The library is a window the app opens, never a dock tab.
+    if pane == Pane::Library {
+        return;
+    }
     let partner = match pane {
         Pane::Explorer => Some(Pane::Inspector),
         Pane::Inspector => Some(Pane::Explorer),
@@ -120,6 +126,10 @@ impl TabViewer for Viewer<'_> {
             Pane::Explorer => panes::explorer(ui, self.session, self.requests),
             Pane::Inspector => panes::inspector(ui, self.session, self.tokens),
             Pane::Console => panes::console(ui, self.session, self.tokens, self.console, self.requests),
+            // Never docked; the app draws the library as a window.
+            Pane::Library => {
+                ui.label("The tool library opens in its own window.");
+            }
         }
     }
 
@@ -135,7 +145,7 @@ impl TabViewer for Viewer<'_> {
     fn scroll_bars(&self, tab: &Tab) -> [bool; 2] {
         match tab {
             Pane::Viewport | Pane::Console => [false, false],
-            Pane::Explorer | Pane::Inspector => [true, true],
+            Pane::Explorer | Pane::Inspector | Pane::Library => [true, true],
         }
     }
 }
@@ -149,14 +159,15 @@ mod tests {
         let state = default_layout();
         let tabs: Vec<Tab> = state.iter_all_tabs().map(|(_, t)| *t).collect();
         for tab in Pane::ALL {
-            assert_eq!(tabs.iter().filter(|t| **t == tab).count(), 1, "{tab:?}");
+            let want = usize::from(tab != Pane::Library);
+            assert_eq!(tabs.iter().filter(|t| **t == tab).count(), want, "{tab:?}");
         }
     }
 
     #[test]
     fn panes_hide_show_and_focus() {
         let mut state = default_layout();
-        for pane in [Pane::Explorer, Pane::Inspector, Pane::Console] {
+        for pane in [Pane::Explorer, Pane::Inspector, Pane::Console, Pane::Library] {
             hide(&mut state, pane);
         }
         assert_eq!(open_panes(&state), vec![Pane::Viewport]);
@@ -165,7 +176,8 @@ mod tests {
         show(&mut state, Pane::Inspector);
         show(&mut state, Pane::Explorer);
         focus(&mut state, Pane::Console);
-        assert_eq!(open_panes(&state), Pane::ALL.to_vec());
+        focus(&mut state, Pane::Library);
+        assert_eq!(open_panes(&state), vec![Pane::Viewport, Pane::Explorer, Pane::Inspector, Pane::Console]);
         show(&mut state, Pane::Console);
         assert_eq!(state.iter_all_tabs().count(), 4);
     }

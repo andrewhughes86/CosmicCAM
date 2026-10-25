@@ -584,7 +584,9 @@ impl Viewport {
 
     fn rebuild_scene_if_needed(&mut self, session: &mut Session, tokens: &Tokens) {
         let display = session.prefs.display;
-        let key = (session.prefs.theme, session.job.revision, session.job.setup_revision, display);
+        // The grid follows the units, so a units change counts as a setup change.
+        let units = u64::from(session.prefs.units == CosmicCAM_engine::units::DisplayUnits::Inches);
+        let key = (session.prefs.theme, session.job.revision, session.job.setup_revision ^ (units << 63), display);
         if self.scene_key == Some(key) {
             return;
         }
@@ -601,7 +603,8 @@ impl Viewport {
         for model in &session.job.models {
             content.push_mesh(&model.mesh, palette.part, edge);
         }
-        let mut world = if display.grid { scene::grid(&content.bounds, &palette) } else { SceneGeometry::default() };
+        let mut world =
+            if display.grid { scene::grid(&content.bounds, &palette, units == 1) } else { SceneGeometry::default() };
         world.triangles.extend_from_slice(&content.triangles);
         world.lines.extend_from_slice(&content.lines);
         let triad_size = (content.bounds.radius() * 0.4).clamp(15.0, 200.0);

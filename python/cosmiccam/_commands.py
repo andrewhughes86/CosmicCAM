@@ -242,7 +242,7 @@ class Commands:
         Args:
             origin: Ray start, world mm — [x, y, z] in mm.
             direction: Ray direction — [x, y, z] in mm.
-            radius: How far from the ray an edge may be, mm (default 1) (0.0001 to 1e6).
+            radius: How far from the ray an edge may be, mm (default 1) (0.0001 to 1e6 mm).
 
         Returns:
             {edge, model, kind, length, direction, ...} for the edge found, or null
@@ -272,7 +272,7 @@ class Commands:
         Args:
             origin: Ray start, world mm — [x, y, z] in mm.
             direction: Ray direction — [x, y, z] in mm.
-            radius: How far from the ray a vertex may be, mm (default 1) (0.0001 to 1e6).
+            radius: How far from the ray a vertex may be, mm (default 1) (0.0001 to 1e6 mm).
 
         Returns:
             {vertex, model, kind, position} for the vertex found, or null
@@ -611,8 +611,8 @@ class Commands:
         """Slide the camera and its target across the screen.
 
         Args:
-            right: Millimetres towards screen right (-1e9 to 1e9).
-            up: Millimetres towards screen top (-1e9 to 1e9).
+            right: Millimetres towards screen right (-1e9 to 1e9 mm).
+            up: Millimetres towards screen top (-1e9 to 1e9 mm).
 
         Returns:
             camera {target, distance, yaw, pitch, projection, eye}
@@ -748,11 +748,11 @@ class Commands:
         params = {"fps": fps}
         return self.execute("view.fps_limit.set", {k: v for k, v in params.items() if v is not None})
 
-    def ui_ribbon_tab_set(self, *, tab: Literal["home", "setup", "tooling", "toolpaths", "simulation", "export"]) -> Any:
+    def ui_ribbon_tab_set(self, *, tab: Literal["home", "setup", "machine", "tooling", "toolpaths", "simulation", "export"]) -> Any:
         """Show a ribbon tab.
 
         Args:
-            tab: Ribbon tab — one of home, setup, tooling, toolpaths, simulation, export.
+            tab: Ribbon tab — one of home, setup, machine, tooling, toolpaths, simulation, export.
 
         Returns:
             {"tab": id}
@@ -762,11 +762,11 @@ class Commands:
         params = {"tab": tab}
         return self.execute("ui.ribbon.tab.set", {k: v for k, v in params.items() if v is not None})
 
-    def ui_pane_show(self, *, pane: Literal["viewport", "explorer", "inspector", "console"]) -> Any:
+    def ui_pane_show(self, *, pane: Literal["viewport", "explorer", "inspector", "console", "library"]) -> Any:
         """Open a workspace pane (it is docked back if it was closed).
 
         Args:
-            pane: Workspace pane — one of viewport, explorer, inspector, console.
+            pane: Workspace pane — one of viewport, explorer, inspector, console, library.
 
         Returns:
             {"pane": id}
@@ -776,11 +776,11 @@ class Commands:
         params = {"pane": pane}
         return self.execute("ui.pane.show", {k: v for k, v in params.items() if v is not None})
 
-    def ui_pane_hide(self, *, pane: Literal["viewport", "explorer", "inspector", "console"]) -> Any:
+    def ui_pane_hide(self, *, pane: Literal["viewport", "explorer", "inspector", "console", "library"]) -> Any:
         """Close a workspace pane (the viewport always stays).
 
         Args:
-            pane: Workspace pane — one of viewport, explorer, inspector, console.
+            pane: Workspace pane — one of viewport, explorer, inspector, console, library.
 
         Returns:
             {"pane": id}
@@ -790,11 +790,11 @@ class Commands:
         params = {"pane": pane}
         return self.execute("ui.pane.hide", {k: v for k, v in params.items() if v is not None})
 
-    def ui_pane_focus(self, *, pane: Literal["viewport", "explorer", "inspector", "console"]) -> Any:
+    def ui_pane_focus(self, *, pane: Literal["viewport", "explorer", "inspector", "console", "library"]) -> Any:
         """Bring a pane to the front of its tab stack, opening it if needed.
 
         Args:
-            pane: Workspace pane — one of viewport, explorer, inspector, console.
+            pane: Workspace pane — one of viewport, explorer, inspector, console, library.
 
         Returns:
             {"pane": id}
@@ -916,126 +916,6 @@ class Commands:
         Command: ``setup.stock.margins``
         """
         return self.execute("setup.stock.margins")
-
-    def tool_create(self) -> Any:
-        """Define a cutting tool (Phase 4).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``tool.create``
-        """
-        return self.execute("tool.create")
-
-    def tool_create_flat(self) -> Any:
-        """Define a flat end mill (Phase 4).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``tool.create.flat``
-        """
-        return self.execute("tool.create.flat")
-
-    def tool_create_ball(self) -> Any:
-        """Define a ball nose cutter (Phase 4).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``tool.create.ball``
-        """
-        return self.execute("tool.create.ball")
-
-    def tool_create_bull(self) -> Any:
-        """Define a corner radius cutter (Phase 4).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``tool.create.bull``
-        """
-        return self.execute("tool.create.bull")
-
-    def tool_create_chamfer(self) -> Any:
-        """Define a chamfer mill (Phase 4).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``tool.create.chamfer``
-        """
-        return self.execute("tool.create.chamfer")
-
-    def tool_create_drill(self) -> Any:
-        """Define a drill (Phase 4).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``tool.create.drill``
-        """
-        return self.execute("tool.create.drill")
-
-    def tool_feeds(self) -> Any:
-        """Spindle speed, feed, plunge and stepover per tool (Phase 4).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``tool.feeds``
-        """
-        return self.execute("tool.feeds")
-
-    def tool_library_open(self) -> Any:
-        """Browse and edit tool libraries (Phase 4).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``tool.library.open``
-        """
-        return self.execute("tool.library.open")
-
-    def tool_library_import(self) -> Any:
-        """Load a tool library file (Phase 4).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``tool.library.import``
-        """
-        return self.execute("tool.library.import")
-
-    def tool_library_export(self) -> Any:
-        """Save a tool library file (Phase 4).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``tool.library.export``
-        """
-        return self.execute("tool.library.export")
 
     def toolpath_pocket(self) -> Any:
         """Island-aware pocket clearing (Phase 6).
@@ -1221,9 +1101,9 @@ class Commands:
         """Size the stock box to the models' bounding box, plus margins.
 
         Args:
-            margin_sides: Extra material on the four sides, mm (default 0) (0 to 10000).
-            margin_top: Extra material on top, mm (default 0) (0 to 10000).
-            margin_bottom: Extra material underneath, mm (default 0) (0 to 10000).
+            margin_sides: Extra material on the four sides, mm (default 0) (0 to 10000 mm).
+            margin_top: Extra material on top, mm (default 0) (0 to 10000 mm).
+            margin_bottom: Extra material underneath, mm (default 0) (0 to 10000 mm).
 
         Returns:
             the stock {shape, min, max, size}
@@ -1242,3 +1122,472 @@ class Commands:
         Command: ``setup.stock.get``
         """
         return self.execute("setup.stock.get")
+
+    def tool_create(self, *, type: Optional[Literal["flat", "ball", "bull", "chamfer", "drill", "spot_drill", "face_mill", "tap", "thread_mill"]] = None, number: Optional[int] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond"]] = None, coating: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a cutting tool to the active machine's library.
+
+        Args:
+            type: Tool type (default flat; only flat end mills so far) — one of flat, ball, bull, chamfer, drill, spot_drill, face_mill, tap, thread_mill.
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            name: Description shown in the library (default: Ø<d> flat end mill).
+            diameter: Cutting diameter, mm (0.001 to 2000 mm).
+            flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
+            flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond.
+            coating: Coating, e.g. TiAlN.
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create``
+        """
+        params = {"type": type, "number": number, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_flat(self, *, number: Optional[int] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond"]] = None, coating: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a flat (square corner) end mill to the active machine's library.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            name: Description shown in the library (default: Ø<d> flat end mill).
+            diameter: Cutting diameter, mm (0.001 to 2000 mm).
+            flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
+            flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond.
+            coating: Coating, e.g. TiAlN.
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.flat``
+        """
+        params = {"number": number, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.flat", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_ball(self) -> Any:
+        """Ball nose tools are not supported yet.
+
+        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+
+        Returns:
+            not defined yet
+
+        Command: ``tool.create.ball``
+        """
+        return self.execute("tool.create.ball")
+
+    def tool_create_bull(self) -> Any:
+        """Bull nose tools are not supported yet.
+
+        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+
+        Returns:
+            not defined yet
+
+        Command: ``tool.create.bull``
+        """
+        return self.execute("tool.create.bull")
+
+    def tool_create_chamfer(self) -> Any:
+        """Chamfer mill tools are not supported yet.
+
+        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+
+        Returns:
+            not defined yet
+
+        Command: ``tool.create.chamfer``
+        """
+        return self.execute("tool.create.chamfer")
+
+    def tool_create_drill(self) -> Any:
+        """Drill tools are not supported yet.
+
+        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+
+        Returns:
+            not defined yet
+
+        Command: ``tool.create.drill``
+        """
+        return self.execute("tool.create.drill")
+
+    def tool_create_spot_drill(self) -> Any:
+        """Spot drill tools are not supported yet.
+
+        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+
+        Returns:
+            not defined yet
+
+        Command: ``tool.create.spot_drill``
+        """
+        return self.execute("tool.create.spot_drill")
+
+    def tool_create_face_mill(self) -> Any:
+        """Face mill tools are not supported yet.
+
+        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+
+        Returns:
+            not defined yet
+
+        Command: ``tool.create.face_mill``
+        """
+        return self.execute("tool.create.face_mill")
+
+    def tool_create_tap(self) -> Any:
+        """Tap tools are not supported yet.
+
+        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+
+        Returns:
+            not defined yet
+
+        Command: ``tool.create.tap``
+        """
+        return self.execute("tool.create.tap")
+
+    def tool_create_thread_mill(self) -> Any:
+        """Thread mill tools are not supported yet.
+
+        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+
+        Returns:
+            not defined yet
+
+        Command: ``tool.create.thread_mill``
+        """
+        return self.execute("tool.create.thread_mill")
+
+    def tool_edit(self, *, number: int, new_number: Optional[int] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond"]] = None, coating: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Change a tool's geometry, cutting data or number.
+
+        Args:
+            number: The tool to change (1 to 9999).
+            new_number: Renumber the tool (1 to 9999).
+            name: Description shown in the library (default: Ø<d> flat end mill).
+            diameter: Cutting diameter, mm (0.001 to 2000 mm).
+            flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
+            flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond.
+            coating: Coating, e.g. TiAlN.
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+        Command: ``tool.edit``
+        """
+        params = {"number": number, "new_number": new_number, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.edit", {k: v for k, v in params.items() if v is not None})
+
+    def tool_feeds(self, *, number: int, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, machine: Optional[str] = None) -> Any:
+        """Set a tool's spindle speed, feeds and depths of cut.
+
+        Args:
+            number: The tool (1 to 9999).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+        Command: ``tool.feeds``
+        """
+        params = {"number": number, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "machine": machine}
+        return self.execute("tool.feeds", {k: v for k, v in params.items() if v is not None})
+
+    def tool_duplicate(self, *, number: int, new_number: Optional[int] = None, machine: Optional[str] = None) -> Any:
+        """Copy a tool under a new number.
+
+        Args:
+            number: The tool to copy (1 to 9999).
+            new_number: Number of the copy (default: the lowest free one) (1 to 9999).
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+        Command: ``tool.duplicate``
+        """
+        params = {"number": number, "new_number": new_number, "machine": machine}
+        return self.execute("tool.duplicate", {k: v for k, v in params.items() if v is not None})
+
+    def tool_remove(self, *, number: int, machine: Optional[str] = None) -> Any:
+        """Delete a tool from the library.
+
+        Args:
+            number: The tool to delete (1 to 9999).
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            {"removed": tool id}
+
+        Command: ``tool.remove``
+        """
+        params = {"number": number, "machine": machine}
+        return self.execute("tool.remove", {k: v for k, v in params.items() if v is not None})
+
+    def tool_list(self, *, machine: Optional[str] = None) -> Any:
+        """The tools in a machine's library.
+
+        Args:
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            list of tools, as tool.get returns them, by number
+
+        Command: ``tool.list``
+        """
+        params = {"machine": machine}
+        return self.execute("tool.list", {k: v for k, v in params.items() if v is not None})
+
+    def tool_get(self, *, number: int, machine: Optional[str] = None) -> Any:
+        """One tool from a machine's library.
+
+        Args:
+            number: Tool number (1 to 9999).
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+        Command: ``tool.get``
+        """
+        params = {"number": number, "machine": machine}
+        return self.execute("tool.get", {k: v for k, v in params.items() if v is not None})
+
+    def tool_library_open(self) -> Any:
+        """Show the active machine's tool library.
+
+        Returns:
+            {"pane": "library"}
+
+        Command: ``tool.library.open``
+        """
+        return self.execute("tool.library.open")
+
+    def tool_library_import(self, *, path: str, replace: Optional[bool] = None, machine: Optional[str] = None) -> Any:
+        """Add tools from a tool library file (.json) to the active machine.
+
+        Args:
+            path: Tool library file written by tool.library.export.
+            replace: Overwrite tools with the same numbers (default false).
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            {"imported": count, "machine": id}
+
+        Command: ``tool.library.import``
+        """
+        params = {"path": path, "replace": replace, "machine": machine}
+        return self.execute("tool.library.import", {k: v for k, v in params.items() if v is not None})
+
+    def tool_library_export(self, *, path: str, machine: Optional[str] = None) -> Any:
+        """Write the active machine's tool library to a file (.json).
+
+        Args:
+            path: File to write.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            {"exported": count, "path": path}
+
+        Command: ``tool.library.export``
+        """
+        params = {"path": path, "machine": machine}
+        return self.execute("tool.library.export", {k: v for k, v in params.items() if v is not None})
+
+    def machine_create(self, *, activate: Optional[bool] = None, name: Optional[str] = None, description: Optional[str] = None, kind: Optional[Literal["mill_3axis"]] = None, travel_x: Optional[float] = None, travel_y: Optional[float] = None, travel_z: Optional[float] = None, max_spindle_rpm: Optional[float] = None, max_feed: Optional[float] = None, tool_capacity: Optional[int] = None) -> Any:
+        """Add a machine configuration with its own, empty tool library.
+
+        Args:
+            activate: Make it the active machine (default true).
+            name: Machine name.
+            description: Notes about the machine.
+            kind: Machine type (3-axis mill for now) — one of mill_3axis.
+            travel_x: X travel, mm (0.001 to 1e5 mm).
+            travel_y: Y travel, mm (0.001 to 1e5 mm).
+            travel_z: Z travel, mm (0.001 to 1e5 mm).
+            max_spindle_rpm: Highest spindle speed, rpm (1 to 5e5).
+            max_feed: Fastest cutting feed, mm/min (0.001 to 1e6 mm/min).
+            tool_capacity: Tool changer pockets (0 = manual tool changes) (0 to 9999).
+
+        Returns:
+            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+
+        Command: ``machine.create``
+        """
+        params = {"activate": activate, "name": name, "description": description, "kind": kind, "travel_x": travel_x, "travel_y": travel_y, "travel_z": travel_z, "max_spindle_rpm": max_spindle_rpm, "max_feed": max_feed, "tool_capacity": tool_capacity}
+        return self.execute("machine.create", {k: v for k, v in params.items() if v is not None})
+
+    def machine_edit(self, *, id: Optional[str] = None, name: Optional[str] = None, description: Optional[str] = None, kind: Optional[Literal["mill_3axis"]] = None, travel_x: Optional[float] = None, travel_y: Optional[float] = None, travel_z: Optional[float] = None, max_spindle_rpm: Optional[float] = None, max_feed: Optional[float] = None, tool_capacity: Optional[int] = None) -> Any:
+        """Change a machine's name, travel and limits.
+
+        Args:
+            id: Machine id, e.g. machine.1 (default: the active machine).
+            name: Machine name.
+            description: Notes about the machine.
+            kind: Machine type (3-axis mill for now) — one of mill_3axis.
+            travel_x: X travel, mm (0.001 to 1e5 mm).
+            travel_y: Y travel, mm (0.001 to 1e5 mm).
+            travel_z: Z travel, mm (0.001 to 1e5 mm).
+            max_spindle_rpm: Highest spindle speed, rpm (1 to 5e5).
+            max_feed: Fastest cutting feed, mm/min (0.001 to 1e6 mm/min).
+            tool_capacity: Tool changer pockets (0 = manual tool changes) (0 to 9999).
+
+        Returns:
+            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+
+        Command: ``machine.edit``
+        """
+        params = {"id": id, "name": name, "description": description, "kind": kind, "travel_x": travel_x, "travel_y": travel_y, "travel_z": travel_z, "max_spindle_rpm": max_spindle_rpm, "max_feed": max_feed, "tool_capacity": tool_capacity}
+        return self.execute("machine.edit", {k: v for k, v in params.items() if v is not None})
+
+    def machine_duplicate(self, *, id: Optional[str] = None, name: Optional[str] = None) -> Any:
+        """Copy a machine and its whole tool library under a new name.
+
+        Args:
+            id: Machine id, e.g. machine.1 (default: the active machine).
+            name: Name of the copy (default: <name> copy).
+
+        Returns:
+            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+
+        Command: ``machine.duplicate``
+        """
+        params = {"id": id, "name": name}
+        return self.execute("machine.duplicate", {k: v for k, v in params.items() if v is not None})
+
+    def machine_remove(self, *, id: str) -> Any:
+        """Delete a machine and its tool library.
+
+        Args:
+            id: Machine id, e.g. machine.2.
+
+        Returns:
+            {"removed": id, "active": id}
+
+        Command: ``machine.remove``
+        """
+        params = {"id": id}
+        return self.execute("machine.remove", {k: v for k, v in params.items() if v is not None})
+
+    def machine_activate(self, *, id: str) -> Any:
+        """Work with this machine and its tool library.
+
+        Args:
+            id: Machine id, e.g. machine.1.
+
+        Returns:
+            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+
+        Command: ``machine.activate``
+        """
+        params = {"id": id}
+        return self.execute("machine.activate", {k: v for k, v in params.items() if v is not None})
+
+    def machine_list(self) -> Any:
+        """Every machine configuration.
+
+        Returns:
+            list of machines {id, name, ..., active, tools}
+
+        Command: ``machine.list``
+        """
+        return self.execute("machine.list")
+
+    def machine_get(self, *, id: Optional[str] = None) -> Any:
+        """One machine configuration.
+
+        Args:
+            id: Machine id, e.g. machine.1 (default: the active machine).
+
+        Returns:
+            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+
+        Command: ``machine.get``
+        """
+        params = {"id": id}
+        return self.execute("machine.get", {k: v for k, v in params.items() if v is not None})
+
+    def machine_library_open(self) -> Any:
+        """Show the machine and tool library pane.
+
+        Returns:
+            {"pane": "library"}
+
+        Command: ``machine.library.open``
+        """
+        return self.execute("machine.library.open")
+
+    def settings_open(self) -> Any:
+        """Units and other preferences.
+
+        Returns:
+            {units, theme, fps_limit}
+
+        Command: ``settings.open``
+        """
+        return self.execute("settings.open")
+
+    def settings_get(self) -> Any:
+        """The current preferences.
+
+        Returns:
+            {units, theme, fps_limit}
+
+        Command: ``settings.get``
+        """
+        return self.execute("settings.get")
+
+    def settings_units_set(self, *, units: Literal["in", "mm"]) -> Any:
+        """Show lengths and feeds in millimetres or inches (commands always use millimetres).
+
+        Args:
+            units: in or mm — one of in, mm.
+
+        Returns:
+            {units, theme, fps_limit}
+
+        Command: ``settings.units.set``
+        """
+        params = {"units": units}
+        return self.execute("settings.units.set", {k: v for k, v in params.items() if v is not None})

@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use CosmicCAM_engine::{Session, Theme, UiRequest, cmd};
+use CosmicCAM_engine::{Pane, Session, Theme, UiRequest, cmd};
 use egui::{Event, Key, KeyboardShortcut, Modifiers, RichText, Ui, UserData, ViewportCommand, vec2};
 use egui_dock::{DockArea, DockState, Style};
 use egui_wgpu::RenderState;
@@ -13,7 +13,7 @@ use crate::Request;
 use crate::automation::{self, Automation};
 use crate::control::{ControlServer, Incoming, PROTOCOL_VERSION};
 use crate::dock::{self, Tab};
-use crate::panes::ConsoleState;
+use crate::panes::{ConsoleState, LibraryState};
 use crate::ribbon;
 use crate::theme::{self, Tokens};
 use crate::tools::{self, Tools};
@@ -50,6 +50,12 @@ pub struct CosmicApp {
     layout_generation: u64,
     viewport: Viewport,
     console: ConsoleState,
+    /// The tool library window: open or not, and its preview state.
+    library_open: bool,
+    settings_open: bool,
+    /// Preferences revision last written to storage.
+    saved_prefs: u64,
+    library: LibraryState,
     tools: Tools,
     render_state: Option<RenderState>,
     applied_theme: Option<Theme>,
@@ -62,12 +68,51 @@ pub struct CosmicApp {
     capture_requested: bool,
     /// Frames a pending capture has waited for the view to settle.
     capture_wait: u32,
+    /// Library revision last written to storage.
+    saved_library: u64,
 }
+
+/// Storage key of the machine and tool library (a file on the desktop, localStorage on the web).
+const LIBRARY_KEY: &str = "cosmiccam.library";
+/// Storage key of the preferences.
+const SETTINGS_KEY: &str = "cosmiccam.settings";
 
 impl CosmicApp {
     pub fn new(cc: &eframe::CreationContext<'_>, mut session: Session, options: LaunchOptions) -> Self {
         let LaunchOptions { automation, control_port } = options;
         let layout_generation = session.view.layout_generation;
+        let mut startup_status = None;
+        if let Some(text) = cc.storage.and_then(|s| s.get_string(LIBRARY_KEY)) {
+            let loaded =
+                serde_json::from_str::<Value>(&text).map_err(|e| e.to_string()).and_then(|v| session.load_library(&v));
+            match loaded {
+                Ok(dropped) if dropped.is_empty() => {}
+                Ok(dropped) => {
+                    log::warn!("machine library: dropped {} invalid entries: {}", dropped.len(), dropped.join("; "));
+                    startup_status =
+                        Some(format!("Some saved tools could not be read and were skipped: {}", dropped.join("; ")));
+                }
+                Err(e) => {
+                    log::warn!("machine library not loaded: {e}");
+                    startup_status = Some(format!(
+                        "The saved machine library could not be read ({e}); starting with a generic machine"
+                    ));
+                }
+            }
+        }
+        let saved_library = session.library.revision;
+        // Saved preferences: the display units.
+        if let Some(units) = cc
+            .storage
+            .and_then(|s| s.get_string(SETTINGS_KEY))
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+            .and_then(|v| {
+                v.get("units").and_then(Value::as_str).and_then(CosmicCAM_engine::units::DisplayUnits::from_id)
+            })
+        {
+            session.prefs.units = units;
+        }
+        let saved_prefs = session.prefs.revision;
         if let Some(tab) = &automation.ribbon_tab {
             let _ = session.execute("ui.ribbon.tab.set", &json!({ "tab": tab.to_lowercase() }));
         }
@@ -94,16 +139,21 @@ impl CosmicApp {
             layout_generation,
             viewport: Viewport::new(),
             console: ConsoleState::default(),
+            library_open: false,
+            settings_open: false,
+            saved_prefs,
+            library: LibraryState::default(),
             tools: Tools::default(),
             render_state: cc.wgpu_render_state.clone(),
             applied_theme: None,
-            status: None,
+            status: startup_status,
             shortcuts: cmd::all().filter_map(|c| Some((parse_shortcut(c.shortcut?)?, c.id))).collect(),
             automation,
             control,
             captures: Vec::new(),
             capture_requested: false,
             capture_wait: 0,
+            saved_library,
         }
     }
 
@@ -111,6 +161,11 @@ impl CosmicApp {
     /// with an interactive tool, run without parameters (a toolbar click or shortcut),
     /// starts that tool instead.
     pub fn run(&mut self, id: &str, params: &Value) {
+        // The settings button opens the settings window; scripts get the settings back.
+        if params.is_null() && id == "settings.open" {
+            self.settings_open = true;
+            return;
+        }
         if params.is_null() && tools::has_start(id) {
             self.status = self.tools.start(id, &self.session).err();
             return;
@@ -189,6 +244,9 @@ impl CosmicApp {
     fn apply_ui_requests(&mut self, ctx: &egui::Context) {
         for request in self.session.take_ui_requests() {
             match request {
+                // The tool library is a window, not a dock pane.
+                UiRequest::ShowPane(Pane::Library) | UiRequest::FocusPane(Pane::Library) => self.library_open = true,
+                UiRequest::HidePane(Pane::Library) => self.library_open = false,
                 UiRequest::ShowPane(p) => dock::show(&mut self.dock, p),
                 UiRequest::HidePane(p) => dock::hide(&mut self.dock, p),
                 UiRequest::FocusPane(p) => dock::focus(&mut self.dock, p),
@@ -200,7 +258,11 @@ impl CosmicApp {
                 UiRequest::Quit => ctx.send_viewport_cmd(ViewportCommand::Close),
             }
         }
-        self.session.set_open_panes(dock::open_panes(&self.dock));
+        let mut open = dock::open_panes(&self.dock);
+        if self.library_open {
+            open.push(Pane::Library);
+        }
+        self.session.set_open_panes(open);
     }
 
     /// Requests a capture while any is pending and saves it when the image arrives.
@@ -302,7 +364,15 @@ impl eframe::App for CosmicApp {
         self.apply_ui_requests(ctx);
     }
 
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    /// Also written every few seconds by eframe and on exit.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        storage.set_string(LIBRARY_KEY, self.session.library_json().to_string());
+        storage.set_string(SETTINGS_KEY, json!({ "units": self.session.prefs.units.id() }).to_string());
+        self.saved_library = self.session.library.revision;
+        self.saved_prefs = self.session.prefs.revision;
+    }
+
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let tokens: &'static Tokens = Tokens::for_theme(self.session.prefs.theme);
         if self.applied_theme != Some(self.session.prefs.theme) {
@@ -341,11 +411,12 @@ impl eframe::App for CosmicApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
                         RichText::new(format!(
-                            "{} theme  ·  mm  ·  Z up  ·  {fps:.0} fps",
+                            "{} theme  ·  {}  ·  Z up  ·  {fps:.0} fps",
                             match self.session.prefs.theme {
                                 Theme::Dark => "Dark",
                                 Theme::Light => "Light",
-                            }
+                            },
+                            self.session.prefs.units.length()
                         ))
                         .color(tokens.text_muted),
                     );
@@ -383,8 +454,50 @@ impl eframe::App for CosmicApp {
                 .show_inside(ui, &mut viewer);
         });
 
+        if self.settings_open {
+            let mut open = true;
+            let units = self.session.prefs.units;
+            crate::ui_kit::Window::dialog("Settings").show(&ctx, tokens, &mut open, |ui| {
+                ui.set_min_width(300.0);
+                ui.label(RichText::new("Units").strong());
+                ui.label(
+                    RichText::new(
+                        "Lengths, positions and feeds are shown and typed in these units everywhere in the app. \
+                                   Scripts and the API always use millimetres.",
+                    )
+                    .small()
+                    .color(tokens.text_muted),
+                );
+                for choice in
+                    [CosmicCAM_engine::units::DisplayUnits::Inches, CosmicCAM_engine::units::DisplayUnits::Millimetres]
+                {
+                    if ui.radio(units == choice, choice.label()).clicked() && units != choice {
+                        requests.push(("settings.units.set".into(), json!({ "units": choice.id() })));
+                    }
+                }
+                ui.add_space(8.0);
+                if ui.button("Close").clicked() {
+                    self.settings_open = false;
+                }
+            });
+            self.settings_open &= open;
+        }
+        if self.library_open {
+            let mut open = true;
+            crate::ui_kit::Window::browser("Tool library", vec2(860.0, 460.0)).show(&ctx, tokens, &mut open, |ui| {
+                crate::panes::library(ui, &self.session, tokens, &mut self.library, &mut requests);
+            });
+            self.library_open = open;
+        }
         for (id, params) in requests {
             self.run(&id, &params);
+        }
+        // A changed library is written straight away, so a crash cannot lose a tool.
+        if (self.session.library.revision != self.saved_library || self.session.prefs.revision != self.saved_prefs)
+            && let Some(storage) = frame.storage_mut()
+        {
+            self.save(storage);
+            storage.flush();
         }
         if let Some(hit) = self.viewport.take_pick() {
             self.tools.picked(hit, &self.session);

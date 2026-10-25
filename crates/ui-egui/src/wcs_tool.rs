@@ -42,11 +42,11 @@ enum Picked {
 }
 
 impl Picked {
-    fn describe(&self) -> String {
+    fn describe(&self, units: CosmicCAM_engine::units::DisplayUnits) -> String {
         match self {
             Self::Face { model, face, .. } => format!("{model} face {face}"),
             Self::Edge { model, edge } => format!("{model} edge {edge}"),
-            Self::Point(p) => format!("{:.2}, {:.2}, {:.2}", p.x, p.y, p.z),
+            Self::Point(p) => units.fmt_point(p.to_array()),
         }
     }
 }
@@ -68,6 +68,8 @@ pub struct WcsTool {
     preview: Option<(Vec3, [Vec3; 3])>,
     error: Option<String>,
     open: bool,
+    /// The user's display units, for picked points.
+    units: CosmicCAM_engine::units::DisplayUnits,
 }
 
 impl WcsTool {
@@ -96,6 +98,7 @@ impl WcsTool {
             preview: None,
             error: None,
             open: true,
+            units: session.prefs.units,
         };
         tool.active = tool.next_empty();
         tool.refresh_preview(session);
@@ -288,6 +291,7 @@ impl WcsTool {
 
     /// Draws the panel. Returns the command to run when the user confirms.
     pub fn show(&mut self, ctx: &egui::Context, tokens: &Tokens, session: &Session) -> Option<Request> {
+        self.units = session.prefs.units;
         let mut open = self.open;
         let mut cancel = false;
         let mut changed = false;
@@ -420,7 +424,8 @@ impl WcsTool {
     /// reverses the axis it sets. True when something changed.
     fn slot_row(&mut self, ui: &mut Ui, tokens: &Tokens, key: &'static str, label: &str, flip: Option<usize>) -> bool {
         let active = self.active == Some(key);
-        let status = self.picks.get(key).map_or_else(|| "click to select".to_owned(), Picked::describe);
+        let units = self.units;
+        let status = self.picks.get(key).map_or_else(|| "click to select".to_owned(), |p| p.describe(units));
         let text = RichText::new(format!("{label}: {status}"));
         let text = if active { text.color(tokens.accent).strong() } else { text };
         let mut changed = false;

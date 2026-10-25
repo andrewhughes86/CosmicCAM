@@ -32,6 +32,14 @@ cc = cosmiccam.connect(5800)              # token from $CosmicCAM_CONTROL_TOKEN 
 `launch()` finds the executable through `$COSMICCAM_EXECUTABLE`, then `CosmicCAM` on `PATH`,
 then `target/release` in this checkout.
 
+## Units
+
+Commands take and return **millimetres** (and mm/min for feeds), always. The units preference
+(`cc.settings_units_set(units="in")`, or Settings on the Home tab; inches by default) only
+changes what the app shows and what its dialogs accept, so a script means the same thing on
+every machine. Parameters that are lengths or feeds say so in their schema (`"unit": "mm"` or
+`"mm/min"` in `command.describe`).
+
 ## Calling commands
 
 ```python
@@ -144,6 +152,40 @@ cc.setup_wcs_create(origin="stock", origin_box="top_front_left")
 
 The sample part comes with stock; importing a model replaces the sample and its stock.
 
+## Machines and tool libraries
+
+Every machine configuration owns its own tool library. Open it with `cc.tool_library_open()`
+(its own window in the app, with a to-scale preview of the tool under the pointer). The active machine is the one the
+Tooling tab and the tool commands work on; switch with `machine.activate`. The library is kept
+across jobs and saved by the app after every change (a file in the user data folder on the
+desktop, browser storage on the web). A new installation starts with one "Generic 3-axis mill".
+
+```python
+router = cc.machine_create(name="Router", travel_x=1200, travel_y=800, travel_z=150,
+                           max_spindle_rpm=24000, max_feed=15000, tool_capacity=8)
+cc.tool_create_flat(diameter=6, flutes=3, flute_length=18, overall_length=50,
+                    spindle_rpm=12000, feed=1200, plunge_feed=300, stepover=2, stepdown=6)
+cc.tool_create_flat(diameter=3.175, flutes=2, name="1/8in upcut", number=5)
+for t in cc.tool_list():
+    print(t["number"], t["name"], t["diameter"])
+cc.tool_feeds(number=5, spindle_rpm=18000, feed=900)
+cc.tool_edit(number=5, new_number=6)            # renumber
+cc.tool_duplicate(number=6)                     # copy to the lowest free number
+cc.tool_library_export(path="router-tools.json")
+cc.machine_duplicate(name="Router (spare)")     # a copy with the whole library
+cc.machine_activate(id="machine.1")
+cc.tool_library_import(path="router-tools.json", replace=True)
+```
+
+Only flat end mills can be created so far. Ball, bull nose, chamfer, drill, spot drill, face
+mill, tap and thread mill are listed (`tool.create.ball`, …) and report "not supported yet".
+Tools are checked against their machine: a spindle speed or feed above the machine's limits
+is refused, and so is lowering a machine's limits below a tool in its library. Tools are named
+`<machine id>/tool.<number>` for `selection.set`, so the inspector can show one.
+
+Controller dialect and post-processing are part of the Python machine configurations planned
+for Phase 8; a machine's `post` field will name its post module.
+
 ## Selecting geometry
 
 Clicking in the viewport selects what is under the pointer: a vertex (corner) if one is close,
@@ -198,7 +240,7 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-94 commands in 14 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+114 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.outline.get`](#joboutlineget), [`job.open`](#jobopen), [`job.save`](#jobsave)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
@@ -210,10 +252,12 @@ with cosmiccam.launch(sample=True) as cc:
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
-- **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.feeds`](#toolfeeds), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
 - **toolpath**: [`toolpath.pocket`](#toolpathpocket), [`toolpath.profile`](#toolpathprofile), [`toolpath.drill`](#toolpathdrill), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
 - **sim**: [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.speed`](#simspeed), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
 - **post**: [`post.processor.select`](#postprocessorselect), [`post.limits.check`](#postlimitscheck), [`post.gcode.export`](#postgcodeexport)
+- **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.create.spot_drill`](#toolcreatespot_drill), [`tool.create.face_mill`](#toolcreateface_mill), [`tool.create.tap`](#toolcreatetap), [`tool.create.thread_mill`](#toolcreatethread_mill), [`tool.edit`](#tooledit), [`tool.feeds`](#toolfeeds), [`tool.duplicate`](#toolduplicate), [`tool.remove`](#toolremove), [`tool.list`](#toollist), [`tool.get`](#toolget), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
+- **machine**: [`machine.create`](#machinecreate), [`machine.edit`](#machineedit), [`machine.duplicate`](#machineduplicate), [`machine.remove`](#machineremove), [`machine.activate`](#machineactivate), [`machine.list`](#machinelist), [`machine.get`](#machineget), [`machine.library.open`](#machinelibraryopen)
+- **settings**: [`settings.open`](#settingsopen), [`settings.get`](#settingsget), [`settings.units.set`](#settingsunitsset)
 
 ### job
 
@@ -516,7 +560,7 @@ The visible edge passing closest to a ray, as a click in the viewport picks it.
 | --- | --- | --- | --- |
 | `origin` | vec3 | yes | Ray start, world mm — [x, y, z] in mm |
 | `direction` | vec3 | yes | Ray direction — [x, y, z] in mm |
-| `radius` | number | no | How far from the ray an edge may be, mm (default 1) (0.0001 to 1e6) |
+| `radius` | number | no | How far from the ray an edge may be, mm (default 1) (0.0001 to 1e6 mm) |
 
 Returns: {edge, model, kind, length, direction, ...} for the edge found, or null
 
@@ -548,7 +592,7 @@ The visible vertex closest to a ray.
 | --- | --- | --- | --- |
 | `origin` | vec3 | yes | Ray start, world mm — [x, y, z] in mm |
 | `direction` | vec3 | yes | Ray direction — [x, y, z] in mm |
-| `radius` | number | no | How far from the ray a vertex may be, mm (default 1) (0.0001 to 1e6) |
+| `radius` | number | no | How far from the ray a vertex may be, mm (default 1) (0.0001 to 1e6 mm) |
 
 Returns: {vertex, model, kind, position} for the vertex found, or null
 
@@ -811,9 +855,9 @@ Size the stock box to the models' bounding box, plus margins.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `margin_sides` | number | no | Extra material on the four sides, mm (default 0) (0 to 10000) |
-| `margin_top` | number | no | Extra material on top, mm (default 0) (0 to 10000) |
-| `margin_bottom` | number | no | Extra material underneath, mm (default 0) (0 to 10000) |
+| `margin_sides` | number | no | Extra material on the four sides, mm (default 0) (0 to 10000 mm) |
+| `margin_top` | number | no | Extra material on top, mm (default 0) (0 to 10000 mm) |
+| `margin_bottom` | number | no | Extra material underneath, mm (default 0) (0 to 10000 mm) |
 
 Returns: the stock {shape, min, max, size}
 
@@ -1002,8 +1046,8 @@ Slide the camera and its target across the screen.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `right` | number | no | Millimetres towards screen right (-1e9 to 1e9) |
-| `up` | number | no | Millimetres towards screen top (-1e9 to 1e9) |
+| `right` | number | no | Millimetres towards screen right (-1e9 to 1e9 mm) |
+| `up` | number | no | Millimetres towards screen top (-1e9 to 1e9 mm) |
 
 Returns: camera {target, distance, yaw, pitch, projection, eye}
 
@@ -1165,7 +1209,7 @@ Show a ribbon tab.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `tab` | choice | yes | Ribbon tab — one of home, setup, tooling, toolpaths, simulation, export |
+| `tab` | choice | yes | Ribbon tab — one of home, setup, machine, tooling, toolpaths, simulation, export |
 
 Returns: {"tab": id}
 
@@ -1180,7 +1224,7 @@ Open a workspace pane (it is docked back if it was closed).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pane` | choice | yes | Workspace pane — one of viewport, explorer, inspector, console |
+| `pane` | choice | yes | Workspace pane — one of viewport, explorer, inspector, console, library |
 
 Returns: {"pane": id}
 
@@ -1195,7 +1239,7 @@ Close a workspace pane (the viewport always stays).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pane` | choice | yes | Workspace pane — one of viewport, explorer, inspector, console |
+| `pane` | choice | yes | Workspace pane — one of viewport, explorer, inspector, console, library |
 
 Returns: {"pane": id}
 
@@ -1210,7 +1254,7 @@ Bring a pane to the front of its tab stack, opening it if needed.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `pane` | choice | yes | Workspace pane — one of viewport, explorer, inspector, console |
+| `pane` | choice | yes | Workspace pane — one of viewport, explorer, inspector, console, library |
 
 Returns: {"pane": id}
 
@@ -1277,129 +1321,6 @@ Close CosmicCAM.
 Returns: null
 
 <sub>shortcut `Ctrl+Q`</sub>
-
-
-### tool
-
-#### `tool.create`
-
-```python
-cc.tool_create()
-```
-
-Define a cutting tool (Phase 4).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Tooling › Tools</sub>
-
-#### `tool.create.flat`
-
-```python
-cc.tool_create_flat()
-```
-
-Define a flat end mill (Phase 4).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-#### `tool.create.ball`
-
-```python
-cc.tool_create_ball()
-```
-
-Define a ball nose cutter (Phase 4).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-#### `tool.create.bull`
-
-```python
-cc.tool_create_bull()
-```
-
-Define a corner radius cutter (Phase 4).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-#### `tool.create.chamfer`
-
-```python
-cc.tool_create_chamfer()
-```
-
-Define a chamfer mill (Phase 4).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-#### `tool.create.drill`
-
-```python
-cc.tool_create_drill()
-```
-
-Define a drill (Phase 4).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-#### `tool.feeds`
-
-```python
-cc.tool_feeds()
-```
-
-Spindle speed, feed, plunge and stepover per tool (Phase 4).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Tooling › Tools</sub>
-
-#### `tool.library.open`
-
-```python
-cc.tool_library_open()
-```
-
-Browse and edit tool libraries (Phase 4).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Tooling › Library</sub>
-
-#### `tool.library.import`
-
-```python
-cc.tool_library_import()
-```
-
-Load a tool library file (Phase 4).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Tooling › Library</sub>
-
-#### `tool.library.export`
-
-```python
-cc.tool_library_export()
-```
-
-Save a tool library file (Phase 4).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Tooling › Library</sub>
 
 
 ### toolpath
@@ -1604,4 +1525,514 @@ Write .nc / .gcode for the machine (Phase 8).
 Returns: not defined yet
 
 <sub>ribbon: Export › Post</sub>
+
+
+### tool
+
+#### `tool.create`
+
+```python
+cc.tool_create(type=None, number=None, name=None, diameter=None, flutes=None, flute_length=None, overall_length=None, shank_diameter=None, material=None, coating=None, spindle_rpm=None, feed=None, plunge_feed=None, stepover=None, stepdown=None, length_offset=None, diameter_offset=None, notes=None, machine=None)
+```
+
+Add a cutting tool to the active machine's library.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `type` | choice | no | Tool type (default flat; only flat end mills so far) — one of flat, ball, bull, chamfer, drill, spot_drill, face_mill, tap, thread_mill |
+| `number` | integer | no | Tool number (default: the lowest free one) (1 to 9999) |
+| `name` | string | no | Description shown in the library (default: Ø<d> flat end mill) |
+| `diameter` | number | no | Cutting diameter, mm (0.001 to 2000 mm) |
+| `flutes` | integer | no | Number of flutes (default 3, 2 below Ø3) (1 to 32) |
+| `flute_length` | number | no | Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm) |
+| `overall_length` | number | no | Stick-out from the holder to the tip, mm (0.001 to 2000 mm) |
+| `shank_diameter` | number | no | Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm) |
+| `material` | choice | no | Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond |
+| `coating` | string | no | Coating, e.g. TiAlN |
+| `spindle_rpm` | number | no | Spindle speed, rpm (0 = not set) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min) |
+| `stepover` | number | no | Radial depth of cut, mm (0 = not set) (0 to 2000 mm) |
+| `stepdown` | number | no | Axial depth of cut, mm (0 = not set) (0 to 2000 mm) |
+| `length_offset` | integer | no | Length offset register (default: the tool number) (0 to 9999) |
+| `diameter_offset` | integer | no | Diameter offset register (default: the tool number) (0 to 9999) |
+| `notes` | string | no | Free notes |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+<sub>ribbon: Tooling › Tools</sub>
+
+#### `tool.create.flat`
+
+```python
+cc.tool_create_flat(number=None, name=None, diameter=None, flutes=None, flute_length=None, overall_length=None, shank_diameter=None, material=None, coating=None, spindle_rpm=None, feed=None, plunge_feed=None, stepover=None, stepdown=None, length_offset=None, diameter_offset=None, notes=None, machine=None)
+```
+
+Add a flat (square corner) end mill to the active machine's library.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `number` | integer | no | Tool number (default: the lowest free one) (1 to 9999) |
+| `name` | string | no | Description shown in the library (default: Ø<d> flat end mill) |
+| `diameter` | number | no | Cutting diameter, mm (0.001 to 2000 mm) |
+| `flutes` | integer | no | Number of flutes (default 3, 2 below Ø3) (1 to 32) |
+| `flute_length` | number | no | Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm) |
+| `overall_length` | number | no | Stick-out from the holder to the tip, mm (0.001 to 2000 mm) |
+| `shank_diameter` | number | no | Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm) |
+| `material` | choice | no | Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond |
+| `coating` | string | no | Coating, e.g. TiAlN |
+| `spindle_rpm` | number | no | Spindle speed, rpm (0 = not set) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min) |
+| `stepover` | number | no | Radial depth of cut, mm (0 = not set) (0 to 2000 mm) |
+| `stepdown` | number | no | Axial depth of cut, mm (0 = not set) (0 to 2000 mm) |
+| `length_offset` | integer | no | Length offset register (default: the tool number) (0 to 9999) |
+| `diameter_offset` | integer | no | Diameter offset register (default: the tool number) (0 to 9999) |
+| `notes` | string | no | Free notes |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+#### `tool.create.ball`
+
+```python
+cc.tool_create_ball()
+```
+
+Ball nose tools are not supported yet.
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+#### `tool.create.bull`
+
+```python
+cc.tool_create_bull()
+```
+
+Bull nose tools are not supported yet.
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+#### `tool.create.chamfer`
+
+```python
+cc.tool_create_chamfer()
+```
+
+Chamfer mill tools are not supported yet.
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+#### `tool.create.drill`
+
+```python
+cc.tool_create_drill()
+```
+
+Drill tools are not supported yet.
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+#### `tool.create.spot_drill`
+
+```python
+cc.tool_create_spot_drill()
+```
+
+Spot drill tools are not supported yet.
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+#### `tool.create.face_mill`
+
+```python
+cc.tool_create_face_mill()
+```
+
+Face mill tools are not supported yet.
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+#### `tool.create.tap`
+
+```python
+cc.tool_create_tap()
+```
+
+Tap tools are not supported yet.
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+#### `tool.create.thread_mill`
+
+```python
+cc.tool_create_thread_mill()
+```
+
+Thread mill tools are not supported yet.
+ **Planned — not available yet.**
+
+Returns: not defined yet
+
+#### `tool.edit`
+
+```python
+cc.tool_edit(number=…, new_number=None, name=None, diameter=None, flutes=None, flute_length=None, overall_length=None, shank_diameter=None, material=None, coating=None, spindle_rpm=None, feed=None, plunge_feed=None, stepover=None, stepdown=None, length_offset=None, diameter_offset=None, notes=None, machine=None)
+```
+
+Change a tool's geometry, cutting data or number.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `number` | integer | yes | The tool to change (1 to 9999) |
+| `new_number` | integer | no | Renumber the tool (1 to 9999) |
+| `name` | string | no | Description shown in the library (default: Ø<d> flat end mill) |
+| `diameter` | number | no | Cutting diameter, mm (0.001 to 2000 mm) |
+| `flutes` | integer | no | Number of flutes (default 3, 2 below Ø3) (1 to 32) |
+| `flute_length` | number | no | Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm) |
+| `overall_length` | number | no | Stick-out from the holder to the tip, mm (0.001 to 2000 mm) |
+| `shank_diameter` | number | no | Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm) |
+| `material` | choice | no | Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond |
+| `coating` | string | no | Coating, e.g. TiAlN |
+| `spindle_rpm` | number | no | Spindle speed, rpm (0 = not set) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min) |
+| `stepover` | number | no | Radial depth of cut, mm (0 = not set) (0 to 2000 mm) |
+| `stepdown` | number | no | Axial depth of cut, mm (0 = not set) (0 to 2000 mm) |
+| `length_offset` | integer | no | Length offset register (default: the tool number) (0 to 9999) |
+| `diameter_offset` | integer | no | Diameter offset register (default: the tool number) (0 to 9999) |
+| `notes` | string | no | Free notes |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+#### `tool.feeds`
+
+```python
+cc.tool_feeds(number=…, spindle_rpm=None, feed=None, plunge_feed=None, stepover=None, stepdown=None, machine=None)
+```
+
+Set a tool's spindle speed, feeds and depths of cut.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `number` | integer | yes | The tool (1 to 9999) |
+| `spindle_rpm` | number | no | Spindle speed, rpm (0 = not set) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min) |
+| `stepover` | number | no | Radial depth of cut, mm (0 = not set) (0 to 2000 mm) |
+| `stepdown` | number | no | Axial depth of cut, mm (0 = not set) (0 to 2000 mm) |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+<sub>ribbon: Tooling › Tools</sub>
+
+#### `tool.duplicate`
+
+```python
+cc.tool_duplicate(number=…, new_number=None, machine=None)
+```
+
+Copy a tool under a new number.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `number` | integer | yes | The tool to copy (1 to 9999) |
+| `new_number` | integer | no | Number of the copy (default: the lowest free one) (1 to 9999) |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+#### `tool.remove`
+
+```python
+cc.tool_remove(number=…, machine=None)
+```
+
+Delete a tool from the library.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `number` | integer | yes | The tool to delete (1 to 9999) |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: {"removed": tool id}
+
+#### `tool.list`
+
+```python
+cc.tool_list(machine=None)
+```
+
+The tools in a machine's library.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: list of tools, as tool.get returns them, by number
+
+#### `tool.get`
+
+```python
+cc.tool_get(number=…, machine=None)
+```
+
+One tool from a machine's library.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `number` | integer | yes | Tool number (1 to 9999) |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+
+#### `tool.library.open`
+
+```python
+cc.tool_library_open()
+```
+
+Show the active machine's tool library.
+
+
+Returns: {"pane": "library"}
+
+<sub>ribbon: Tooling › Library</sub>
+
+#### `tool.library.import`
+
+```python
+cc.tool_library_import(path=…, replace=None, machine=None)
+```
+
+Add tools from a tool library file (.json) to the active machine.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | string | yes | Tool library file written by tool.library.export |
+| `replace` | bool | no | Overwrite tools with the same numbers (default false) |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: {"imported": count, "machine": id}
+
+<sub>ribbon: Tooling › Library</sub>
+
+#### `tool.library.export`
+
+```python
+cc.tool_library_export(path=…, machine=None)
+```
+
+Write the active machine's tool library to a file (.json).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | string | yes | File to write |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: {"exported": count, "path": path}
+
+<sub>ribbon: Tooling › Library</sub>
+
+
+### machine
+
+#### `machine.create`
+
+```python
+cc.machine_create(activate=None, name=None, description=None, kind=None, travel_x=None, travel_y=None, travel_z=None, max_spindle_rpm=None, max_feed=None, tool_capacity=None)
+```
+
+Add a machine configuration with its own, empty tool library.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `activate` | bool | no | Make it the active machine (default true) |
+| `name` | string | no | Machine name |
+| `description` | string | no | Notes about the machine |
+| `kind` | choice | no | Machine type (3-axis mill for now) — one of mill_3axis |
+| `travel_x` | number | no | X travel, mm (0.001 to 1e5 mm) |
+| `travel_y` | number | no | Y travel, mm (0.001 to 1e5 mm) |
+| `travel_z` | number | no | Z travel, mm (0.001 to 1e5 mm) |
+| `max_spindle_rpm` | number | no | Highest spindle speed, rpm (1 to 5e5) |
+| `max_feed` | number | no | Fastest cutting feed, mm/min (0.001 to 1e6 mm/min) |
+| `tool_capacity` | integer | no | Tool changer pockets (0 = manual tool changes) (0 to 9999) |
+
+Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+
+<sub>ribbon: Machine › Machines</sub>
+
+#### `machine.edit`
+
+```python
+cc.machine_edit(id=None, name=None, description=None, kind=None, travel_x=None, travel_y=None, travel_z=None, max_spindle_rpm=None, max_feed=None, tool_capacity=None)
+```
+
+Change a machine's name, travel and limits.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Machine id, e.g. machine.1 (default: the active machine) |
+| `name` | string | no | Machine name |
+| `description` | string | no | Notes about the machine |
+| `kind` | choice | no | Machine type (3-axis mill for now) — one of mill_3axis |
+| `travel_x` | number | no | X travel, mm (0.001 to 1e5 mm) |
+| `travel_y` | number | no | Y travel, mm (0.001 to 1e5 mm) |
+| `travel_z` | number | no | Z travel, mm (0.001 to 1e5 mm) |
+| `max_spindle_rpm` | number | no | Highest spindle speed, rpm (1 to 5e5) |
+| `max_feed` | number | no | Fastest cutting feed, mm/min (0.001 to 1e6 mm/min) |
+| `tool_capacity` | integer | no | Tool changer pockets (0 = manual tool changes) (0 to 9999) |
+
+Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+
+<sub>ribbon: Machine › Machines</sub>
+
+#### `machine.duplicate`
+
+```python
+cc.machine_duplicate(id=None, name=None)
+```
+
+Copy a machine and its whole tool library under a new name.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Machine id, e.g. machine.1 (default: the active machine) |
+| `name` | string | no | Name of the copy (default: <name> copy) |
+
+Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+
+#### `machine.remove`
+
+```python
+cc.machine_remove(id=…)
+```
+
+Delete a machine and its tool library.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Machine id, e.g. machine.2 |
+
+Returns: {"removed": id, "active": id}
+
+#### `machine.activate`
+
+```python
+cc.machine_activate(id=…)
+```
+
+Work with this machine and its tool library.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Machine id, e.g. machine.1 |
+
+Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+
+#### `machine.list`
+
+```python
+cc.machine_list()
+```
+
+Every machine configuration.
+
+
+Returns: list of machines {id, name, ..., active, tools}
+
+#### `machine.get`
+
+```python
+cc.machine_get(id=None)
+```
+
+One machine configuration.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Machine id, e.g. machine.1 (default: the active machine) |
+
+Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+
+#### `machine.library.open`
+
+```python
+cc.machine_library_open()
+```
+
+Show the machine and tool library pane.
+
+
+Returns: {"pane": "library"}
+
+<sub>ribbon: Machine › Library</sub>
+
+
+### settings
+
+#### `settings.open`
+
+```python
+cc.settings_open()
+```
+
+Units and other preferences.
+
+
+Returns: {units, theme, fps_limit}
+
+<sub>ribbon: Home › Settings</sub>
+
+#### `settings.get`
+
+```python
+cc.settings_get()
+```
+
+The current preferences.
+
+
+Returns: {units, theme, fps_limit}
+
+#### `settings.units.set`
+
+```python
+cc.settings_units_set(units=…)
+```
+
+Show lengths and feeds in millimetres or inches (commands always use millimetres).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `units` | choice | yes | in or mm — one of in, mm |
+
+Returns: {units, theme, fps_limit}
 

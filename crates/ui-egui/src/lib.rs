@@ -23,6 +23,7 @@ mod panes;
 mod param_form;
 mod ribbon;
 pub mod theme;
+mod tool_view;
 mod tools;
 pub mod ui_kit;
 mod viewport;

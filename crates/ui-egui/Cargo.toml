@@ -13,7 +13,7 @@ CosmicCAM-engine = { workspace = true }
 CosmicCAM-geom = { workspace = true }
 CosmicCAM-render = { workspace = true }
 bytemuck = { workspace = true }
-eframe = { workspace = true, features = ["default_fonts", "wgpu"] }
+eframe = { workspace = true, features = ["default_fonts", "persistence", "wgpu"] }
 egui = { workspace = true }
 egui-wgpu = { workspace = true }
 egui_dock = { workspace = true }

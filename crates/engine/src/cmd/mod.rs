@@ -6,9 +6,12 @@
 //! generated from it (`cargo xtask api`).
 
 mod job;
+mod machine;
 mod model;
 mod planned;
+mod settings;
 mod stock;
+mod tool;
 mod ui;
 mod view;
 mod wcs;
@@ -31,12 +34,14 @@ pub enum RibbonTab {
     Toolpaths,
     Simulation,
     Export,
+    Machine,
 }
 
 impl RibbonTab {
-    pub const ALL: [Self; 6] =
-        [Self::Home, Self::Setup, Self::Tooling, Self::Toolpaths, Self::Simulation, Self::Export];
-    pub const IDS: &'static [&'static str] = &["home", "setup", "tooling", "toolpaths", "simulation", "export"];
+    pub const ALL: [Self; 7] =
+        [Self::Home, Self::Setup, Self::Machine, Self::Tooling, Self::Toolpaths, Self::Simulation, Self::Export];
+    pub const IDS: &'static [&'static str] =
+        &["home", "setup", "machine", "tooling", "toolpaths", "simulation", "export"];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -46,6 +51,7 @@ impl RibbonTab {
             Self::Toolpaths => "Toolpaths",
             Self::Simulation => "Simulation",
             Self::Export => "Export",
+            Self::Machine => "Machine",
         }
     }
 
@@ -57,6 +63,7 @@ impl RibbonTab {
             Self::Toolpaths => "toolpaths",
             Self::Simulation => "simulation",
             Self::Export => "export",
+            Self::Machine => "machine",
         }
     }
 
@@ -114,6 +121,16 @@ pub enum ParamKind {
         min: f64,
         max: f64,
     },
+    /// A length in millimetres, `min..=max`. Dialogs show and accept it in the user's units.
+    Length {
+        min: f64,
+        max: f64,
+    },
+    /// A feed in millimetres per minute, `min..=max`. Dialogs show it in the user's units.
+    Rate {
+        min: f64,
+        max: f64,
+    },
     /// A whole number in `min..=max`.
     Integer {
         min: i64,
@@ -131,7 +148,7 @@ impl ParamKind {
         match self {
             Self::Str => "string",
             Self::Bool => "bool",
-            Self::Number { .. } => "number",
+            Self::Number { .. } | Self::Length { .. } | Self::Rate { .. } => "number",
             Self::Integer { .. } => "integer",
             Self::Choice(_) => "choice",
             Self::Vec3 => "vec3",
@@ -168,6 +185,16 @@ impl Param {
             ParamKind::Number { min, max } => {
                 v["min"] = json!(min);
                 v["max"] = json!(max);
+            }
+            ParamKind::Length { min, max } => {
+                v["min"] = json!(min);
+                v["max"] = json!(max);
+                v["unit"] = json!("mm");
+            }
+            ParamKind::Rate { min, max } => {
+                v["min"] = json!(min);
+                v["max"] = json!(max);
+                v["unit"] = json!("mm/min");
             }
             ParamKind::Integer { min, max } => {
                 v["min"] = json!(min);
@@ -267,11 +294,13 @@ fn check_kind(p: &Param, v: &Value) -> EngineResult<()> {
                 bad("must be true or false".into())
             }
         }
-        ParamKind::Number { min, max } => match v.as_f64() {
-            Some(n) if n.is_finite() && n >= min && n <= max => Ok(()),
-            Some(_) => bad(format!("must be between {min} and {max}")),
-            None => bad("must be a number".into()),
-        },
+        ParamKind::Number { min, max } | ParamKind::Length { min, max } | ParamKind::Rate { min, max } => {
+            match v.as_f64() {
+                Some(n) if n.is_finite() && n >= min && n <= max => Ok(()),
+                Some(_) => bad(format!("must be between {min} and {max}")),
+                None => bad("must be a number".into()),
+            }
+        }
         ParamKind::Integer { min, max } => match v.as_i64() {
             Some(n) if n >= min && n <= max => Ok(()),
             Some(_) => bad(format!("must be between {min} and {max}")),
@@ -309,7 +338,10 @@ pub fn all() -> impl Iterator<Item = &'static CommandSpec> {
         .chain(view::COMMANDS.iter())
         .chain(ui::COMMANDS.iter())
         .chain(planned::COMMANDS.iter())
-        .chain(stock::COMMANDS.iter());
+        .chain(stock::COMMANDS.iter())
+        .chain(tool::COMMANDS.iter())
+        .chain(machine::COMMANDS.iter())
+        .chain(settings::COMMANDS.iter());
     #[cfg(test)]
     let registered = registered.chain(test_only::COMMANDS.iter());
     registered
@@ -329,7 +361,7 @@ pub static EXTRA_PLACEMENTS: &[(&str, Placement)] = &[
 
 /// Panel order on tabs where first-seen order is not the order wanted. Panels not listed
 /// follow in first-seen order.
-const PANEL_ORDER: &[(RibbonTab, &[&str])] = &[(RibbonTab::Home, &["Job", "Setup", "Display"])];
+const PANEL_ORDER: &[(RibbonTab, &[&str])] = &[(RibbonTab::Home, &["Job", "Setup", "Display", "Settings"])];
 
 /// Every ribbon button: each command's own placement, then the extra ones.
 pub fn placements() -> impl Iterator<Item = (&'static CommandSpec, Placement)> {

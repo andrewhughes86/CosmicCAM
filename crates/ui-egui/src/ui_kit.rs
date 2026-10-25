@@ -133,16 +133,23 @@ pub struct Window {
     title: String,
     /// Tool panels open at the upper left, clear of the part; dialogs open centred.
     tool: bool,
+    /// Resizable windows (libraries, browsers) and their starting size.
+    size: Option<egui::Vec2>,
 }
 
 impl Window {
     pub fn dialog(title: impl Into<String>) -> Self {
-        Self { title: title.into(), tool: false }
+        Self { title: title.into(), tool: false, size: None }
+    }
+
+    /// A centred, resizable window that stays open beside the work (the tool library).
+    pub fn browser(title: impl Into<String>, size: egui::Vec2) -> Self {
+        Self { title: title.into(), tool: false, size: Some(size) }
     }
 
     /// A panel that stays open while the user works in the viewport.
     pub fn tool(title: impl Into<String>) -> Self {
-        Self { title: title.into(), tool: true }
+        Self { title: title.into(), tool: true, size: None }
     }
 
     /// Shows the window while `open` is true; the title bar's close button clears it.
@@ -156,7 +163,9 @@ impl Window {
         egui::Window::new(self.title)
             .open(open)
             .collapsible(false)
-            .resizable(false)
+            .resizable(self.size.is_some())
+            .max_size(ctx.content_rect().size() * 0.95)
+            .default_size(self.size.unwrap_or(egui::vec2(320.0, 200.0)))
             .pivot(if self.tool { egui::Align2::LEFT_TOP } else { egui::Align2::CENTER_CENTER })
             .default_pos(if self.tool {
                 ctx.content_rect().left_top() + egui::vec2(280.0, 160.0)

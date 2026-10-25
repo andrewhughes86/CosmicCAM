@@ -5,7 +5,7 @@
 | 1 | Desktop UI & theme engine | **Done** (2026-10-24) |
 | 2 | Model import & geometry ingestion | **Done except STEP/IGES** (2026-10-24) |
 | 3 | Work coordinate system (WCS) creation | **Done** (2026-10-24) |
-| 4 | Tool library & management | Planned |
+| 4 | Tool library & management | **In progress** (flat end mills, machine libraries 2026-10-24) |
 | 5 | Stock setup & material definition | Planned |
 | 6 | Toolpath creation engine | Planned |
 | 7 | Material removal simulation & verification | Planned |
@@ -89,6 +89,36 @@
   `setup.stock.get`; shown in the outline and viewport; WCS origin can sit on a stock box point.
 - Later: dragging the triad in the viewport, saving WCS and stock in a job file (no job file
   format yet).
+
+## Phase 4 — machines and tool libraries (2026-10-24)
+
+- Machine configurations (name, travel, spindle and feed limits, tool changer size), each with
+  its own tool library; a Machine ribbon tab with New, Edit (Copy and Delete in the menu) and the
+  library pane. Commands `machine.create/edit/duplicate/remove/activate/list/get/library.open`.
+- Flat end mills: geometry (diameter, flutes, length of cut, stick-out, shank), material and
+  coating, cutting data (spindle speed, feed, plunge feed, stepover, stepdown) and offset
+  registers. Commands `tool.create`, `tool.create.flat`, `tool.edit`, `tool.feeds`,
+  `tool.duplicate`, `tool.remove`, `tool.list`, `tool.get`, `tool.library.import/export` (JSON).
+  Ball, bull, chamfer, drill, spot drill, face mill, tap and thread mill are placeholders.
+- Tool library pane (a tab beside the Explorer): machine picker, tool table, new / edit /
+  feeds / copy / delete; the selected tool shows in the inspector.
+- The library is saved after every change (eframe storage: a file on the desktop, localStorage
+  on the web) and loaded at start-up; saved data is validated and bad entries are skipped.
+- To-scale tool drawing (shank, fluted length in the accent colour, Ø / flute / overall
+  dimensions) in the New and Edit tool dialogs, updating as values are typed.
+- The tool library is its own resizable window with a preview of the tool under the pointer or
+  the selected one; Up / Down step through the list.
+- Still to do in Phase 4: the other tool types, holders.
+
+## Settings and units (2026-10-24)
+
+- Settings on the Home tab (`settings.open`, `settings.get`, `settings.units.set`). Units are
+  inches (default) or millimetres, saved with the app's storage.
+- The engine stays in millimetres; the inspector, dialogs (typed values convert to mm), the tool
+  library, the WCS panel, the camera readout, the status bar and the grid spacing (0.5 in / 10 mm)
+  follow the preference. Commands and their results are always millimetres; length and feed
+  parameters are marked `Length` / `Rate` in the schema.
+- The Machine tab sits between Setup and Tooling.
 
 ## Web app (2026-10-24)
 
