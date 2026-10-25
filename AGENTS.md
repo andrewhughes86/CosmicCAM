@@ -90,9 +90,9 @@ People trust CosmicCAM with their machining setups and physical machine code; a 
     long toolpaths, bulk formatting) is Rust, exposed to the Python post as helpers; Python stays
     the single place that decides what the machine receives. Python 3 is therefore a runtime
     dependency for posting only: the rest of the app must work without it, and a missing
-    interpreter or a faulty post is reported as an error, never a crash. How posts are run
-    (out-of-process interpreter fed CL-data JSON, or embedded via PyO3) is settled at the start
-    of Phase 8; prefer the option that keeps a broken post from taking the app down.
+    interpreter or a faulty post is reported as an error, never a crash. Posts run out of
+    process: `crate::postproc` starts `python3 -I posts/run_post.py` and feeds it CL-data JSON
+    (docs/posts.md); the shipped posts live in `posts/`.
   - **The Python API client** in `python/cosmiccam` is a separate, stdlib-only package that talks
     to the app over the control channel; the app never depends on it.
   - Local asset authoring, lint and review tools use Python 3.11+ as documented in

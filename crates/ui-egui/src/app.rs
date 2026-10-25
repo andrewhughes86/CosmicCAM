@@ -91,6 +91,12 @@ pub struct CosmicApp {
     rename: Option<(String, String, String)>,
     /// An item waiting for the user to confirm deleting it: (command, id, label).
     confirm_delete: Option<(String, String, String)>,
+    /// The post-processor chooser, while it is open.
+    post_chooser: bool,
+    /// The machine's post settings as last read: (post id, settings), or why they could not be.
+    post_settings: Option<(String, Result<Vec<Value>, String>)>,
+    /// Text being typed into post settings, by name.
+    post_setting_text: std::collections::HashMap<String, String>,
     shortcuts: Vec<(KeyboardShortcut, &'static str)>,
     automation: Automation,
     control: Option<ControlServer>,
@@ -190,6 +196,9 @@ impl CosmicApp {
             confirm_close: None,
             rename: None,
             confirm_delete: None,
+            post_chooser: false,
+            post_settings: None,
+            post_setting_text: std::collections::HashMap::new(),
             shortcuts: cmd::all().filter_map(|c| Some((parse_shortcut(c.shortcut?)?, c.id))).collect(),
             automation,
             control,
@@ -248,6 +257,11 @@ impl CosmicApp {
             self.run("sim.pause", &Value::Null);
             return;
         }
+        // The Post-processor button opens a chooser; scripts pass `post`.
+        if id == "post.processor.select" && params.is_null() {
+            self.post_chooser = true;
+            return;
+        }
         // The explorer's Rename… and Delete open a small dialog first.
         if id == "ui.rename" || id == "ui.delete" {
             let field = |k: &str| params.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
@@ -277,11 +291,27 @@ impl CosmicApp {
             Ok(result) => {
                 self.status = None;
                 self.notice = match id {
-                    "post.gcode.export" => Some(format!(
-                        "Wrote {} lines of G-code to {}",
-                        result["lines"].as_u64().unwrap_or(0),
-                        result["path"].as_str().unwrap_or_default()
-                    )),
+                    "post.gcode.export" => {
+                        let warnings = result["warnings"].as_array().map_or(0, Vec::len);
+                        Some(format!(
+                            "Wrote {} lines of G-code to {} with the {} post{}",
+                            result["lines"].as_u64().unwrap_or(0),
+                            result["path"].as_str().unwrap_or_default(),
+                            result["post"].as_str().unwrap_or_default(),
+                            if warnings > 0 {
+                                format!(" ({warnings} warnings: see the console)")
+                            } else {
+                                String::new()
+                            }
+                        ))
+                    }
+                    "post.limits.check" => Some(match result["problems"].as_array() {
+                        Some(p) if !p.is_empty() => p.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; "),
+                        _ => "The program is within the machine's travel, speed and feed limits".into(),
+                    }),
+                    "toolpath.cl.export" => {
+                        Some(format!("Wrote CL data to {}", result["path"].as_str().unwrap_or_default()))
+                    }
                     "job.save" | "job.save.as" => {
                         Some(format!("Saved {}", result["path"].as_str().unwrap_or_default()))
                     }
@@ -483,6 +513,172 @@ impl CosmicApp {
         }
         if quit {
             ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+    }
+
+    /// The post-processor chooser: every post with its description, the machine's current one
+    /// ticked, and where to put your own.
+    fn show_post_chooser(&mut self, ctx: &egui::Context, tokens: &Tokens, requests: &mut Vec<Request>) {
+        let posts = CosmicCAM_engine::postproc::available();
+        let machine = self.session.library.active_machine();
+        let current = machine.map(|m| m.post.clone()).filter(|p| !p.is_empty()).unwrap_or_else(|| "generic".into());
+        let machine_name = machine.map_or(String::new(), |m| m.name.clone());
+        let mut open = true;
+        crate::ui_kit::Window::dialog("Post-processor").show(ctx, tokens, &mut open, |ui| {
+            ui.set_min_width(460.0);
+            ui.label(RichText::new(format!("Programs for {machine_name} are written with:")).color(tokens.text_muted));
+            ui.add_space(6.0);
+            for p in &posts {
+                ui.horizontal(|ui| {
+                    if ui.radio(p.id == current, RichText::new(&p.id).strong()).clicked() && p.id != current {
+                        requests.push(("post.processor.select".into(), json!({ "post": p.id })));
+                    }
+                    let origin = if p.builtin { "" } else { "  (yours)" };
+                    ui.label(RichText::new(format!("{}{origin}", p.description)).color(tokens.text_muted));
+                });
+            }
+            ui.add_space(8.0);
+            ui.separator();
+            self.show_post_settings(ui, tokens, &current, requests);
+            ui.separator();
+            ui.add_space(4.0);
+            if let Some(dir) = CosmicCAM_engine::postproc::posts_dir() {
+                ui.label(
+                    RichText::new(format!(
+                        "Your own posts go in {}. Copy one from builtin/ there to change it.",
+                        dir.display()
+                    ))
+                    .small()
+                    .color(tokens.text_muted),
+                );
+                #[cfg(not(target_arch = "wasm32"))]
+                if ui.button("Open the posts folder").clicked() {
+                    requests.push(("post.processor.folder".into(), Value::Null));
+                    let _ = CosmicCAM_engine::postproc::install_builtin(&dir);
+                    open_folder(&dir);
+                }
+            }
+            ui.add_space(6.0);
+            if ui.button("Close").clicked() {
+                self.post_chooser = false;
+            }
+        });
+        if !open {
+            self.post_chooser = false;
+        }
+    }
+
+    /// The settings the machine's post offers, grouped, each editable in place.
+    fn show_post_settings(&mut self, ui: &mut Ui, tokens: &Tokens, post: &str, requests: &mut Vec<Request>) {
+        if post == CosmicCAM_engine::postproc::GENERIC {
+            ui.label(RichText::new("The generic post has no settings.").color(tokens.text_muted));
+            return;
+        }
+        // Reading the settings starts the post: done once per post, not every frame.
+        if self.post_settings.as_ref().is_none_or(|(id, _)| id != post) {
+            let mut trial = self.session.clone();
+            let read = trial
+                .execute("post.properties.get", &json!({ "post": post }))
+                .map(|v| v["properties"].as_array().cloned().unwrap_or_default())
+                .map_err(|e| e.to_string());
+            self.post_settings = Some((post.to_owned(), read));
+            self.post_setting_text.clear();
+        }
+        let Some((_, read)) = &mut self.post_settings else { return };
+        let props = match read {
+            Ok(p) => p,
+            Err(e) => {
+                ui.label(RichText::new(format!("The post's settings could not be read: {e}")).color(tokens.error));
+                return;
+            }
+        };
+        ui.label(RichText::new(format!("{post} settings for this machine")).strong());
+        let mut groups: Vec<String> = Vec::new();
+        for p in props.iter() {
+            let g = p["group"].as_str().unwrap_or("General").to_owned();
+            if !groups.contains(&g) {
+                groups.push(g);
+            }
+        }
+        let texts = &mut self.post_setting_text;
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            for group in &groups {
+                egui::CollapsingHeader::new(group.as_str()).default_open(group == "Motion" || group == "Program").show(
+                    ui,
+                    |ui| {
+                        egui::Grid::new(("post-settings", group.as_str())).num_columns(2).spacing([12.0, 6.0]).show(
+                            ui,
+                            |ui| {
+                                for p in props.iter_mut().filter(|p| p["group"].as_str() == Some(group.as_str())) {
+                                    let name = p["name"].as_str().unwrap_or_default().to_owned();
+                                    let help = p["description"].as_str().unwrap_or_default().to_owned();
+                                    ui.label(p["title"].as_str().unwrap_or(&name)).on_hover_text(&help);
+                                    let value_text = match &p["value"] {
+                                        Value::String(t) => t.clone(),
+                                        Value::Bool(b) => b.to_string(),
+                                        Value::Null => String::new(),
+                                        other => other.to_string(),
+                                    };
+                                    let mut set = |v: String| {
+                                        requests
+                                            .push(("post.properties.set".into(), json!({ "name": name, "value": v })));
+                                    };
+                                    match p["kind"].as_str().unwrap_or("str") {
+                                        "bool" => {
+                                            let mut on = value_text == "true";
+                                            if ui.checkbox(&mut on, "").changed() {
+                                                set(on.to_string());
+                                                p["value"] = json!(on);
+                                            }
+                                        }
+                                        "choice" => {
+                                            let choices: Vec<String> = p["choices"]
+                                                .as_array()
+                                                .map(|c| {
+                                                    c.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect()
+                                                })
+                                                .unwrap_or_default();
+                                            let mut picked = None;
+                                            egui::ComboBox::from_id_salt(("post-setting", name.as_str()))
+                                                .selected_text(value_text.as_str())
+                                                .width(160.0)
+                                                .show_ui(ui, |ui| {
+                                                    for c in &choices {
+                                                        if ui.selectable_label(*c == value_text, c.as_str()).clicked() {
+                                                            picked = Some(c.clone());
+                                                        }
+                                                    }
+                                                });
+                                            if let Some(c) = picked.filter(|c| *c != value_text) {
+                                                set(c.clone());
+                                                p["value"] = json!(c);
+                                            }
+                                        }
+                                        _ => {
+                                            let buffer =
+                                                texts.entry(name.clone()).or_insert_with(|| value_text.clone());
+                                            let response =
+                                                ui.add(egui::TextEdit::singleline(buffer).desired_width(160.0));
+                                            if response.lost_focus() && *buffer != value_text {
+                                                set(buffer.clone());
+                                                p["value"] = json!(buffer.clone());
+                                            }
+                                        }
+                                    }
+                                    ui.end_row();
+                                }
+                            },
+                        );
+                    },
+                );
+            }
+        });
+        if ui.button("Restore the post's defaults").clicked() {
+            for p in props.iter() {
+                let name = p["name"].as_str().unwrap_or_default();
+                requests.push(("post.properties.set".into(), json!({ "name": name, "value": "" })));
+            }
+            self.post_settings = None;
         }
     }
 
@@ -734,6 +930,9 @@ impl eframe::App for CosmicApp {
             });
             self.settings_open &= open;
         }
+        if self.post_chooser {
+            self.show_post_chooser(&ctx, tokens, &mut requests);
+        }
         if let Some((command, target, mut text)) = self.rename.take() {
             let mut open = true;
             let mut done: Option<bool> = None;
@@ -869,6 +1068,19 @@ fn finish_capture(image: &egui::ColorImage, capture: Capture) {
         (Ok(()), None) => println!("screenshot saved to {}", capture.path.display()),
         (Err(e), None) => eprintln!("could not save screenshot {}: {e}", capture.path.display()),
     }
+}
+
+/// Shows a folder in the system's file manager.
+#[cfg(not(target_arch = "wasm32"))]
+fn open_folder(dir: &std::path::Path) {
+    let program = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    let _ = std::process::Command::new(program).arg(dir).spawn();
 }
 
 #[cfg(test)]

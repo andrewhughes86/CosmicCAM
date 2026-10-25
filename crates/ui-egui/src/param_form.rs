@@ -13,7 +13,7 @@ use crate::tool_view::{self, ToolShape};
 use crate::ui_kit::Window;
 
 /// Forms that draw the tool being defined.
-const TOOL_FORMS: &[&str] = &["tool.create", "tool.create.flat", "tool.edit"];
+const TOOL_FORMS: &[&str] = &["tool.create", "tool.create.flat", "tool.create.ball", "tool.edit"];
 
 /// Shown in choice boxes for an optional parameter left unset.
 const DEFAULT_LABEL: &str = "(default)";
@@ -30,6 +30,8 @@ enum Field {
 
 pub struct ParamForm {
     spec: &'static CommandSpec,
+    /// The tool drawn is a ball end mill (a new ball, or an edited one).
+    ball: bool,
     fields: Vec<(&'static Param, Field)>,
     /// (id, name) of what pickers choose from: the job's WCS or the machines.
     options: Vec<(String, String)>,
@@ -73,7 +75,15 @@ impl ParamForm {
                 (p, field)
             })
             .collect();
-        Self { spec, fields, options, units, error: None, open: true }
+        let ball = spec.id == "tool.create.ball"
+            || (spec.id == "tool.edit"
+                && session
+                    .view
+                    .selection
+                    .as_deref()
+                    .and_then(|id| session.tool_by_ref(id))
+                    .is_some_and(|(_, t)| t.kind == "ball"));
+        Self { spec, ball, fields, options, units, error: None, open: true }
     }
 
     /// The command failed with these values; keep the form open and say why.
@@ -167,6 +177,7 @@ impl ParamForm {
             flute_length,
             overall_length: len("overall_length").unwrap_or(flute_length + (2.0 * diameter).max(15.0)),
             flutes: value("flutes").map_or(if diameter < 3.0 { 2 } else { 3 }, |f| f.clamp(1.0, 32.0) as u32),
+            ball: self.ball,
         })
     }
 
@@ -230,16 +241,33 @@ fn prefill(spec: &CommandSpec, session: &Session) -> Map<String, Value> {
     let source: Option<Value> = match spec.id {
         "tool.edit" | "tool.feeds" | "tool.duplicate" | "tool.remove" => selected_tool.map(|(m, t)| t.to_json(&m.id)),
         // A common size in the user's units: 1/4 in or 6 mm.
-        "tool.create" | "tool.create.flat" => session.library.active_machine().map(|m| {
+        "tool.create" | "tool.create.flat" | "tool.create.ball" => session.library.active_machine().map(|m| {
             let diameter = if session.prefs.units == DisplayUnits::Inches { 6.35 } else { 6.0 };
             json!({ "number": m.next_tool_number(), "diameter": diameter, "type": "flat" })
         }),
         "machine.edit" => session.library.active_machine().map(|m| {
-            json!({
+            let mut v = json!({
                 "name": m.name, "description": m.description, "kind": m.kind,
                 "travel_x": m.travel[0], "travel_y": m.travel[1], "travel_z": m.travel[2],
                 "max_spindle_rpm": m.max_spindle_rpm, "max_feed": m.max_feed, "tool_capacity": m.tool_capacity,
-            })
+            });
+            if let Some(k) = &m.kinematics {
+                v["layout"] = json!(k.layout);
+                v["primary_axis"] = json!(k.primary.name);
+                v["primary_min"] = json!(k.primary.min);
+                v["primary_max"] = json!(k.primary.max);
+                v["primary_reversed"] = json!(k.primary.reversed);
+                if let Some(sec) = &k.secondary {
+                    v["secondary_axis"] = json!(sec.name);
+                    v["secondary_min"] = json!(sec.min);
+                    v["secondary_max"] = json!(sec.max);
+                    v["secondary_reversed"] = json!(sec.reversed);
+                }
+                v["primary_centre"] = json!(k.primary_centre);
+                v["secondary_centre"] = json!(k.secondary_centre);
+                v["pivot_length"] = json!(k.pivot_length);
+            }
+            v
         }),
         _ => None,
     };
@@ -287,6 +315,10 @@ fn initial_field(p: &Param, value: Option<&Value>, units: DisplayUnits) -> Field
         other => other.to_string(),
     };
     match (p.kind, value) {
+        (ParamKind::Vec3, Some(Value::Array(a))) => {
+            let c = |k: usize| a.get(k).and_then(Value::as_f64).map_or_else(String::new, |mm| units.plain(mm));
+            Field::Vec3([c(0), c(1), c(2)])
+        }
         (ParamKind::Bool, v) => Field::Bool(v.and_then(Value::as_bool)),
         (ParamKind::Choice(choices), v) => {
             Field::Choice(v.and_then(Value::as_str).and_then(|s| choices.iter().position(|c| *c == s)))

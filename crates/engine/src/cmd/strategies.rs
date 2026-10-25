@@ -7,6 +7,7 @@ use super::toolpath::add_toolpath;
 use super::{CommandSpec, Param, ParamKind, Placement, RibbonTab, always};
 use crate::toolpath::contour::{COOLANTS, DIRECTIONS, HEIGHT_REFS};
 use crate::toolpath::drill::{self, CYCLES};
+use crate::toolpath::multiaxis::TOOL_AXES;
 use crate::toolpath::strategies::{self, BOUNDARIES, PATTERNS};
 
 const LENGTH: ParamKind = ParamKind::Length { min: 0.0, max: 10_000.0 };
@@ -37,6 +38,11 @@ macro_rules! strategy_params {
             Param::optional("plunge_feed", RATE, "Plunge and ramp feed, mm/min (default: the tool's, else half the feed)"),
             Param::optional("coolant", ParamKind::Choice(COOLANTS), "Coolant (default flood)"),
             Param::optional("wcs", ParamKind::Str, "WCS to program in (default: the active one)"),
+            Param::optional("orientation", ParamKind::Str, "3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine)"),
+            Param::optional("post_stop", ParamKind::Bool, "Stop the machine (M0) before this operation"),
+            Param::optional("post_comment", ParamKind::Str, "Note for the operator, written in the program"),
+            Param::optional("post_code_before", ParamKind::Str, "G-code written as given before the operation"),
+            Param::optional("post_code_after", ParamKind::Str, "G-code written as given after the operation"),
             Param::optional("geometry", ParamKind::StrList { max: 10_000 }, "Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N)"),
             Param::optional("clearance_from", REFS, "Clearance height reference"),
             Param::optional("clearance_offset", OFFSET, "Clearance height above its reference, mm"),
@@ -94,6 +100,12 @@ fn run_waterline(s: &mut crate::session::Session, p: &Value) -> crate::error::En
 fn run_raster(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
     add_toolpath(s, p, strategies::raster)
 }
+
+fn run_multiaxis(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, crate::toolpath::multiaxis::multiaxis)
+}
+
+const DEGREES: ParamKind = ParamKind::Number { min: -89.0, max: 89.0 };
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
@@ -228,5 +240,72 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         returns: RETURNS,
         enabled: always,
         run: run_raster,
+    },
+    CommandSpec {
+        id: "toolpath.multiaxis",
+        label: "Multi-axis finish",
+        tooltip: "Finish the part with a ball end mill that tilts as it follows the surface (simultaneous 4/5-axis)",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![
+            Param::optional(
+                "boundary",
+                ParamKind::Choice(BOUNDARIES),
+                "Area to cover: the stock, the model or the selection (default model)"
+            ),
+            Param::optional("boundary_offset", OFFSET, "Grow (or shrink) the area by this, mm (default 0)"),
+            Param::optional(
+                "angle",
+                ParamKind::Number { min: -360.0, max: 360.0 },
+                "Row direction, degrees from +X (default 0)"
+            ),
+            Param::optional("pattern", ParamKind::Choice(PATTERNS), "Back and forth, or all one way (default zigzag)"),
+            Param::optional(
+                "sample_step",
+                ParamKind::Length { min: 0.0, max: 1000.0 },
+                "Spacing of points along a row, mm (default Ø/8, 0.05–1)"
+            ),
+            Param::optional(
+                "tool_axis",
+                ParamKind::Choice(TOOL_AXES),
+                "How the tool leans: tilted from Z, from the surface normal, towards or away from a point or line, or fixed (default tilt)"
+            ),
+            Param::optional(
+                "tilt_angle",
+                DEGREES,
+                "Sideways lean, degrees: positive leans the tool's top to the right of the row direction (default 15 for tilt, else 0)"
+            ),
+            Param::optional(
+                "lead_angle",
+                DEGREES,
+                "Lean along the travel, degrees: positive leans the top forward (default 0)"
+            ),
+            Param::optional("axis_point", ParamKind::Vec3, "The point (WCS mm) for toward/away from a point or line"),
+            Param::optional("axis_direction", ParamKind::Vec3, "The line's direction, or the fixed tool axis (WCS)"),
+            Param::optional(
+                "max_tilt",
+                ParamKind::Number { min: 0.0, max: 120.0 },
+                "Most the tool may lean from the toolpath's Z, degrees (default 60)"
+            ),
+            Param::optional(
+                "max_axis_rate",
+                ParamKind::Number { min: 0.01, max: 180.0 },
+                "Fastest the tool axis may turn, degrees per mm of travel (default 5)"
+            ),
+            Param::optional(
+                "avoid_collisions",
+                ParamKind::Bool,
+                "Lean the tool back towards Z where its flutes or shank would touch the part (default true)"
+            ),
+            Param::optional(
+                "shank_clearance",
+                ParamKind::Length { min: 0.0, max: 100.0 },
+                "Gap kept around the shank, mm (default 0.5)"
+            ),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_multiaxis,
     },
 ];

@@ -562,6 +562,7 @@ pub fn library(ui: &mut Ui, session: &Session, tokens: &Tokens, state: &mut Libr
                             flute_length: t.flute_length,
                             overall_length: t.overall_length,
                             flutes: t.flutes,
+                            ball: t.kind == "ball",
                         }),
                         u,
                         tokens,

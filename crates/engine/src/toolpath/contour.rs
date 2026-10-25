@@ -62,6 +62,11 @@ impl Frame {
         (self.origin + self.x * l.x + self.y * l.y + self.z * l.z).as_vec3()
     }
 
+    /// A direction given in the frame, in world coordinates.
+    pub(super) fn world_dir(&self, d: DVec3) -> Vec3 {
+        (self.x * d.x + self.y * d.y + self.z * d.z).normalize_or_zero().as_vec3()
+    }
+
     /// Local Z range of a world box.
     pub(super) fn z_range(&self, b: Aabb) -> Option<(f64, f64)> {
         if b.is_empty() {
@@ -118,8 +123,8 @@ struct Settings {
 }
 
 /// The tool a toolpath uses: `tool` (a number in the active machine's library), else the
-/// first tool there.
-pub(super) fn pick_tool<'a>(s: &'a Session, p: &Value) -> EngineResult<(&'a Machine, &'a Tool)> {
+/// first tool there. It must be one of `kinds` (tool types).
+pub(super) fn pick_tool<'a>(s: &'a Session, p: &Value, kinds: &[&str]) -> EngineResult<(&'a Machine, &'a Tool)> {
     let m = s.library.active_machine().ok_or_else(|| bad("there is no machine; create one on the Machine tab"))?;
     let tool = match p.get("tool").and_then(Value::as_u64) {
         Some(n) => {
@@ -127,14 +132,19 @@ pub(super) fn pick_tool<'a>(s: &'a Session, p: &Value) -> EngineResult<(&'a Mach
         }
         None => m.tools.first().ok_or_else(|| bad(format!("{}'s tool library is empty; add a tool first", m.name)))?,
     };
-    if tool.kind != "flat" {
-        return Err(EngineError::NotSupported(format!("contouring with {} tools", tool.kind)));
+    if !kinds.contains(&tool.kind.as_str()) {
+        return Err(EngineError::NotSupported(format!(
+            "this strategy with {} tools (T{}); it takes {}",
+            tool.kind,
+            tool.number,
+            kinds.join(" or ")
+        )));
     }
     Ok((m, tool))
 }
 
 fn settings(s: &Session, p: &Value) -> EngineResult<(Settings, String)> {
-    let (machine, tool) = pick_tool(s, p)?;
+    let (machine, tool) = pick_tool(s, p, &["flat"])?;
     let num = |key: &str, lo: f64, hi: f64| params::opt_f64(p, key, lo, hi);
     let choice = |key: &str, default: &str| -> EngineResult<String> {
         Ok(params::opt_str(p, key)?.unwrap_or(default).to_owned())
@@ -217,24 +227,27 @@ fn settings(s: &Session, p: &Value) -> EngineResult<(Settings, String)> {
     Ok((settings, machine.id.clone()))
 }
 
-/// The frame: the WCS named by `wcs`, else the active WCS, else world.
+/// The frame the toolpath is worked out in, and the WCS it is programmed in: the WCS named by
+/// `wcs`, else the active WCS, else world. An `orientation` (another WCS) tilts the frame for
+/// 3+2 machining: the tool works along its Z while the program stays in the WCS.
 pub(super) fn frame(s: &Session, p: &Value) -> EngineResult<(Frame, Option<String>)> {
     let w = match params::opt_str(p, "wcs")? {
         Some(id) => Some(s.job.wcs_by_id(id).ok_or_else(|| bad(format!("no WCS `{id}`")))?),
         None => s.job.active_wcs(),
     };
-    Ok(match w {
-        Some(w) => (
-            Frame {
-                origin: w.origin.as_dvec3(),
-                x: w.x_axis.as_dvec3(),
-                y: w.y_axis().as_dvec3(),
-                z: w.z_axis.as_dvec3(),
-            },
-            Some(w.id.clone()),
-        ),
-        None => (Frame { origin: DVec3::ZERO, x: DVec3::X, y: DVec3::Y, z: DVec3::Z }, None),
-    })
+    let of = |w: &crate::session::Wcs| Frame {
+        origin: w.origin.as_dvec3(),
+        x: w.x_axis.as_dvec3(),
+        y: w.y_axis().as_dvec3(),
+        z: w.z_axis.as_dvec3(),
+    };
+    let world = Frame { origin: DVec3::ZERO, x: DVec3::X, y: DVec3::Y, z: DVec3::Z };
+    let program = w.map(|w| w.id.clone());
+    let frame = match params::opt_str(p, "orientation")?.filter(|o| !o.is_empty()) {
+        Some(id) => of(s.job.wcs_by_id(id).ok_or_else(|| bad(format!("`orientation`: no WCS `{id}`")))?),
+        None => w.map_or(world, of),
+    };
+    Ok((frame, program))
 }
 
 /// Most points one resampled circle gets.
@@ -465,18 +478,40 @@ pub(super) struct Builder {
     pub(super) frame: Frame,
     pub(super) moves: Vec<Move>,
     pub(super) at: DVec3,
+    /// The tool axis (in the frame) the next moves end with.
+    pub(super) axis: DVec3,
+    /// Each move's tool axis in world coordinates, once any differs from the frame's Z.
+    pub(super) axes: Option<Vec<Vec3>>,
 }
 
 impl Builder {
+    pub(super) fn new(frame: Frame) -> Self {
+        Self { frame, moves: Vec::new(), at: DVec3::ZERO, axis: DVec3::Z, axes: None }
+    }
+
     pub(super) fn push(&mut self, kind: MoveKind, to: DVec3, feed: f64) -> EngineResult<()> {
-        if to.distance(self.at) < 1.0e-9 {
+        self.push_axis(kind, to, feed, self.axis)
+    }
+
+    /// A move ending with the tool along `axis` (a unit vector in the frame, from the tip up).
+    pub(super) fn push_axis(&mut self, kind: MoveKind, to: DVec3, feed: f64, axis: DVec3) -> EngineResult<()> {
+        let turned = axis.distance(self.axis) > 1.0e-9;
+        if to.distance(self.at) < 1.0e-9 && !turned {
             return Ok(());
         }
         if self.moves.len() >= MAX_MOVES {
             return Err(bad(format!("the toolpath would have more than {MAX_MOVES} moves; loosen the tolerance")));
         }
+        let world_axis = self.frame.world_dir(axis);
+        if self.axes.is_none() && axis.distance(DVec3::Z) > 1.0e-9 {
+            self.axes = Some(vec![self.frame.z.as_vec3(); self.moves.len()]);
+        }
+        if let Some(axes) = self.axes.as_mut() {
+            axes.push(world_axis);
+        }
         self.moves.push(Move { kind, to: self.frame.world(to), feed: feed as f32 });
         self.at = to;
+        self.axis = axis;
         Ok(())
     }
 }
@@ -784,7 +819,7 @@ pub fn generate(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
 
     // Moves.
     let first = cuts.first().ok_or_else(|| bad("nothing to cut"))?;
-    let mut b = Builder { frame: f, moves: Vec::new(), at: DVec3::ZERO };
+    let mut b = Builder::new(f);
     let start_xy = first.pts.first().copied().unwrap_or_default();
     b.at = start_xy.extend(clearance);
     let start = f.world(b.at);
@@ -892,6 +927,8 @@ pub fn generate(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
         machine: machine_id,
         tool: set.tool.number,
         wcs,
+        axis: f.world_dir(DVec3::Z),
+        axes: None,
         params: Value::Object(stored),
         start,
         moves: Arc::new(b.moves),

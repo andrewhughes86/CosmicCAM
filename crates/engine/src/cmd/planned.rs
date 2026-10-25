@@ -33,30 +33,10 @@ const fn small(tab: RibbonTab, panel: &'static str) -> Option<Placement> {
     Some(Placement::small(tab, panel))
 }
 
-use RibbonTab::{Export, Setup, Toolpaths};
+use RibbonTab::Setup;
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
     // Setup (Phases 3 and 5)
     planned!("setup.stock.cylinder", "Cylinder stock", "Round bar stock (Phase 5)", large(Setup, "Stock")),
     planned!("setup.stock.margins", "Margins", "Extra stock around chosen faces (Phase 5)", small(Setup, "Stock")),
-    // Toolpaths (Phase 6)
-    planned!(
-        "toolpath.cl.export",
-        "CL data",
-        "Write machine-neutral cutter location data (Phase 6)",
-        large(Toolpaths, "Output")
-    ),
-    // Export (Phase 8)
-    planned!(
-        "post.processor.select",
-        "Post-processor",
-        "Choose the machine controller dialect (Phase 8)",
-        large(Export, "Post")
-    ),
-    planned!(
-        "post.limits.check",
-        "Check limits",
-        "Validate travel, spindle and feed limits (Phase 8)",
-        small(Export, "Post")
-    ),
 ];

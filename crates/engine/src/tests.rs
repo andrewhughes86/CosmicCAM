@@ -916,10 +916,14 @@ fn flat_end_mills_go_into_the_active_machines_library() {
     // Refused: duplicate numbers, other tool types, impossible geometry, limits over the machine's.
     assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "number": 1})).is_err());
     assert!(matches!(
-        s.execute("tool.create", &json!({"diameter": 6, "type": "ball"})),
+        s.execute("tool.create", &json!({"diameter": 6, "type": "bull"})),
         Err(EngineError::NotSupported(_))
     ));
-    assert!(matches!(s.execute("tool.create.ball", &Value::Null), Err(EngineError::Disabled(_))));
+    assert!(matches!(s.execute("tool.create.bull", &Value::Null), Err(EngineError::Disabled(_))));
+    // A ball end mill's corner radius is half its diameter.
+    let ball = s.execute("tool.create.ball", &json!({"diameter": 6, "number": 30})).unwrap_or_default();
+    assert_eq!((ball["type"].as_str(), ball["corner_radius"].as_f64()), (Some("ball"), Some(3.0)), "{ball}");
+    assert!(s.execute("tool.remove", &json!({"number": 30})).is_ok());
     assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "flute_length": 30, "overall_length": 20})).is_err());
     assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "spindle_rpm": 90000})).is_err(), "over 24000 rpm");
     assert!(s.execute("tool.create.flat", &json!({})).is_err(), "diameter is required");
@@ -1816,6 +1820,370 @@ fn simulation_finds_gouges_and_rapids_through_material() {
     // One deep pass with an 18 mm flute: the shank rubs.
     assert!(s.execute("toolpath.remove", &json!({"id": "toolpath.2"})).is_ok());
     assert!(s.execute("toolpath.contour", &json!({"id": "toolpath.1", "geometry": [bottom]})).is_ok());
+    let c = s.execute("sim.collision.check", &Value::Null).unwrap_or_default();
+    assert!(c["events"].as_array().into_iter().flatten().any(|e| e["kind"] == "shank_contact"), "{c}");
+}
+
+/// A job with a contour (with arcs at its corners) and a peck-drilled hole, posted with every
+/// shipped post in a scratch folder.
+fn posted_programs() -> Vec<(String, Result<crate::postproc::PostOutput, EngineError>)> {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("setup.wcs.create", &json!({"name": "Top"})).is_ok());
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom], "coolant": "flood"})).is_ok());
+    let rim = boss_rim(&mut s);
+    assert!(
+        s.execute(
+            "toolpath.drill",
+            &json!({"geometry": [rim], "bottom_offset": -10, "cycle": "peck", "peck_depth": 4})
+        )
+        .is_ok()
+    );
+    let tps = crate::postproc::chosen(&s, &[]).unwrap_or_default();
+    let opt =
+        crate::postproc::ClOptions { units: "mm", program_number: 42, line_numbers: false, arc_tolerance: Some(0.01) };
+    let cl = crate::postproc::cl_data(&s, &tps, &opt).unwrap_or_default();
+    let dir = TempFile::new("posts-dir", b"");
+    let dir = std::path::PathBuf::from(dir.path()).with_extension("d");
+    let out = ["fanuc", "haas", "linuxcnc", "grbl", "mach"]
+        .into_iter()
+        .map(|id| (id.to_owned(), crate::postproc::run_in(&dir, id, &cl)))
+        .collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    out
+}
+
+#[test]
+fn shipped_posts_write_their_controllers_dialects() {
+    for (id, out) in posted_programs() {
+        assert!(out.is_ok(), "{id}: {out:?}");
+        let Ok(out) = out else { continue };
+        let lines: Vec<&str> = out.gcode.lines().collect();
+        // The contour's corners and its ramped lead-in come out as arcs.
+        assert!(lines.iter().any(|l| l.starts_with("G2 X-53.000 Y-30.000 I0.000 J3.000")), "{id}:\n{}", out.gcode);
+        assert!(lines.iter().any(|l| l.starts_with("G3 ") && l.contains(" Z")), "{id}: helical lead-in");
+        assert!(lines.contains(&"G21") && lines.contains(&"S10000 M3"), "{id}");
+        let has = |s: &str| lines.contains(&s);
+        match id.as_str() {
+            "fanuc" => {
+                assert!(has("O0042") && has("T1 M6") && has("G0 G43 Z54.700 H1"), "{}", out.gcode);
+                assert!(lines.iter().any(|l| l.starts_with("G99 G83 X28.000 Y0.000 Z32.000")));
+            }
+            "haas" => assert!(has("O00042") && has("G91 G28 Y0")),
+            "linuxcnc" => assert!(has("G64 P0.010") && has("M2") && !lines.iter().any(|l| l.starts_with('O'))),
+            "grbl" => {
+                assert_eq!(out.extension, "gcode");
+                assert!(has("M0") && !out.gcode.contains("M6") && !out.gcode.contains("G83"));
+            }
+            "mach" => assert_eq!(out.extension, "tap"),
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn machines_choose_their_post_and_generic_needs_no_python() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom]})).is_ok());
+    let posts = s.execute("post.processor.list", &Value::Null).unwrap_or_default();
+    let ids: Vec<&str> = posts.as_array().into_iter().flatten().filter_map(|p| p["id"].as_str()).collect();
+    for id in ["generic", "fanuc", "haas", "linuxcnc", "grbl", "mach"] {
+        assert!(ids.contains(&id), "{ids:?}");
+    }
+    // With no post chosen, the generic writer posts.
+    let g = s.execute("post.gcode.get", &json!({"units": "mm"})).unwrap_or_default();
+    assert_eq!(g["post"], "generic");
+    assert!(s.execute("post.processor.select", &json!({"post": "nonesuch"})).is_err());
+    assert!(s.execute("post.processor.select", &json!({"post": "haas"})).is_ok());
+    assert_eq!(s.library.active_machine().map(|m| m.post.clone()), Some("haas".into()));
+    assert!(s.execute("post.processor.select", &json!({"post": "generic"})).is_ok());
+    assert_eq!(s.library.active_machine().map(|m| m.post.clone()), Some(String::new()));
+    // Limits: the sample fits the generic machine.
+    let l = s.execute("post.limits.check", &Value::Null).unwrap_or_default();
+    assert_eq!(l["ok"], true, "{l}");
+    // CL data, with arcs.
+    let file = TempFile::new("part.cl.json", b"");
+    let r = s.execute("toolpath.cl.export", &json!({"path": file.path()})).unwrap_or_default();
+    assert_eq!(r["operations"], 1);
+    let text = std::fs::read_to_string(file.path()).unwrap_or_default();
+    let cl: Value = serde_json::from_str(&text).unwrap_or_default();
+    assert_eq!(cl["format"], "CosmicCAM-CL/1");
+    assert!(cl["operations"][0]["moves"].as_array().is_some_and(|m| m.iter().any(|m| m["type"] == "arc")));
+}
+
+#[test]
+fn post_settings_are_kept_per_machine_and_reach_the_post() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    assert!(
+        s.execute(
+            "toolpath.contour",
+            &json!({"geometry": [bottom], "post_stop": true, "post_comment": "Check the clamps",
+                    "post_code_before": "M100", "post_code_after": "M101"})
+        )
+        .is_ok()
+    );
+    assert!(s.execute("post.processor.select", &json!({"post": "linuxcnc"})).is_ok());
+    assert!(s.execute("post.properties.set", &json!({"name": "blend_finish", "value": "0.02"})).is_ok());
+    assert!(s.execute("post.properties.set", &json!({"name": "end_code", "value": "M30"})).is_ok());
+    for bad in [json!({"name": "", "value": "1"}), json!({"name": "a b", "value": "1"}), json!({"name": "x"})] {
+        assert!(s.execute("post.properties.set", &bad).is_err(), "{bad}");
+    }
+    let stored = s.library.active_machine().map(|m| m.post_properties.clone()).unwrap_or_default();
+    assert_eq!(stored.get("blend_finish").map(String::as_str), Some("0.02"));
+    // The settings the post describes, with the machine's values.
+    let props = s.execute("post.properties.get", &Value::Null).unwrap_or_default();
+    let find = |name: &str| {
+        props["properties"].as_array().into_iter().flatten().find(|p| p["name"] == name).cloned().unwrap_or_default()
+    };
+    assert_eq!(find("blend_finish")["value"], "0.02", "{props}");
+    assert_eq!(find("blend_rough")["value"], 0.05);
+    // The CL data carries the settings and the operation's post options; the post uses both.
+    let g = s.execute("post.gcode.get", &json!({"units": "mm"})).unwrap_or_default();
+    let code = g["text"].as_str().unwrap_or_default();
+    let lines: Vec<&str> = code.lines().collect();
+    for want in ["G64 P0.020", "(MSG, Check the clamps)", "M0", "M100", "M101", "M30"] {
+        assert!(lines.contains(&want), "{want}:\n{code}");
+    }
+    // Choosing another post starts its settings afresh; an empty value restores a default.
+    assert!(s.execute("post.properties.set", &json!({"name": "end_code", "value": ""})).is_ok());
+    let stored = s.library.active_machine().map(|m| m.post_properties.clone()).unwrap_or_default();
+    assert!(!stored.contains_key("end_code"));
+    assert!(s.execute("post.processor.select", &json!({"post": "fanuc"})).is_ok());
+    assert!(s.library.active_machine().is_some_and(|m| m.post_properties.is_empty()));
+}
+
+/// The sample with a 5-axis trunnion machine (A tilting, C continuous) and a Ø6 ball end mill.
+fn five_axis_sample() -> Session {
+    let mut s = Session::with_sample();
+    let m = s.execute("machine.create", &json!({"name": "Trunnion", "kind": "mill_5axis", "max_feed": 20000}));
+    assert!(m.is_ok(), "{m:?}");
+    let t =
+        s.execute("tool.create.ball", &json!({"diameter": 6, "feed": 1500, "plunge_feed": 400, "spindle_rpm": 12000}));
+    assert!(t.is_ok(), "{t:?}");
+    s
+}
+
+#[test]
+fn machines_take_rotary_axes() {
+    let mut s = Session::with_sample();
+    let m = s.execute("machine.create", &json!({"kind": "mill_5axis"})).unwrap_or_default();
+    assert_eq!(m["kinematics"]["layout"], "table_table", "{m}");
+    assert_eq!(m["kinematics"]["primary"]["name"], "A");
+    assert_eq!(m["kinematics"]["secondary"]["name"], "C");
+    let e = s.execute(
+        "machine.edit",
+        &json!({"layout": "head_table", "primary_axis": "C", "secondary_axis": "B", "secondary_min": -110, "secondary_max": 110, "pivot_length": 180}),
+    );
+    assert!(e.is_ok(), "{e:?}");
+    let k = s.library.active_machine().and_then(|m| m.kinematics.clone());
+    assert!(k.as_ref().is_some_and(|k| k.layout == "head_table" && k.names() == ["C", "B"] && k.pivot_length == 180.0));
+    // Bad combinations are refused and leave the machine as it was.
+    for bad in
+        [json!({"secondary_axis": "C"}), json!({"primary_min": 50, "primary_max": 10}), json!({"layout": "sideways"})]
+    {
+        assert!(s.execute("machine.edit", &bad).is_err(), "{bad}");
+    }
+    // Back to 3-axis drops the rotary axes; 4-axis has one.
+    assert!(s.execute("machine.edit", &json!({"kind": "mill_3axis"})).is_ok());
+    assert!(s.library.active_machine().is_some_and(|m| m.kinematics.is_none()));
+    let four = s.execute("machine.edit", &json!({"kind": "mill_4axis"})).unwrap_or_default();
+    assert!(four["kinematics"]["secondary"].is_null(), "{four}");
+    assert!(s.execute("machine.edit", &json!({"secondary_axis": "B"})).is_err());
+}
+
+#[test]
+fn multi_axis_finish_tilts_a_ball_over_the_part_without_gouging() {
+    // Not on a 3-axis machine, and only with a ball.
+    let mut three = sample_with_tool();
+    assert!(three.execute("toolpath.multiaxis", &json!({})).is_err());
+    let mut s = five_axis_sample();
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "number": 9, "feed": 900})).is_ok());
+    assert!(s.execute("toolpath.multiaxis", &json!({"tool": 9})).is_err());
+    let (tp, mv) =
+        new_toolpath(&mut s, "toolpath.multiaxis", json!({"stepover": 2, "tilt_angle": 20, "sample_step": 1}));
+    assert_eq!(tp["multi_axis"], true, "{tp}");
+    let axis = |m: &Value| {
+        let a = vec3(&m["axis"]);
+        glam::DVec3::new(a[0], a[1], a[2])
+    };
+    let tip = |m: &Value| {
+        let a = vec3(&m["to"]);
+        glam::DVec3::new(a[0], a[1], a[2])
+    };
+    let cuts: Vec<&Value> = mv.iter().filter(|m| m["kind"] == "cut").collect();
+    assert!(cuts.len() > 100);
+    // Every axis leans at most the default 60°, and the flat top is cut at the asked 20°.
+    let tilt = |m: &Value| axis(m).dot(glam::DVec3::Z).clamp(-1.0, 1.0).acos().to_degrees();
+    assert!(cuts.iter().all(|m| tilt(m) <= 60.0 + 1.0e-6));
+    // On the boss top (z 42) the ball's centre is one radius above it; a tilted tip is not.
+    let on_top: Vec<f64> =
+        cuts.iter().filter(|m| ((tip(m) + axis(m) * 3.0).z - 45.0).abs() < 1.0e-3).map(|m| tilt(m)).collect();
+    assert!(!on_top.is_empty() && on_top.iter().all(|t| (t - 20.0).abs() < 0.5), "{on_top:?}");
+    // The ball's centre never comes closer to the part than its radius.
+    let tris: Vec<[glam::DVec3; 3]> = s
+        .job
+        .models
+        .iter()
+        .flat_map(|m| m.mesh.triangles().iter().map(|t| m.mesh.corners(*t).map(|p| p.as_dvec3())).collect::<Vec<_>>())
+        .collect();
+    let index = CosmicCAM_geom::collide::MeshIndex::new(tris, 3.0);
+    for m in &cuts {
+        let centre = tip(m) + axis(m) * 3.0;
+        let d = index.distance(centre, centre, 3.0);
+        assert!(d > 3.0 - 0.02, "gouge at {centre}: {d}");
+    }
+    // The axis turns at most 5°/mm (plus the simplification's slack), except where leaning back
+    // from the part cannot wait: rarely.
+    let fast = cuts
+        .windows(2)
+        .filter(|w| {
+            let (a, b) = (w[0], w[1]);
+            let turn = axis(a).dot(axis(b)).clamp(-1.0, 1.0).acos().to_degrees();
+            let travel = (tip(a) + axis(a) * 3.0).distance(tip(b) + axis(b) * 3.0);
+            turn > 5.0 * travel + 0.6
+        })
+        .count();
+    assert!(fast * 100 <= cuts.len(), "{fast} of {} moves turn faster than 5°/mm", cuts.len());
+    // It saves and reopens with its axes.
+    let text = crate::jobfile::to_string(&s.job, &s.view.camera, &s.library);
+    let back = crate::jobfile::from_str(&text).map(|f| f.job);
+    assert!(
+        back.as_ref()
+            .is_ok_and(|j| j.toolpaths.first().is_some_and(|t| t.axes.as_ref().is_some_and(|a| a.len() == mv.len()))),
+        "{:?}",
+        back.err()
+    );
+}
+
+#[test]
+fn five_axis_programs_come_out_in_each_controls_dialect() {
+    let mut s = five_axis_sample();
+    // The program WCS, and a work plane tilted 30° about X for a 3+2 raster.
+    assert!(s.execute("setup.wcs.create", &json!({"name": "Top"})).is_ok());
+    assert!(s.execute("setup.wcs.create", &json!({"name": "Tilt", "activate": false})).is_ok());
+    assert!(s.execute("setup.wcs.rotate", &json!({"id": "wcs.2", "axis": "x", "degrees": 30})).is_ok());
+    let _ = new_toolpath(&mut s, "toolpath.multiaxis", json!({"stepover": 6, "sample_step": 2, "tilt_angle": 20}));
+    let (tilted, _) =
+        new_toolpath(&mut s, "toolpath.raster", json!({"orientation": "wcs.2", "stepover": 8, "sample_step": 2}));
+    assert_eq!(tilted["multi_axis"], false);
+    let ta = vec3(&tilted["tool_axis"]);
+    assert!((ta[2] - 30_f64.to_radians().cos()).abs() < 1.0e-6, "{tilted}");
+    // CL data: rotary angles, the work plane and machine positions.
+    let tps = crate::postproc::chosen(&s, &[]).unwrap_or_default();
+    let opt =
+        crate::postproc::ClOptions { units: "mm", program_number: 7, line_numbers: false, arc_tolerance: Some(0.01) };
+    let cl = crate::postproc::cl_data(&s, &tps, &opt);
+    assert!(cl.is_ok(), "{cl:?}");
+    let cl = cl.unwrap_or_default();
+    assert_eq!(cl["machine"]["kinematics"]["axes"][0]["name"], "A");
+    let (sim_op, plane_op) = (&cl["operations"][0], &cl["operations"][1]);
+    assert_eq!(sim_op["multi_axis"], true);
+    assert!(
+        sim_op["moves"]
+            .as_array()
+            .is_some_and(|m| m.iter().all(|m| m["rotary"].as_array().is_some_and(|r| r.len() == 2)))
+    );
+    assert_eq!(plane_op["move_frame"], "plane");
+    // (WCS axes are kept in single precision.)
+    assert!(
+        (plane_op["work_plane"]["euler_zxz"][1].as_f64().unwrap_or_default() - 30.0).abs() < 1.0e-4,
+        "{}",
+        plane_op["work_plane"]
+    );
+    assert!((plane_op["rotary"][0].as_f64().unwrap_or_default().abs() - 30.0).abs() < 1.0e-4, "{}", plane_op["rotary"]);
+    // Each control's way of writing them.
+    let dir = std::path::PathBuf::from(TempFile::new("posts5-dir", b"").path()).with_extension("d");
+    let post = |id: &str| crate::postproc::run_in(&dir, id, &cl);
+    let has = |g: &str, w: &str| g.lines().any(|l| l.contains(w));
+    let fanuc = post("fanuc").map(|o| o.gcode).unwrap_or_else(|e| format!("{e}"));
+    for w in ["G43.4 H1", "G68.2 X", "J30.000", "G53.1", "G69", " A", " C"] {
+        assert!(has(&fanuc, w), "fanuc lacks {w}:\n{}", &fanuc[..fanuc.len().min(3000)]);
+    }
+    let haas = post("haas").map(|o| o.gcode).unwrap_or_else(|e| format!("{e}"));
+    for w in ["G234 H1", "G254", "G255"] {
+        assert!(has(&haas, w), "haas lacks {w}");
+    }
+    let linuxcnc = post("linuxcnc").map(|o| o.gcode).unwrap_or_else(|e| format!("{e}"));
+    for w in ["G93", "G94", " A"] {
+        assert!(has(&linuxcnc, w), "linuxcnc lacks {w}");
+    }
+    assert!(!has(&linuxcnc, "G43.4") && !has(&linuxcnc, "G68.2"));
+    // Inverse-time blocks each carry a feed.
+    let in_g93: Vec<&str> = linuxcnc
+        .lines()
+        .skip_while(|l| *l != "G93")
+        .skip(1)
+        .take_while(|l| *l != "G94")
+        .filter(|l| l.starts_with("G1"))
+        .collect();
+    assert!(!in_g93.is_empty() && in_g93.iter().all(|l| l.contains(" F")), "{in_g93:?}");
+    assert!(post("mach").is_ok_and(|o| o.gcode.contains("G93")));
+    assert!(post("grbl").is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+    // The generic post and a 3-axis machine refuse tilted work.
+    assert!(s.execute("post.gcode.get", &json!({})).is_err());
+    let mut flat = s.clone();
+    if let Some(m) = flat.library.machines.iter_mut().find(|m| m.kinematics.is_some()) {
+        m.kind = "mill_3axis".into();
+        m.kinematics = None;
+    }
+    let tps = crate::postproc::chosen(&flat, &[]).unwrap_or_default();
+    assert!(crate::postproc::cl_data(&flat, &tps, &opt).is_err());
+}
+
+#[test]
+fn tilting_tools_are_simulated_in_voxels() {
+    let mut s = five_axis_sample();
+    // A 3-axis profile alone is simulated on a height field.
+    assert!(
+        s.execute("tool.create.flat", &json!({"diameter": 6, "number": 2, "feed": 1000, "spindle_rpm": 10000})).is_ok()
+    );
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom], "tool": 2})).is_ok());
+    let st = s.execute("sim.start", &json!({})).unwrap_or_default();
+    assert_eq!(st["mode"], "height", "{st}");
+    // With a multi-axis finish the stock becomes voxels, and the finish removes material without
+    // gouging the part.
+    let (_, _) =
+        new_toolpath(&mut s, "toolpath.multiaxis", json!({"stepover": 3, "sample_step": 1.5, "tilt_angle": 20}));
+    let st = s.execute("sim.start", &json!({})).unwrap_or_default();
+    assert_eq!(st["mode"], "voxel", "{st}");
+    let full = st["remaining_volume"].as_f64().unwrap_or_default();
+    assert!(s.execute("sim.seek", &json!({"time": 1.0e9})).is_ok());
+    let end = s.execute("sim.get", &Value::Null).unwrap_or_default();
+    assert!(end["remaining_volume"].as_f64().unwrap_or(full) < full * 0.9, "{end}");
+    let g = s.execute("sim.gouge.check", &json!({})).unwrap_or_default();
+    assert_eq!(g["gouges"], 0, "{g}");
+    // Following the surface normal up walls, linking rows, leaning back from the boss: still
+    // nothing cut into the part (each once did: tilting past an edge mid-move, a link's own
+    // lean carried into the next row, a climb whose added points fell to the floor).
+    let (_, _) = new_toolpath(
+        &mut s,
+        "toolpath.multiaxis",
+        json!({"id": "toolpath.2", "stepover": 1.5, "tool_axis": "normal", "lead_angle": 10, "max_tilt": 45, "tool": 1}),
+    );
+    assert!(s.execute("sim.start", &json!({"cell": 0.5, "toolpaths": ["toolpath.2"]})).is_ok());
+    let g = s.execute("sim.gouge.check", &json!({})).unwrap_or_default();
+    assert_eq!(g["gouges"], 0, "{g}");
+    // Asking for a height field of tilting toolpaths is refused.
+    assert!(s.execute("sim.start", &json!({"mode": "height"})).is_err());
+    // Two machines with a T1 each: the simulation keeps them apart (it once took the first T1
+    // for both).
+    assert!(s.execute("machine.activate", &json!({"id": "machine.1"})).is_ok());
+    assert!(
+        s.execute("tool.create.flat", &json!({"diameter": 10, "number": 1, "feed": 1000, "spindle_rpm": 8000})).is_ok()
+    );
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom], "tool": 1})).is_ok());
+    assert!(s.execute("machine.activate", &json!({"id": "machine.2"})).is_ok());
+    let sim = crate::sim::Sim::new(&s, &[], None, None);
+    let tools =
+        sim.map(|x| x.tools.iter().map(|t| (t.number, t.ball, t.radius)).collect::<Vec<_>>()).unwrap_or_default();
+    assert!(tools.contains(&(1, true, 3.0)) && tools.contains(&(1, false, 5.0)), "{tools:?}");
+    assert!(s.execute("toolpath.remove", &json!({"id": "toolpath.3"})).is_ok());
+    assert!(s.execute("sim.start", &json!({})).is_ok());
+    // A finish straight into raw stock buries the tool: the shank rubs.
     let c = s.execute("sim.collision.check", &Value::Null).unwrap_or_default();
     assert!(c["events"].as_array().into_iter().flatten().any(|e| e["kind"] == "shank_contact"), "{c}");
 }

@@ -105,6 +105,16 @@ pub fn to_string(job: &JobState, camera: &OrbitCamera, library: &MachineLibrary)
                 "warnings": t.warnings,
                 "visible": t.visible,
                 "moves": base64::encode(&moves),
+                "axis": t.axis.to_array(),
+                "axes": t.axes.as_ref().map(|axes| {
+                    let mut packed = Vec::with_capacity(axes.len() * 12);
+                    for a in axes.iter() {
+                        for c in a.to_array() {
+                            packed.extend_from_slice(&c.to_le_bytes());
+                        }
+                    }
+                    base64::encode(&packed)
+                }),
                 "drill": t.drill.as_ref().map(|d| json!({
                     "cycle": d.cycle,
                     "holes": d.holes,
@@ -264,7 +274,36 @@ fn toolpath(v: &Value) -> EngineResult<Toolpath> {
             _ => return Err(bad(format!("{name} has a bad move"))),
         }
     }
+    let axis = match v.get("axis") {
+        None | Some(Value::Null) => Vec3::Z,
+        Some(_) => vec3(v, "axis")?.normalize_or_zero(),
+    };
+    if axis == Vec3::ZERO {
+        return Err(bad(format!("{name} has no tool axis")));
+    }
+    let axes = match v.get("axes") {
+        None | Some(Value::Null) => None,
+        Some(_) => {
+            let packed = bytes(v, "axes", 12)?;
+            if packed.len() / 12 != moves.len() {
+                return Err(bad(format!("{name} has a tool axis for some moves only")));
+            }
+            let mut axes = Vec::with_capacity(moves.len());
+            for i in 0..moves.len() {
+                let at = i * 12;
+                let a = Vec3::new(f32_at(&packed, at), f32_at(&packed, at + 4), f32_at(&packed, at + 8));
+                let a = a.normalize_or_zero();
+                if a == Vec3::ZERO {
+                    return Err(bad(format!("{name} has a bad tool axis")));
+                }
+                axes.push(a);
+            }
+            Some(Arc::new(axes))
+        }
+    };
     Ok(Toolpath {
+        axis,
+        axes,
         id: text(v, "id")?,
         name,
         strategy: text(v, "strategy")?,
@@ -368,6 +407,12 @@ pub fn from_str(source: &str) -> EngineResult<Loaded> {
         Some(b) => Some(stock_box(b)?),
     };
     job.toolpaths = list(j, "toolpaths", MAX_TOOLPATHS)?.iter().map(toolpath).collect::<EngineResult<_>>()?;
+    // Job files from before tool axes were saved: the axis is the WCS's Z.
+    for (t, raw) in job.toolpaths.iter_mut().zip(list(j, "toolpaths", MAX_TOOLPATHS)?) {
+        if raw.get("axis").is_none_or(Value::is_null) {
+            t.axis = t.wcs.as_deref().and_then(|id| job.wcs.iter().find(|w| w.id == id)).map_or(Vec3::Z, |w| w.z_axis);
+        }
+    }
     job.next_toolpath = counter(j, "next_toolpath");
     job.setups = list(j, "setups", MAX_SETUPS)?
         .iter()

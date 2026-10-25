@@ -1,5 +1,6 @@
 //! Cutter geometry against a triangle mesh, for 3D toolpaths with a flat end mill (a cylinder
-//! with a flat bottom). Triangles are given in the toolpath's frame: Z is the tool axis.
+//! with a flat bottom) or a ball end mill. Triangles are given in the toolpath's frame: Z is the
+//! tool axis.
 //!
 //! - [`shadow_above`]: everything at or above a height, seen from above. A flat end mill whose
 //!   bottom is at that height must keep its centre at least its radius away from the shadow.
@@ -36,11 +37,12 @@ pub fn shadow_above(tris: &[Triangle], z: f64) -> Vec<Shape> {
     region::union_polygons(&polygons)
 }
 
-/// Heights a flat end mill of radius `radius` can come down to over a mesh, with triangles
-/// binned on an XY grid so each query only looks at nearby ones.
+/// Heights a flat (or ball) end mill of radius `radius` can come down to over a mesh, with
+/// triangles binned on an XY grid so each query only looks at nearby ones.
 pub struct DropCutter {
     tris: Vec<Triangle>,
     radius: f64,
+    ball: bool,
     origin: DVec2,
     cell: f64,
     cols: usize,
@@ -63,6 +65,7 @@ impl DropCutter {
             return Self {
                 tris: Vec::new(),
                 radius,
+                ball: false,
                 origin: DVec2::ZERO,
                 cell: 1.0,
                 cols: 0,
@@ -95,7 +98,12 @@ impl DropCutter {
                 }
             }
         }
-        Self { tris, radius, origin, cell, cols, rows, bins }
+        Self { tris, radius, ball: false, origin, cell, cols, rows, bins }
+    }
+
+    /// A ball end mill of radius `radius`: heights are of its tip (the bottom of the ball).
+    pub fn ball(tris: Vec<Triangle>, radius: f64) -> Self {
+        Self { ball: true, ..Self::new(tris, radius) }
     }
 
     fn cell_of(origin: DVec2, cell: f64, p: DVec2) -> (usize, usize) {
@@ -106,6 +114,9 @@ impl DropCutter {
     /// The lowest the cutter's bottom can be at (x, y) without entering the mesh, or None when
     /// nothing is under it.
     pub fn height(&self, at: DVec2) -> Option<f64> {
+        if self.ball {
+            return self.ball_contact(at).map(|(z, _)| z);
+        }
         if self.cols == 0 || !at.is_finite() {
             return None;
         }
@@ -166,6 +177,77 @@ impl DropCutter {
     }
 }
 
+impl DropCutter {
+    /// A ball end mill at (x, y): the lowest its tip can be, and the point of the mesh it rests
+    /// on there (the surface normal there runs from it to the ball's centre).
+    pub fn ball_contact(&self, at: DVec2) -> Option<(f64, DVec3)> {
+        if self.cols == 0 || !at.is_finite() {
+            return None;
+        }
+        let (c, r) = Self::cell_of(self.origin, self.cell, at);
+        if c >= self.cols || r >= self.rows {
+            return None;
+        }
+        let rad = self.radius;
+        let r2 = rad * rad;
+        // The highest centre height over every feature, with the point it touches.
+        let mut best: Option<(f64, DVec3)> = None;
+        let mut take = |zc: f64, p: DVec3| {
+            if zc.is_finite() && p.is_finite() && best.is_none_or(|(b, _)| zc > b) {
+                best = Some((zc, p));
+            }
+        };
+        for &i in self.bins.get(r * self.cols + c).into_iter().flatten() {
+            let Some(t) = self.tris.get(i as usize) else { continue };
+            for p in t {
+                let d2 = p.truncate().distance_squared(at);
+                if d2 <= r2 {
+                    take(p.z + (r2 - d2).sqrt(), *p);
+                }
+            }
+            for k in 0..3 {
+                let (Some(&a), Some(&b)) = (t.get(k), t.get((k + 1) % 3)) else { continue };
+                let len = a.distance(b);
+                if len < 1.0e-12 {
+                    continue;
+                }
+                let u = (b - a) / len;
+                let horizontal = 1.0 - u.z * u.z;
+                if horizontal < 1.0e-12 {
+                    continue;
+                }
+                // Centre (at, a.z + h) at distance `rad` from the edge's line: a quadratic in h.
+                let (dx, dy) = (at.x - a.x, at.y - a.y);
+                let k0 = dx * u.x + dy * u.y;
+                let qa = horizontal;
+                let qb = -2.0 * k0 * u.z;
+                let qc = dx * dx + dy * dy - k0 * k0 - r2;
+                let disc = qb * qb - 4.0 * qa * qc;
+                if disc < 0.0 {
+                    continue;
+                }
+                let h = (-qb + disc.sqrt()) / (2.0 * qa);
+                let along = k0 + h * u.z;
+                if (0.0..=len).contains(&along) {
+                    take(a.z + h, a + u * along);
+                }
+            }
+            let n = (t[1] - t[0]).cross(t[2] - t[0]);
+            let length = n.length();
+            if length < 1.0e-12 || n.z.abs() < 1.0e-9 * length {
+                continue;
+            }
+            let n = if n.z < 0.0 { -n } else { n } / length;
+            let q = at - n.truncate() * rad;
+            if inside_xy(t, q) {
+                let qz = t[0].z - (n.x * (q.x - t[0].x) + n.y * (q.y - t[0].y)) / n.z;
+                take(qz + n.z * rad, q.extend(qz));
+            }
+        }
+        best.map(|(zc, p)| (zc - rad, p))
+    }
+}
+
 fn inside_xy(t: &Triangle, p: DVec2) -> bool {
     let s = |a: DVec3, b: DVec3| (b.truncate() - a.truncate()).perp_dot(p - a.truncate());
     let (d0, d1, d2) = (s(t[0], t[1]), s(t[1], t[2]), s(t[2], t[0]));
@@ -208,6 +290,34 @@ mod tests {
         // Beyond the radius, nothing is under it.
         assert_eq!(d.height(DVec2::new(24.0, 5.0)), None);
         assert_eq!(d.height(DVec2::new(f64::NAN, 0.0)), None);
+    }
+
+    #[test]
+    fn a_ball_rests_on_faces_edges_and_corners() {
+        let d = DropCutter::ball(block(), 3.0);
+        // On the top face, touching straight below.
+        let (z, p) = d.ball_contact(DVec2::new(10.0, 5.0)).unwrap_or_default();
+        assert!((z - 5.0).abs() < 1.0e-9 && p.distance(DVec3::new(10.0, 5.0, 5.0)) < 1.0e-9, "{z} {p}");
+        // Past the edge by 2 of its 3 mm, the ball rolls over the edge: the centre is
+        // sqrt(9 - 4) above it.
+        let (z, p) = d.ball_contact(DVec2::new(22.0, 5.0)).unwrap_or_default();
+        assert!((z - (5.0 + 5.0_f64.sqrt() - 3.0)).abs() < 1.0e-9, "{z}");
+        assert!(p.distance(DVec3::new(20.0, 5.0, 5.0)) < 1.0e-9, "{p}");
+        // Off a corner diagonally.
+        let z = d.height(DVec2::new(21.0, 11.0)).unwrap_or_default();
+        assert!((z - (5.0 + 7.0_f64.sqrt() - 3.0)).abs() < 1.0e-9, "{z}");
+    }
+
+    #[test]
+    fn a_ball_on_a_slope_touches_uphill_of_its_centre() {
+        // A 45° ramp rising in X: the centre is r·√2 above the surface below it, so the tip is
+        // r(√2 - 1) above it, and the ball touches r/√2 uphill of its centre.
+        let c = |x: f64, y: f64| DVec3::new(x, y, x);
+        let ramp = vec![[c(0., -50.), c(50., -50.), c(50., 50.)], [c(0., -50.), c(50., 50.), c(0., 50.)]];
+        let d = DropCutter::ball(ramp, 2.0);
+        let (z, p) = d.ball_contact(DVec2::new(20.0, 0.0)).unwrap_or_default();
+        assert!((z - (20.0 + 2.0 * (2.0_f64.sqrt() - 1.0))).abs() < 1.0e-9, "{z}");
+        assert!((p.x - (20.0 + 2.0 / 2.0_f64.sqrt())).abs() < 1.0e-9, "{p}");
     }
 
     #[test]

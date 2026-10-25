@@ -12,12 +12,16 @@
 )]
 #![allow(non_snake_case)]
 
+pub mod arcfit;
+pub mod collide;
 pub mod cutter;
 pub mod edges;
 pub mod faces;
+pub mod kinematics;
 pub mod mesh;
 pub mod offset;
 pub mod region;
+pub mod voxel;
 pub mod zmap;
 
 pub use edges::{Edge, EdgeKind, EdgeMap};

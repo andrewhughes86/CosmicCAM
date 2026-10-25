@@ -1002,7 +1002,7 @@ class Commands:
         """
         return self.execute("app.quit")
 
-    def toolpath_contour(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, lead_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, tool_axis: Optional[Literal["wcs_z"]] = None, geometry: Optional[Sequence[str]] = None, side: Optional[Literal["outside", "inside", "on"]] = None, reverse: Optional[bool] = None, wcs: Optional[str] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, both_ways: Optional[bool] = None, radial_passes: Optional[int] = None, radial_stepover: Optional[float] = None, spring_passes: Optional[int] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, multiple_depths: Optional[bool] = None, max_stepdown: Optional[float] = None, feed_optimization: Optional[bool] = None, optimization_angle: Optional[float] = None, optimization_feed: Optional[float] = None, optimization_distance: Optional[float] = None, tolerance: Optional[float] = None, entry_from: Optional[Literal["auto", "origin", "wcs", "selection"]] = None, entry_point: Optional[Sequence[float]] = None, lead_in: Optional[Literal["arc", "line", "none"]] = None, lead_in_radius: Optional[float] = None, lead_in_sweep: Optional[float] = None, lead_in_length: Optional[float] = None, lead_out_same: Optional[bool] = None, lead_out: Optional[Literal["arc", "line", "none"]] = None, lead_out_radius: Optional[float] = None, lead_out_sweep: Optional[float] = None, lead_out_length: Optional[float] = None, ramp: Optional[Literal["ramp", "plunge"]] = None, ramp_angle: Optional[float] = None, retract: Optional[Literal["minimum", "full", "stay_down"]] = None, stay_down_distance: Optional[float] = None, rapid_links: Optional[bool] = None, link_feed: Optional[float] = None) -> Any:
+    def toolpath_contour(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, lead_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, tool_axis: Optional[Literal["wcs_z"]] = None, geometry: Optional[Sequence[str]] = None, side: Optional[Literal["outside", "inside", "on"]] = None, reverse: Optional[bool] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, both_ways: Optional[bool] = None, radial_passes: Optional[int] = None, radial_stepover: Optional[float] = None, spring_passes: Optional[int] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, multiple_depths: Optional[bool] = None, max_stepdown: Optional[float] = None, feed_optimization: Optional[bool] = None, optimization_angle: Optional[float] = None, optimization_feed: Optional[float] = None, optimization_distance: Optional[float] = None, tolerance: Optional[float] = None, entry_from: Optional[Literal["auto", "origin", "wcs", "selection"]] = None, entry_point: Optional[Sequence[float]] = None, lead_in: Optional[Literal["arc", "line", "none"]] = None, lead_in_radius: Optional[float] = None, lead_in_sweep: Optional[float] = None, lead_in_length: Optional[float] = None, lead_out_same: Optional[bool] = None, lead_out: Optional[Literal["arc", "line", "none"]] = None, lead_out_radius: Optional[float] = None, lead_out_sweep: Optional[float] = None, lead_out_length: Optional[float] = None, ramp: Optional[Literal["ramp", "plunge"]] = None, ramp_angle: Optional[float] = None, retract: Optional[Literal["minimum", "full", "stay_down"]] = None, stay_down_distance: Optional[float] = None, rapid_links: Optional[bool] = None, link_feed: Optional[float] = None) -> Any:
         """Follow selected edges or a face outline at depth, offset by the tool radius.
 
         Args:
@@ -1014,11 +1014,16 @@ class Commands:
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             lead_feed: Lead-in and lead-out feed, mm/min (default: the cutting feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
+            post_stop: Stop the machine (M0) before this operation.
+            post_comment: Note for the operator, written in the program.
+            post_code_before: G-code written as given before the operation.
+            post_code_after: G-code written as given after the operation.
             tool_axis: Tool orientation (only the WCS Z axis for now) — one of wcs_z.
             geometry: Edges and faces to follow (model.N/edge.N, model.N/face.N).
             side: Cut outside or inside closed contours, or on the line (open contours: outside = left) — one of outside, inside, on.
             reverse: Run the contour the other way.
             wcs: WCS to program in (default: the active one).
+            orientation: 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine).
             clearance_from: Clearance height reference (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
             clearance_offset: Clearance height above its reference, mm (default 15) (-1e5 to 1e5 mm).
             retract_from: Retract height reference (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
@@ -1066,7 +1071,7 @@ class Commands:
 
         Command: ``toolpath.contour``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "lead_feed": lead_feed, "coolant": coolant, "tool_axis": tool_axis, "geometry": geometry, "side": side, "reverse": reverse, "wcs": wcs, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "direction": direction, "both_ways": both_ways, "radial_passes": radial_passes, "radial_stepover": radial_stepover, "spring_passes": spring_passes, "stock_radial": stock_radial, "stock_axial": stock_axial, "multiple_depths": multiple_depths, "max_stepdown": max_stepdown, "feed_optimization": feed_optimization, "optimization_angle": optimization_angle, "optimization_feed": optimization_feed, "optimization_distance": optimization_distance, "tolerance": tolerance, "entry_from": entry_from, "entry_point": entry_point, "lead_in": lead_in, "lead_in_radius": lead_in_radius, "lead_in_sweep": lead_in_sweep, "lead_in_length": lead_in_length, "lead_out_same": lead_out_same, "lead_out": lead_out, "lead_out_radius": lead_out_radius, "lead_out_sweep": lead_out_sweep, "lead_out_length": lead_out_length, "ramp": ramp, "ramp_angle": ramp_angle, "retract": retract, "stay_down_distance": stay_down_distance, "rapid_links": rapid_links, "link_feed": link_feed}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "lead_feed": lead_feed, "coolant": coolant, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "tool_axis": tool_axis, "geometry": geometry, "side": side, "reverse": reverse, "wcs": wcs, "orientation": orientation, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "direction": direction, "both_ways": both_ways, "radial_passes": radial_passes, "radial_stepover": radial_stepover, "spring_passes": spring_passes, "stock_radial": stock_radial, "stock_axial": stock_axial, "multiple_depths": multiple_depths, "max_stepdown": max_stepdown, "feed_optimization": feed_optimization, "optimization_angle": optimization_angle, "optimization_feed": optimization_feed, "optimization_distance": optimization_distance, "tolerance": tolerance, "entry_from": entry_from, "entry_point": entry_point, "lead_in": lead_in, "lead_in_radius": lead_in_radius, "lead_in_sweep": lead_in_sweep, "lead_in_length": lead_in_length, "lead_out_same": lead_out_same, "lead_out": lead_out, "lead_out_radius": lead_out_radius, "lead_out_sweep": lead_out_sweep, "lead_out_length": lead_out_length, "ramp": ramp, "ramp_angle": ramp_angle, "retract": retract, "stay_down_distance": stay_down_distance, "rapid_links": rapid_links, "link_feed": link_feed}
         return self.execute("toolpath.contour", {k: v for k, v in params.items() if v is not None})
 
     def toolpath_list(self) -> Any:
@@ -1167,7 +1172,7 @@ class Commands:
         params = {"id": id}
         return self.execute("toolpath.remove", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_face(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, overrun: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, multiple_depths: Optional[bool] = None) -> Any:
+    def toolpath_face(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, overrun: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, multiple_depths: Optional[bool] = None) -> Any:
         """Rows across the top of the stock to bring it flat and down to height.
 
         Args:
@@ -1179,6 +1184,11 @@ class Commands:
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
             wcs: WCS to program in (default: the active one).
+            orientation: 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine).
+            post_stop: Stop the machine (M0) before this operation.
+            post_comment: Note for the operator, written in the program.
+            post_code_before: G-code written as given before the operation.
+            post_code_after: G-code written as given after the operation.
             geometry: Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N).
             clearance_from: Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
             clearance_offset: Clearance height above its reference, mm (-1e5 to 1e5 mm).
@@ -1212,10 +1222,10 @@ class Commands:
 
         Command: ``toolpath.face``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "overrun": overrun, "angle": angle, "pattern": pattern, "multiple_depths": multiple_depths}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "overrun": overrun, "angle": angle, "pattern": pattern, "multiple_depths": multiple_depths}
         return self.execute("toolpath.face", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_pocket(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, multiple_depths: Optional[bool] = None, finishing_pass: Optional[bool] = None) -> Any:
+    def toolpath_pocket(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, multiple_depths: Optional[bool] = None, finishing_pass: Optional[bool] = None) -> Any:
         """Clear the inside of selected floor faces or closed edges, around any islands.
 
         Args:
@@ -1227,6 +1237,11 @@ class Commands:
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
             wcs: WCS to program in (default: the active one).
+            orientation: 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine).
+            post_stop: Stop the machine (M0) before this operation.
+            post_comment: Note for the operator, written in the program.
+            post_code_before: G-code written as given before the operation.
+            post_code_after: G-code written as given after the operation.
             geometry: Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N).
             clearance_from: Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
             clearance_offset: Clearance height above its reference, mm (-1e5 to 1e5 mm).
@@ -1256,10 +1271,10 @@ class Commands:
 
         Command: ``toolpath.pocket``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "multiple_depths": multiple_depths, "finishing_pass": finishing_pass}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "multiple_depths": multiple_depths, "finishing_pass": finishing_pass}
         return self.execute("toolpath.pocket", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_drill(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, cycle: Optional[Literal["drill", "spot", "peck", "chip_break", "tap", "bore"]] = None, peck_depth: Optional[float] = None, dwell: Optional[float] = None, pitch: Optional[float] = None) -> Any:
+    def toolpath_drill(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, cycle: Optional[Literal["drill", "spot", "peck", "chip_break", "tap", "bore"]] = None, peck_depth: Optional[float] = None, dwell: Optional[float] = None, pitch: Optional[float] = None) -> Any:
         """Drill, spot, peck, tap or bore holes picked as cylinders, circular edges or points.
 
         Args:
@@ -1271,6 +1286,11 @@ class Commands:
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
             wcs: WCS to program in (default: the active one).
+            orientation: 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine).
+            post_stop: Stop the machine (M0) before this operation.
+            post_comment: Note for the operator, written in the program.
+            post_code_before: G-code written as given before the operation.
+            post_code_after: G-code written as given after the operation.
             geometry: Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N).
             clearance_from: Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
             clearance_offset: Clearance height above its reference, mm (-1e5 to 1e5 mm).
@@ -1293,10 +1313,10 @@ class Commands:
 
         Command: ``toolpath.drill``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "cycle": cycle, "peck_depth": peck_depth, "dwell": dwell, "pitch": pitch}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "cycle": cycle, "peck_depth": peck_depth, "dwell": dwell, "pitch": pitch}
         return self.execute("toolpath.drill", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_rough(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, angle: Optional[float] = None) -> Any:
+    def toolpath_rough(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, angle: Optional[float] = None) -> Any:
         """Clear the stock around the part level by level, leaving stock for finishing.
 
         Args:
@@ -1308,6 +1328,11 @@ class Commands:
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
             wcs: WCS to program in (default: the active one).
+            orientation: 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine).
+            post_stop: Stop the machine (M0) before this operation.
+            post_comment: Note for the operator, written in the program.
+            post_code_before: G-code written as given before the operation.
+            post_code_after: G-code written as given after the operation.
             geometry: Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N).
             clearance_from: Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
             clearance_offset: Clearance height above its reference, mm (-1e5 to 1e5 mm).
@@ -1336,10 +1361,10 @@ class Commands:
 
         Command: ``toolpath.rough``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "angle": angle}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "angle": angle}
         return self.execute("toolpath.rough", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_waterline(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None) -> Any:
+    def toolpath_waterline(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None) -> Any:
         """Finish steep walls with passes around the part at constant heights.
 
         Args:
@@ -1351,6 +1376,11 @@ class Commands:
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
             wcs: WCS to program in (default: the active one).
+            orientation: 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine).
+            post_stop: Stop the machine (M0) before this operation.
+            post_comment: Note for the operator, written in the program.
+            post_code_before: G-code written as given before the operation.
+            post_code_after: G-code written as given after the operation.
             geometry: Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N).
             clearance_from: Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
             clearance_offset: Clearance height above its reference, mm (-1e5 to 1e5 mm).
@@ -1378,10 +1408,10 @@ class Commands:
 
         Command: ``toolpath.waterline``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links}
         return self.execute("toolpath.waterline", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_raster(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, sample_step: Optional[float] = None) -> Any:
+    def toolpath_raster(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, sample_step: Optional[float] = None) -> Any:
         """Finish shallow surfaces with parallel rows that follow the part.
 
         Args:
@@ -1393,6 +1423,11 @@ class Commands:
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
             wcs: WCS to program in (default: the active one).
+            orientation: 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine).
+            post_stop: Stop the machine (M0) before this operation.
+            post_comment: Note for the operator, written in the program.
+            post_code_before: G-code written as given before the operation.
+            post_code_after: G-code written as given after the operation.
             geometry: Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N).
             clearance_from: Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
             clearance_offset: Clearance height above its reference, mm (-1e5 to 1e5 mm).
@@ -1425,8 +1460,69 @@ class Commands:
 
         Command: ``toolpath.raster``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "angle": angle, "pattern": pattern, "sample_step": sample_step}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "angle": angle, "pattern": pattern, "sample_step": sample_step}
         return self.execute("toolpath.raster", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_multiaxis(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, sample_step: Optional[float] = None, tool_axis: Optional[Literal["tilt", "normal", "toward_point", "away_from_point", "toward_line", "away_from_line", "fixed"]] = None, tilt_angle: Optional[float] = None, lead_angle: Optional[float] = None, axis_point: Optional[Sequence[float]] = None, axis_direction: Optional[Sequence[float]] = None, max_tilt: Optional[float] = None, max_axis_rate: Optional[float] = None, avoid_collisions: Optional[bool] = None, shank_clearance: Optional[float] = None) -> Any:
+        """Finish the part with a ball end mill that tilts as it follows the surface (simultaneous 4/5-axis).
+
+        Args:
+            id: Regenerate this toolpath with these settings instead of adding one.
+            name: Name in the job outline (default: the strategy and tool).
+            tool: Tool number in the active machine's library (default: the first) (1 to 9999).
+            spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
+            plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
+            coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
+            wcs: WCS to program in (default: the active one).
+            orientation: 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine).
+            post_stop: Stop the machine (M0) before this operation.
+            post_comment: Note for the operator, written in the program.
+            post_code_before: G-code written as given before the operation.
+            post_code_after: G-code written as given after the operation.
+            geometry: Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N).
+            clearance_from: Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            clearance_offset: Clearance height above its reference, mm (-1e5 to 1e5 mm).
+            retract_from: Retract height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            retract_offset: Retract height above its reference, mm (-1e5 to 1e5 mm).
+            feed_height_from: Feed height reference: where rapids stop — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            feed_height_offset: Feed height above its reference, mm (-1e5 to 1e5 mm).
+            top_from: Top height reference: where cutting starts — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            top_offset: Top height offset, mm (-1e5 to 1e5 mm).
+            bottom_from: Bottom height reference: the final depth — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            bottom_offset: Bottom height offset, mm (negative goes deeper) (-1e5 to 1e5 mm).
+            tolerance: How far the path may stray from true curves, mm (default 0.01) (0 to 1 mm).
+            stepover: Distance between passes, mm (default: a share of the tool diameter) (0 to 10000 mm).
+            stepdown: Depth per level, mm (default: the tool's, else a share of its diameter) (0 to 10000 mm).
+            direction: Climb or conventional milling (default climb) — one of climb, conventional.
+            stock_radial: Stock to leave on walls, mm (default 0) (-1000 to 1000 mm).
+            stock_axial: Stock to leave on floors, mm (default 0) (-1000 to 1000 mm).
+            entry: Into the material: a helical ramp or a plunge (default helix) — one of helix, plunge.
+            ramp_angle: Helix ramp angle, degrees (default 2) (0.1 to 90).
+            helix_radius: Helix radius, mm (default 0.4 × Ø, at most the tool radius) (0 to 10000 mm).
+            rapid_links: Link between passes at rapid traverse (default true).
+            boundary: Area to cover: the stock, the model or the selection (default model) — one of stock, model, selection.
+            boundary_offset: Grow (or shrink) the area by this, mm (default 0) (-1e5 to 1e5 mm).
+            angle: Row direction, degrees from +X (default 0) (-360 to 360).
+            pattern: Back and forth, or all one way (default zigzag) — one of zigzag, one_way.
+            sample_step: Spacing of points along a row, mm (default Ø/8, 0.05–1) (0 to 1000 mm).
+            tool_axis: How the tool leans: tilted from Z, from the surface normal, towards or away from a point or line, or fixed (default tilt) — one of tilt, normal, toward_point, away_from_point, toward_line, away_from_line, fixed.
+            tilt_angle: Sideways lean, degrees: positive leans the tool's top to the right of the row direction (default 15 for tilt, else 0) (-89 to 89).
+            lead_angle: Lean along the travel, degrees: positive leans the top forward (default 0) (-89 to 89).
+            axis_point: The point (WCS mm) for toward/away from a point or line — [x, y, z] in mm.
+            axis_direction: The line's direction, or the fixed tool axis (WCS) — [x, y, z] in mm.
+            max_tilt: Most the tool may lean from the toolpath's Z, degrees (default 60) (0 to 120).
+            max_axis_rate: Fastest the tool axis may turn, degrees per mm of travel (default 5) (0.01 to 180).
+            avoid_collisions: Lean the tool back towards Z where its flutes or shank would touch the part (default true).
+            shank_clearance: Gap kept around the shank, mm (default 0.5) (0 to 100 mm).
+
+        Returns:
+            the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
+
+        Command: ``toolpath.multiaxis``
+        """
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "angle": angle, "pattern": pattern, "sample_step": sample_step, "tool_axis": tool_axis, "tilt_angle": tilt_angle, "lead_angle": lead_angle, "axis_point": axis_point, "axis_direction": axis_direction, "max_tilt": max_tilt, "max_axis_rate": max_axis_rate, "avoid_collisions": avoid_collisions, "shank_clearance": shank_clearance}
+        return self.execute("toolpath.multiaxis", {k: v for k, v in params.items() if v is not None})
 
     def setup_create(self, *, name: str, machine: Optional[str] = None, wcs: Optional[str] = None, activate: Optional[bool] = None, stock: Optional[Literal["fit", "size", "box", "none"]] = None, stock_margin_sides: Optional[float] = None, stock_margin_top: Optional[float] = None, stock_margin_bottom: Optional[float] = None, stock_size: Optional[Sequence[float]] = None, stock_align: Optional[Literal["top", "center", "bottom"]] = None, stock_min: Optional[Sequence[float]] = None, stock_max: Optional[Sequence[float]] = None, stock_round: Optional[float] = None) -> Any:
         """Start a setup: its name, machine, WCS and stock.
@@ -1578,42 +1674,6 @@ class Commands:
         """
         return self.execute("setup.stock.margins")
 
-    def toolpath_cl_export(self) -> Any:
-        """Write machine-neutral cutter location data (Phase 6).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``toolpath.cl.export``
-        """
-        return self.execute("toolpath.cl.export")
-
-    def post_processor_select(self) -> Any:
-        """Choose the machine controller dialect (Phase 8).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``post.processor.select``
-        """
-        return self.execute("post.processor.select")
-
-    def post_limits_check(self) -> Any:
-        """Validate travel, spindle and feed limits (Phase 8).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``post.limits.check``
-        """
-        return self.execute("post.limits.check")
-
     def setup_stock_fit(self, *, margin_sides: Optional[float] = None, margin_top: Optional[float] = None, margin_bottom: Optional[float] = None) -> Any:
         """Size the stock box to the models' bounding box, plus margins.
 
@@ -1644,9 +1704,9 @@ class Commands:
         """Add a cutting tool to the active machine's library.
 
         Args:
-            type: Tool type (default flat; only flat end mills so far) — one of flat, ball, bull, chamfer, drill, spot_drill, face_mill, tap, thread_mill.
+            type: Tool type (default flat; flat and ball end mills so far) — one of flat, ball, bull, chamfer, drill, spot_drill, face_mill, tap, thread_mill.
             number: Tool number (default: the lowest free one) (1 to 9999).
-            name: Description shown in the library (default: Ø<d> flat end mill).
+            name: Description shown in the library (default: Ø<d> flat or ball end mill).
             diameter: Cutting diameter, mm (0.001 to 2000 mm).
             flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
             flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
@@ -1677,7 +1737,7 @@ class Commands:
 
         Args:
             number: Tool number (default: the lowest free one) (1 to 9999).
-            name: Description shown in the library (default: Ø<d> flat end mill).
+            name: Description shown in the library (default: Ø<d> flat or ball end mill).
             diameter: Cutting diameter, mm (0.001 to 2000 mm).
             flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
             flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
@@ -1703,17 +1763,36 @@ class Commands:
         params = {"number": number, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
         return self.execute("tool.create.flat", {k: v for k, v in params.items() if v is not None})
 
-    def tool_create_ball(self) -> Any:
-        """Ball nose tools are not supported yet.
+    def tool_create_ball(self, *, number: Optional[int] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond"]] = None, coating: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a ball nose end mill to the active machine's library (for 3D and multi-axis finishing).
 
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            name: Description shown in the library (default: Ø<d> flat or ball end mill).
+            diameter: Cutting diameter, mm (0.001 to 2000 mm).
+            flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
+            flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond.
+            coating: Coating, e.g. TiAlN.
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
 
         Returns:
-            not defined yet
+            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
 
         Command: ``tool.create.ball``
         """
-        return self.execute("tool.create.ball")
+        params = {"number": number, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.ball", {k: v for k, v in params.items() if v is not None})
 
     def tool_create_bull(self) -> Any:
         """Bull nose tools are not supported yet.
@@ -1805,7 +1884,7 @@ class Commands:
         Args:
             number: The tool to change (1 to 9999).
             new_number: Renumber the tool (1 to 9999).
-            name: Description shown in the library (default: Ø<d> flat end mill).
+            name: Description shown in the library (default: Ø<d> flat or ball end mill).
             diameter: Cutting diameter, mm (0.001 to 2000 mm).
             flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
             flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
@@ -1952,50 +2031,76 @@ class Commands:
         params = {"path": path, "machine": machine}
         return self.execute("tool.library.export", {k: v for k, v in params.items() if v is not None})
 
-    def machine_create(self, *, activate: Optional[bool] = None, name: Optional[str] = None, description: Optional[str] = None, kind: Optional[Literal["mill_3axis"]] = None, travel_x: Optional[float] = None, travel_y: Optional[float] = None, travel_z: Optional[float] = None, max_spindle_rpm: Optional[float] = None, max_feed: Optional[float] = None, tool_capacity: Optional[int] = None) -> Any:
+    def machine_create(self, *, activate: Optional[bool] = None, name: Optional[str] = None, description: Optional[str] = None, kind: Optional[Literal["mill_3axis", "mill_4axis", "mill_5axis"]] = None, travel_x: Optional[float] = None, travel_y: Optional[float] = None, travel_z: Optional[float] = None, max_spindle_rpm: Optional[float] = None, max_feed: Optional[float] = None, tool_capacity: Optional[int] = None, post: Optional[str] = None, layout: Optional[Literal["table_table", "head_table", "head_head"]] = None, primary_axis: Optional[Literal["A", "B", "C"]] = None, primary_min: Optional[float] = None, primary_max: Optional[float] = None, primary_reversed: Optional[bool] = None, secondary_axis: Optional[Literal["A", "B", "C"]] = None, secondary_min: Optional[float] = None, secondary_max: Optional[float] = None, secondary_reversed: Optional[bool] = None, primary_centre: Optional[Sequence[float]] = None, secondary_centre: Optional[Sequence[float]] = None, pivot_length: Optional[float] = None) -> Any:
         """Add a machine configuration with its own, empty tool library.
 
         Args:
             activate: Make it the active machine (default true).
             name: Machine name.
             description: Notes about the machine.
-            kind: Machine type (3-axis mill for now) — one of mill_3axis.
+            kind: Machine type: 3-, 4- or 5-axis mill (a new 4- or 5-axis machine starts with typical rotary axes) — one of mill_3axis, mill_4axis, mill_5axis.
             travel_x: X travel, mm (0.001 to 1e5 mm).
             travel_y: Y travel, mm (0.001 to 1e5 mm).
             travel_z: Z travel, mm (0.001 to 1e5 mm).
             max_spindle_rpm: Highest spindle speed, rpm (1 to 5e5).
             max_feed: Fastest cutting feed, mm/min (0.001 to 1e6 mm/min).
             tool_capacity: Tool changer pockets (0 = manual tool changes) (0 to 9999).
+            post: Post-processor id its programs are written with (see post.processor.list).
+            layout: 4/5-axis: which units turn: both on the table (trunnion), table and head, or both on the head — one of table_table, head_table, head_head.
+            primary_axis: 4/5-axis: the axis nearer the base (head-table: the table's axis); A turns about X, B about Y, C about Z — one of A, B, C.
+            primary_min: 4/5-axis: primary axis travel, lowest angle (degrees) (-1e5 to 1e5).
+            primary_max: 4/5-axis: primary axis travel, highest angle (degrees) (-1e5 to 1e5).
+            primary_reversed: 4/5-axis: the primary axis turns opposite to the ISO convention.
+            secondary_axis: 5-axis: the axis the primary carries (head-table: the head's axis) — one of A, B, C.
+            secondary_min: 5-axis: secondary axis travel, lowest angle (degrees) (-1e5 to 1e5).
+            secondary_max: 5-axis: secondary axis travel, highest angle (degrees) (-1e5 to 1e5).
+            secondary_reversed: 5-axis: the secondary axis turns opposite to the ISO convention.
+            primary_centre: Tables: where the primary axis passes, relative to the work origin, mm (for posts that move the linear axes themselves) — [x, y, z] in mm.
+            secondary_centre: Table-table: where the secondary axis passes, relative to the work origin, mm — [x, y, z] in mm.
+            pivot_length: Heads: from where the head turns to the spindle gauge line, mm (0 to 10000 mm).
 
         Returns:
-            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, kinematics, tools}
 
         Command: ``machine.create``
         """
-        params = {"activate": activate, "name": name, "description": description, "kind": kind, "travel_x": travel_x, "travel_y": travel_y, "travel_z": travel_z, "max_spindle_rpm": max_spindle_rpm, "max_feed": max_feed, "tool_capacity": tool_capacity}
+        params = {"activate": activate, "name": name, "description": description, "kind": kind, "travel_x": travel_x, "travel_y": travel_y, "travel_z": travel_z, "max_spindle_rpm": max_spindle_rpm, "max_feed": max_feed, "tool_capacity": tool_capacity, "post": post, "layout": layout, "primary_axis": primary_axis, "primary_min": primary_min, "primary_max": primary_max, "primary_reversed": primary_reversed, "secondary_axis": secondary_axis, "secondary_min": secondary_min, "secondary_max": secondary_max, "secondary_reversed": secondary_reversed, "primary_centre": primary_centre, "secondary_centre": secondary_centre, "pivot_length": pivot_length}
         return self.execute("machine.create", {k: v for k, v in params.items() if v is not None})
 
-    def machine_edit(self, *, id: Optional[str] = None, name: Optional[str] = None, description: Optional[str] = None, kind: Optional[Literal["mill_3axis"]] = None, travel_x: Optional[float] = None, travel_y: Optional[float] = None, travel_z: Optional[float] = None, max_spindle_rpm: Optional[float] = None, max_feed: Optional[float] = None, tool_capacity: Optional[int] = None) -> Any:
+    def machine_edit(self, *, id: Optional[str] = None, name: Optional[str] = None, description: Optional[str] = None, kind: Optional[Literal["mill_3axis", "mill_4axis", "mill_5axis"]] = None, travel_x: Optional[float] = None, travel_y: Optional[float] = None, travel_z: Optional[float] = None, max_spindle_rpm: Optional[float] = None, max_feed: Optional[float] = None, tool_capacity: Optional[int] = None, post: Optional[str] = None, layout: Optional[Literal["table_table", "head_table", "head_head"]] = None, primary_axis: Optional[Literal["A", "B", "C"]] = None, primary_min: Optional[float] = None, primary_max: Optional[float] = None, primary_reversed: Optional[bool] = None, secondary_axis: Optional[Literal["A", "B", "C"]] = None, secondary_min: Optional[float] = None, secondary_max: Optional[float] = None, secondary_reversed: Optional[bool] = None, primary_centre: Optional[Sequence[float]] = None, secondary_centre: Optional[Sequence[float]] = None, pivot_length: Optional[float] = None) -> Any:
         """Change a machine's name, travel and limits.
 
         Args:
             id: Machine id, e.g. machine.1 (default: the active machine).
             name: Machine name.
             description: Notes about the machine.
-            kind: Machine type (3-axis mill for now) — one of mill_3axis.
+            kind: Machine type: 3-, 4- or 5-axis mill (a new 4- or 5-axis machine starts with typical rotary axes) — one of mill_3axis, mill_4axis, mill_5axis.
             travel_x: X travel, mm (0.001 to 1e5 mm).
             travel_y: Y travel, mm (0.001 to 1e5 mm).
             travel_z: Z travel, mm (0.001 to 1e5 mm).
             max_spindle_rpm: Highest spindle speed, rpm (1 to 5e5).
             max_feed: Fastest cutting feed, mm/min (0.001 to 1e6 mm/min).
             tool_capacity: Tool changer pockets (0 = manual tool changes) (0 to 9999).
+            post: Post-processor id its programs are written with (see post.processor.list).
+            layout: 4/5-axis: which units turn: both on the table (trunnion), table and head, or both on the head — one of table_table, head_table, head_head.
+            primary_axis: 4/5-axis: the axis nearer the base (head-table: the table's axis); A turns about X, B about Y, C about Z — one of A, B, C.
+            primary_min: 4/5-axis: primary axis travel, lowest angle (degrees) (-1e5 to 1e5).
+            primary_max: 4/5-axis: primary axis travel, highest angle (degrees) (-1e5 to 1e5).
+            primary_reversed: 4/5-axis: the primary axis turns opposite to the ISO convention.
+            secondary_axis: 5-axis: the axis the primary carries (head-table: the head's axis) — one of A, B, C.
+            secondary_min: 5-axis: secondary axis travel, lowest angle (degrees) (-1e5 to 1e5).
+            secondary_max: 5-axis: secondary axis travel, highest angle (degrees) (-1e5 to 1e5).
+            secondary_reversed: 5-axis: the secondary axis turns opposite to the ISO convention.
+            primary_centre: Tables: where the primary axis passes, relative to the work origin, mm (for posts that move the linear axes themselves) — [x, y, z] in mm.
+            secondary_centre: Table-table: where the secondary axis passes, relative to the work origin, mm — [x, y, z] in mm.
+            pivot_length: Heads: from where the head turns to the spindle gauge line, mm (0 to 10000 mm).
 
         Returns:
-            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, kinematics, tools}
 
         Command: ``machine.edit``
         """
-        params = {"id": id, "name": name, "description": description, "kind": kind, "travel_x": travel_x, "travel_y": travel_y, "travel_z": travel_z, "max_spindle_rpm": max_spindle_rpm, "max_feed": max_feed, "tool_capacity": tool_capacity}
+        params = {"id": id, "name": name, "description": description, "kind": kind, "travel_x": travel_x, "travel_y": travel_y, "travel_z": travel_z, "max_spindle_rpm": max_spindle_rpm, "max_feed": max_feed, "tool_capacity": tool_capacity, "post": post, "layout": layout, "primary_axis": primary_axis, "primary_min": primary_min, "primary_max": primary_max, "primary_reversed": primary_reversed, "secondary_axis": secondary_axis, "secondary_min": secondary_min, "secondary_max": secondary_max, "secondary_reversed": secondary_reversed, "primary_centre": primary_centre, "secondary_centre": secondary_centre, "pivot_length": pivot_length}
         return self.execute("machine.edit", {k: v for k, v in params.items() if v is not None})
 
     def machine_duplicate(self, *, id: Optional[str] = None, name: Optional[str] = None) -> Any:
@@ -2006,7 +2111,7 @@ class Commands:
             name: Name of the copy (default: <name> copy).
 
         Returns:
-            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, kinematics, tools}
 
         Command: ``machine.duplicate``
         """
@@ -2034,7 +2139,7 @@ class Commands:
             id: Machine id, e.g. machine.1.
 
         Returns:
-            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, kinematics, tools}
 
         Command: ``machine.activate``
         """
@@ -2058,7 +2163,7 @@ class Commands:
             id: Machine id, e.g. machine.1 (default: the active machine).
 
         Returns:
-            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+            the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, kinematics, tools}
 
         Command: ``machine.get``
         """
@@ -2109,26 +2214,27 @@ class Commands:
         params = {"units": units}
         return self.execute("settings.units.set", {k: v for k, v in params.items() if v is not None})
 
-    def sim_start(self, *, toolpaths: Optional[Sequence[str]] = None, cell: Optional[float] = None) -> Any:
+    def sim_start(self, *, toolpaths: Optional[Sequence[str]] = None, cell: Optional[float] = None, mode: Optional[Literal["auto", "height", "voxel"]] = None) -> Any:
         """Start the material removal simulation from the beginning.
 
         Args:
             toolpaths: Toolpaths to run, in order (default: all).
-            cell: Stock grid spacing, mm (default: a quarter of the smallest tool radius) (0 to 100 mm).
+            cell: Stock grid spacing, mm (default: a quarter of the smallest tool radius; voxels: a third, coarser for big stock) (0 to 100 mm).
+            mode: Stock model: a height field (one tool axis), voxels (any axis), or auto: voxels when the tool tilts — one of auto, height, voxel.
 
         Returns:
-            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
         Command: ``sim.start``
         """
-        params = {"toolpaths": toolpaths, "cell": cell}
+        params = {"toolpaths": toolpaths, "cell": cell, "mode": mode}
         return self.execute("sim.start", {k: v for k, v in params.items() if v is not None})
 
     def sim_play(self) -> Any:
         """Run the material removal simulation.
 
         Returns:
-            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
         Command: ``sim.play``
         """
@@ -2138,7 +2244,7 @@ class Commands:
         """Pause the simulation.
 
         Returns:
-            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
         Command: ``sim.pause``
         """
@@ -2151,7 +2257,7 @@ class Commands:
             moves: How many moves to step; negative goes back (default 1) (-1000000 to 1000000).
 
         Returns:
-            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
         Command: ``sim.step``
         """
@@ -2166,7 +2272,7 @@ class Commands:
             fraction: Share of the whole program, 0 to 1 (0 to 1).
 
         Returns:
-            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
         Command: ``sim.seek``
         """
@@ -2180,7 +2286,7 @@ class Commands:
             speed: Speed multiplier (0.1 to 10000).
 
         Returns:
-            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
         Command: ``sim.speed``
         """
@@ -2231,37 +2337,138 @@ class Commands:
         params = {"tolerance": tolerance}
         return self.execute("sim.gouge.check", {k: v for k, v in params.items() if v is not None})
 
-    def post_gcode_export(self, *, path: str, toolpaths: Optional[Sequence[str]] = None, units: Optional[Literal["in", "mm"]] = None, program_number: Optional[int] = None, line_numbers: Optional[bool] = None) -> Any:
-        """Write the toolpaths as a G-code program (.nc) with the generic writer.
+    def post_processor_select(self, *, post: str, machine: Optional[str] = None) -> Any:
+        """Choose the post-processor (controller dialect) the machine's programs are written with.
+
+        Args:
+            post: Post-processor id, e.g. fanuc, haas, linuxcnc, grbl, mach, generic.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            {"machine": id, "post": id}
+
+        Command: ``post.processor.select``
+        """
+        params = {"post": post, "machine": machine}
+        return self.execute("post.processor.select", {k: v for k, v in params.items() if v is not None})
+
+    def post_gcode_export(self, *, path: str, post: Optional[str] = None, toolpaths: Optional[Sequence[str]] = None, units: Optional[Literal["in", "mm"]] = None, program_number: Optional[int] = None, line_numbers: Optional[bool] = None, arc_tolerance: Optional[float] = None) -> Any:
+        """Post the toolpaths with the machine's post-processor and write the program.
 
         Args:
             path: File to write, e.g. part.nc.
+            post: Post-processor id (default: the machine's, else generic); see post.processor.list.
             toolpaths: Toolpath ids in order (default: all).
-            units: Program units, in or mm (default: the units setting) — one of in, mm.
-            program_number: O number (default 1000) (1 to 9999).
-            line_numbers: Number the lines N5, N10, … (default false).
+            units: Program units, in or mm (default: the units setting; a post may fix its own) — one of in, mm.
+            program_number: O number (default 1000) (1 to 99999).
+            line_numbers: Number the lines (default: the post's choice).
+            arc_tolerance: Fit arcs (G2/G3) within this, mm; 0 writes lines only (default 0.01) (0 to 1 mm).
 
         Returns:
-            {"path": path, "lines": count, "toolpaths": count}
+            {"path": path, "lines": count, "toolpaths": count, "post": id, "extension": ext, "warnings": [...]}
 
         Command: ``post.gcode.export``
         """
-        params = {"path": path, "toolpaths": toolpaths, "units": units, "program_number": program_number, "line_numbers": line_numbers}
+        params = {"path": path, "post": post, "toolpaths": toolpaths, "units": units, "program_number": program_number, "line_numbers": line_numbers, "arc_tolerance": arc_tolerance}
         return self.execute("post.gcode.export", {k: v for k, v in params.items() if v is not None})
 
-    def post_gcode_get(self, *, toolpaths: Optional[Sequence[str]] = None, units: Optional[Literal["in", "mm"]] = None, program_number: Optional[int] = None, line_numbers: Optional[bool] = None) -> Any:
-        """The G-code program the export would write, as text.
+    def post_gcode_get(self, *, post: Optional[str] = None, toolpaths: Optional[Sequence[str]] = None, units: Optional[Literal["in", "mm"]] = None, program_number: Optional[int] = None, line_numbers: Optional[bool] = None, arc_tolerance: Optional[float] = None) -> Any:
+        """The program the export would write, as text.
 
         Args:
+            post: Post-processor id (default: the machine's, else generic); see post.processor.list.
             toolpaths: Toolpath ids in order (default: all).
-            units: Program units, in or mm (default: the units setting) — one of in, mm.
-            program_number: O number (default 1000) (1 to 9999).
-            line_numbers: Number the lines (default false).
+            units: Program units, in or mm (default: the units setting; a post may fix its own) — one of in, mm.
+            program_number: O number (default 1000) (1 to 99999).
+            line_numbers: Number the lines (default: the post's choice).
+            arc_tolerance: Fit arcs (G2/G3) within this, mm; 0 writes lines only (default 0.01) (0 to 1 mm).
 
         Returns:
-            {"text": program, "lines": count}
+            {"text": program, "lines": count, "post": id, "extension": ext, "warnings": [...]}
 
         Command: ``post.gcode.get``
         """
-        params = {"toolpaths": toolpaths, "units": units, "program_number": program_number, "line_numbers": line_numbers}
+        params = {"post": post, "toolpaths": toolpaths, "units": units, "program_number": program_number, "line_numbers": line_numbers, "arc_tolerance": arc_tolerance}
         return self.execute("post.gcode.get", {k: v for k, v in params.items() if v is not None})
+
+    def post_processor_list(self) -> Any:
+        """The post-processors that can be chosen: generic, the shipped ones and your own.
+
+        Returns:
+            list of {id, description, builtin, path}
+
+        Command: ``post.processor.list``
+        """
+        return self.execute("post.processor.list")
+
+    def post_properties_get(self, *, machine: Optional[str] = None, post: Optional[str] = None) -> Any:
+        """The settings the machine's post offers, with the values chosen for the machine.
+
+        Args:
+            machine: Machine id (default: the active machine).
+            post: Another post's settings (default: the machine's post).
+
+        Returns:
+            {"post": id, "properties": [{name, title, description, group, kind, default, choices, value}]}
+
+        Command: ``post.properties.get``
+        """
+        params = {"machine": machine, "post": post}
+        return self.execute("post.properties.get", {k: v for k, v in params.items() if v is not None})
+
+    def post_properties_set(self, *, name: str, value: str, machine: Optional[str] = None) -> Any:
+        """Choose a value for one of the machine's post settings (empty restores the post's default).
+
+        Args:
+            name: Setting name, e.g. blend_finish.
+            value: Its value as text (true/false, numbers, a choice); empty for the default.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            {"machine": id, "properties": {name: value}}
+
+        Command: ``post.properties.set``
+        """
+        params = {"name": name, "value": value, "machine": machine}
+        return self.execute("post.properties.set", {k: v for k, v in params.items() if v is not None})
+
+    def post_processor_folder(self) -> Any:
+        """Where post-processors live: copy one from builtin/ into this folder to change it.
+
+        Returns:
+            {"path": folder, "builtin": folder}
+
+        Command: ``post.processor.folder``
+        """
+        return self.execute("post.processor.folder")
+
+    def post_limits_check(self, *, toolpaths: Optional[Sequence[str]] = None) -> Any:
+        """Check the toolpaths against the machine's travel, spindle speed and feed limits.
+
+        Args:
+            toolpaths: Toolpath ids (default: all).
+
+        Returns:
+            {"ok": bool, "problems": [text]}
+
+        Command: ``post.limits.check``
+        """
+        params = {"toolpaths": toolpaths}
+        return self.execute("post.limits.check", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_cl_export(self, *, path: str, toolpaths: Optional[Sequence[str]] = None, units: Optional[Literal["in", "mm"]] = None, arc_tolerance: Optional[float] = None) -> Any:
+        """Write machine-neutral cutter location data (JSON) for a post-processor or another program.
+
+        Args:
+            path: File to write, e.g. part.cl.json.
+            toolpaths: Toolpath ids in order (default: all).
+            units: Units the program should be written in — one of in, mm.
+            arc_tolerance: Fit arcs within this, mm; 0 for lines only (default 0.01) (0 to 1 mm).
+
+        Returns:
+            {"path": path, "operations": count, "moves": count}
+
+        Command: ``toolpath.cl.export``
+        """
+        params = {"path": path, "toolpaths": toolpaths, "units": units, "arc_tolerance": arc_tolerance}
+        return self.execute("toolpath.cl.export", {k: v for k, v in params.items() if v is not None})

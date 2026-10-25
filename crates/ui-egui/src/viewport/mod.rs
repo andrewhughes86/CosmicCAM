@@ -516,7 +516,7 @@ impl Viewport {
             shank: theme::linear(tokens.text_muted),
         };
         let now = ui.input(|i| i.time);
-        let key = (sim.zmap.revision, sim.marks_revision, session.prefs.theme);
+        let key = (sim.stock_revision(), sim.marks_revision, session.prefs.theme);
         let due = !sim.playing || now - self.sim_stock_built > 0.08;
         if self.sim_stock_key != Some(key) && due {
             let g = sim::stock(sim, &colours);
@@ -524,10 +524,10 @@ impl Viewport {
             self.sim_stock_key = Some(key);
             self.sim_stock_built = now;
         }
-        if let Some((tip, tool)) = sim.tool_at(sim.time) {
-            let tool_key = (tip * 1000.0).as_i64vec3().to_array();
+        if let Some((tip, axis, tool)) = sim.pose_at(sim.time) {
+            let tool_key = ((tip + axis * 1000.0) * 1000.0).as_i64vec3().to_array();
             if self.sim_tool_key != Some(tool_key) {
-                let g = sim::tool(&sim.frame, tip, tool, &colours);
+                let g = sim::tool(&sim.frame, tip, axis, tool, &colours);
                 let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_tool(&g)));
                 self.sim_tool_key = Some(tool_key);
             }
@@ -791,6 +791,9 @@ impl Viewport {
         let mut content = SceneGeometry::default();
         for tp in shown.into_iter().filter(|_| !simulating) {
             content.push_path(tp.start, tp.moves.iter().map(|m| (path_kind(m.kind), m.to)), &palette);
+            if tp.multi_axis() {
+                push_tool_axes(&mut content, tp, palette.path_lead);
+            }
         }
         if let Some(stock) = session.job.stock {
             if display.stock && !simulating {
@@ -1092,9 +1095,9 @@ fn playback_bar(
             )
             .on_hover_text("Rapids through material or cuts deeper than the flutes; run Collisions for the list");
         }
-        if let Some(g) = &sim.gouges {
-            let colour = if g.is_empty() { tokens.success } else { tokens.error };
-            let text = if g.is_empty() { "No gouges".to_owned() } else { format!("{} gouged cells", g.len()) };
+        if let Some(n) = sim.gouges.as_ref().map(Vec::len).or(sim.voxel_gouges.as_ref().map(Vec::len)) {
+            let colour = if n == 0 { tokens.success } else { tokens.error };
+            let text = if n == 0 { "No gouges".to_owned() } else { format!("{n} gouged cells") };
             ui.label(egui::RichText::new(text).color(colour));
         }
         let _ = session;
@@ -1114,6 +1117,28 @@ fn trim_speed(v: f64) -> String {
 /// Monospaced text, for clocks that should not jitter as digits change.
 fn mono(text: String, tokens: &Tokens) -> egui::RichText {
     egui::RichText::new(text).monospace().color(tokens.text)
+}
+
+/// Short lines up the tool axis along a multi-axis toolpath's cuts, spaced so about 800 show,
+/// so the tilt reads without hiding the path.
+fn push_tool_axes(content: &mut SceneGeometry, tp: &CosmicCAM_engine::toolpath::Toolpath, colour: scene::Rgba) {
+    const LENGTH: f32 = 8.0;
+    const MOST: usize = 1_000;
+    let (cut, _, _) = tp.stats(10_000.0);
+    let spacing = (cut as f32 / 800.0).max(4.0);
+    let mut travelled = spacing;
+    let mut at = tp.start;
+    let mut drawn = 0;
+    for (i, m) in tp.moves.iter().enumerate() {
+        travelled += at.distance(m.to);
+        at = m.to;
+        if m.kind != CosmicCAM_engine::toolpath::MoveKind::Cut || travelled < spacing || drawn >= MOST {
+            continue;
+        }
+        travelled = 0.0;
+        drawn += 1;
+        content.push_line(m.to, m.to + tp.axis_at(i) * LENGTH, colour);
+    }
 }
 
 #[cfg(test)]

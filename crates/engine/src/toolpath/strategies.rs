@@ -9,7 +9,8 @@
 //! - **Raster** (3D): parallel rows following the part's surface, for shallow areas.
 //!
 //! The 3D strategies work with flat end mills: the shadow of the part above each level gives
-//! where the tool may go (Rough, Waterline); a drop cutter gives how low it can come (Raster).
+//! where the tool may go (Rough, Waterline); a drop cutter gives how low it can come (Raster,
+//! which takes ball end mills too).
 
 use std::sync::Arc;
 
@@ -75,7 +76,7 @@ fn rect(lo: DVec2, hi: DVec2) -> Shape {
 
 /// The working area for Face and Raster: the stock's or model's footprint, or the selection's
 /// outline, grown by `boundary_offset`.
-fn boundary(
+pub(super) fn boundary(
     s: &Session,
     p: &Value,
     c: &super::common::Common,
@@ -109,11 +110,11 @@ fn boundary(
     Ok((shapes, selection))
 }
 
-fn angle(p: &Value) -> EngineResult<f64> {
+pub(super) fn angle(p: &Value) -> EngineResult<f64> {
     Ok(params::opt_f64(p, "angle", -360.0, 360.0)?.unwrap_or(0.0).to_radians())
 }
 
-fn zigzag(p: &Value) -> EngineResult<bool> {
+pub(super) fn zigzag(p: &Value) -> EngineResult<bool> {
     Ok(params::opt_str(p, "pattern")?.unwrap_or("zigzag") == "zigzag")
 }
 
@@ -278,7 +279,7 @@ fn keep_out(tris: &[[DVec3; 3]], z: f64, c: &super::common::Common) -> Vec<Shape
     region::offset(&shadow, c.radius() + c.stock_radial, c.tolerance)
 }
 
-fn require_model(tris: &[[DVec3; 3]]) -> EngineResult<()> {
+pub(super) fn require_model(tris: &[[DVec3; 3]]) -> EngineResult<()> {
     if tris.is_empty() {
         return Err(bad("there is no model to machine; import one first"));
     }
@@ -430,14 +431,57 @@ const MAX_ROW_POINTS: usize = 200_000;
 /// Points along `a`→`b` every `step`, each at the height the cutter can come down to, never
 /// below `floor`, simplified where the path stays within `tolerance` of a straight line.
 fn drop_line(cutter: &DropCutter, a: DVec2, b: DVec2, step: f64, floor: f64, raise: f64, tolerance: f64) -> Vec<DVec3> {
+    let height = |q: DVec2| cutter.height(q).map_or(floor, |z| (z + raise).max(floor));
     let n = ((a.distance(b) / step.max(1.0e-3)).ceil() as usize).clamp(1, MAX_ROW_POINTS);
-    let pts: Vec<DVec3> = (0..=n)
-        .map(|i| {
-            let q = a.lerp(b, i as f64 / n as f64);
-            q.extend(cutter.height(q).map_or(floor, |z| (z + raise).max(floor)))
-        })
-        .collect();
+    let samples: Vec<DVec2> = (0..=n).map(|i| a.lerp(b, i as f64 / n as f64)).collect();
+    let pts = refine(&samples, &|q| q.extend(height(q)), |p| p.z, tolerance);
     simplify(&pts, tolerance)
+}
+
+/// Deepest a gap between two samples is halved.
+const MAX_BISECTIONS: u32 = 12;
+
+/// `probe` at each of `samples`, with points added between neighbours wherever the straight
+/// move between them strays more than `tolerance` (in `height`) from what `probe` gives halfway:
+/// over an edge the tool would otherwise cut the corner between a sample on top and the next one
+/// below.
+pub(super) fn refine<T: Copy>(
+    samples: &[DVec2],
+    probe: &dyn Fn(DVec2) -> T,
+    height: impl Fn(&T) -> f64 + Copy,
+    tolerance: f64,
+) -> Vec<T> {
+    fn halve<T: Copy>(
+        a: (DVec2, T),
+        b: (DVec2, T),
+        probe: &dyn Fn(DVec2) -> T,
+        height: impl Fn(&T) -> f64 + Copy,
+        tolerance: f64,
+        depth: u32,
+        out: &mut Vec<T>,
+    ) {
+        if depth < MAX_BISECTIONS && out.len() < MAX_ROW_POINTS * 4 {
+            let q = (a.0 + b.0) / 2.0;
+            let m = probe(q);
+            if (height(&m) - (height(&a.1) + height(&b.1)) / 2.0).abs() > tolerance {
+                halve(a, (q, m), probe, height, tolerance, depth + 1, out);
+                halve((q, m), b, probe, height, tolerance, depth + 1, out);
+                return;
+            }
+        }
+        out.push(b.1);
+    }
+    let mut out = Vec::with_capacity(samples.len());
+    let mut prev: Option<(DVec2, T)> = None;
+    for &q in samples {
+        let here = (q, probe(q));
+        match prev {
+            None => out.push(here.1),
+            Some(p) => halve(p, here, probe, height, tolerance.max(1.0e-4), 0, &mut out),
+        }
+        prev = Some(here);
+    }
+    out
 }
 
 /// Drops points that lie within `tolerance` of the line through their neighbours.
@@ -460,14 +504,14 @@ fn simplify(pts: &[DVec3], tolerance: f64) -> Vec<DVec3> {
 }
 
 pub fn raster(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
-    let c = common(s, p, 0.1, 1.0)?;
+    let c = super::common::common_for(s, p, 0.1, 1.0, &["flat", "ball"])?;
     let mut warnings = Vec::new();
     let tris = part_triangles(s, &c.frame);
     require_model(&tris)?;
     let (area, selection) = boundary(s, p, &c, "model", &mut warnings)?;
     let [clearance, retract, feed_height, top, bottom] = heights(s, p, &c.frame, selection, &FINISH_HEIGHTS)?;
     let r = c.radius();
-    let cutter = DropCutter::new(tris, r);
+    let cutter = if c.tool.kind == "ball" { DropCutter::ball(tris, r) } else { DropCutter::new(tris, r) };
     let step =
         params::opt_f64(p, "sample_step", 0.0, 1.0e3)?.filter(|v| *v > 0.0).unwrap_or((r * 0.25).clamp(0.05, 1.0));
     let a = angle(p)?;

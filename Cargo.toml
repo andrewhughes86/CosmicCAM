@@ -60,3 +60,8 @@ web-sys = { version = "0.3", features = ["Document", "Element", "HtmlCanvasEleme
 
 [profile.release]
 debug = "line-tables-only"
+
+# The geometry kernels (drop cutters, voxel stock, collision checks) run thousands of times per
+# toolpath and simulation; unoptimised they make debug runs and tests crawl.
+[profile.dev.package.CosmicCAM-geom]
+opt-level = 2

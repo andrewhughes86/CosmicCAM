@@ -45,6 +45,18 @@ impl Frame {
 }
 
 fn frame(s: &Session, tp: &Toolpath) -> EngineResult<Frame> {
+    let f = frame_of(s, tp)?;
+    let along_z = tp.axis.as_dvec3().dot(f.z) > 1.0 - 1.0e-6;
+    if tp.multi_axis() || !along_z {
+        return Err(EngineError::NotSupported(format!(
+            "{} tilts the tool; the generic post writes 3-axis programs only: choose a post for your 4/5-axis control (Fanuc, Haas, LinuxCNC)",
+            tp.name
+        )));
+    }
+    Ok(f)
+}
+
+fn frame_of(s: &Session, tp: &Toolpath) -> EngineResult<Frame> {
     let Some(id) = &tp.wcs else {
         return Ok(Frame { origin: DVec3::ZERO, x: DVec3::X, y: DVec3::Y, z: DVec3::Z, offset: "G54".into() });
     };

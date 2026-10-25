@@ -5,6 +5,7 @@
 mod common;
 pub mod contour;
 pub mod drill;
+pub mod multiaxis;
 pub mod strategies;
 
 use std::sync::Arc;
@@ -21,6 +22,7 @@ pub fn strategy_label(strategy: &str) -> &'static str {
         "rough3d" => "3D rough",
         "waterline" => "Waterline",
         "raster" => "Raster",
+        "multiaxis" => "Multi-axis finish",
         _ => "2D contour",
     }
 }
@@ -76,6 +78,12 @@ pub struct Toolpath {
     pub tool: u32,
     /// The WCS it is programmed in, if any (else world coordinates).
     pub wcs: Option<String>,
+    /// The tool axis (world, unit, from the tip up) the toolpath was worked out along: its
+    /// frame's Z, which is the WCS's Z unless an `orientation` tilts it (3+2 machining).
+    pub axis: Vec3,
+    /// Each move's tool axis (world, unit) when they vary (simultaneous multi-axis
+    /// machining); None when every move uses `axis`.
+    pub axes: Option<Arc<Vec<Vec3>>>,
     /// The settings it was made with, so it can be edited and regenerated.
     pub params: Value,
     /// Where the tool starts (above the first move, at clearance height).
@@ -109,6 +117,16 @@ pub struct DrillCycle {
 }
 
 impl Toolpath {
+    /// The tool axis at the end of move `i`.
+    pub fn axis_at(&self, i: usize) -> Vec3 {
+        self.axes.as_ref().and_then(|a| a.get(i).copied()).unwrap_or(self.axis)
+    }
+
+    /// True when the tool tilts during the toolpath (simultaneous 4/5-axis).
+    pub fn multi_axis(&self) -> bool {
+        self.axes.is_some()
+    }
+
     /// Lengths (mm) of cutting and of rapid moves, and an estimated time (s) with rapids at
     /// `rapid_rate` mm/min.
     pub fn stats(&self, rapid_rate: f64) -> (f64, f64, f64) {
@@ -141,6 +159,8 @@ impl Toolpath {
             "machine": self.machine,
             "tool": self.tool,
             "wcs": self.wcs,
+            "tool_axis": self.axis.to_array(),
+            "multi_axis": self.multi_axis(),
             "moves": self.moves.len(),
             "cut_length": cut,
             "rapid_length": rapid,
@@ -152,13 +172,21 @@ impl Toolpath {
         })
     }
 
-    /// The moves as the API returns them: `{kind, to: [x, y, z], feed}`.
+    /// The moves as the API returns them: `{kind, to: [x, y, z], feed}`, with `axis` (the tool
+    /// axis, world) on multi-axis toolpaths.
     pub fn moves_json(&self, limit: usize) -> Value {
         json!(
             self.moves
                 .iter()
                 .take(limit)
-                .map(|m| json!({ "kind": m.kind.id(), "to": m.to.to_array(), "feed": m.feed }))
+                .enumerate()
+                .map(|(i, m)| {
+                    let mut v = json!({ "kind": m.kind.id(), "to": m.to.to_array(), "feed": m.feed });
+                    if self.multi_axis() {
+                        v["axis"] = json!(self.axis_at(i).to_array());
+                    }
+                    v
+                })
                 .collect::<Vec<_>>()
         )
     }

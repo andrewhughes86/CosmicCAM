@@ -15,6 +15,8 @@ pub struct ToolShape {
     pub flute_length: f64,
     pub overall_length: f64,
     pub flutes: u32,
+    /// A ball end instead of a flat bottom.
+    pub ball: bool,
 }
 
 impl ToolShape {
@@ -61,11 +63,27 @@ pub fn draw(ui: &mut Ui, tool: Option<ToolShape>, units: DisplayUnits, tokens: &
     painter.add(Shape::dashed_line(&[pos2(cx - rs - 14.0, top), pos2(cx + rs + 14.0, top)], dim, 4.0, 3.0));
     let shank = Rect::from_min_max(pos2(cx - rs, top), pos2(cx + rs, flute_top));
     painter.rect(shank, 0.0, tokens.icon_face, ink, egui::StrokeKind::Middle);
-    let flutes = Rect::from_min_max(pos2(cx - r, flute_top), pos2(cx + r, tip));
-    painter.rect(flutes, 0.0, tokens.accent.gamma_multiply(0.85), ink, egui::StrokeKind::Middle);
+    let fill = tokens.accent.gamma_multiply(0.85);
+    if t.ball {
+        // The fluted length down to the ball's equator, then the ball.
+        let equator = (tip - r).max(flute_top);
+        let flutes = Rect::from_min_max(pos2(cx - r, flute_top), pos2(cx + r, equator));
+        painter.rect(flutes, 0.0, fill, ink, egui::StrokeKind::Middle);
+        let arc: Vec<Pos2> = (0..=24)
+            .map(|k| {
+                let a = std::f32::consts::PI * k as f32 / 24.0;
+                pos2(cx + r * a.cos(), equator + r * a.sin())
+            })
+            .collect();
+        painter.add(Shape::convex_polygon(arc.clone(), fill, Stroke::NONE));
+        painter.add(Shape::line(arc, ink));
+    } else {
+        let flutes = Rect::from_min_max(pos2(cx - r, flute_top), pos2(cx + r, tip));
+        painter.rect(flutes, 0.0, fill, ink, egui::StrokeKind::Middle);
+    }
     // Helix strokes across the flutes, one band per flute, as on a drawing.
     let pitch = (r * 2.0).max(6.0) * 1.2;
-    let mut y = tip - 2.0;
+    let mut y = if t.ball { tip - r - 2.0 } else { tip - 2.0 };
     let bands = (t.flutes.clamp(1, 8) as usize).max(1);
     let mut guard = 0;
     while y - r * 0.7 > flute_top && guard < 400 {

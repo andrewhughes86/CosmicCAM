@@ -1,4 +1,4 @@
-//! Cutting tools in the active machine's tool library: create (flat end mills for now),
+//! Cutting tools in the active machine's tool library: create (flat and ball end mills for now),
 //! edit, copy, delete, list, and import or export a library as JSON.
 
 use serde_json::{Value, json};
@@ -43,7 +43,7 @@ macro_rules! tool_params {
     ($($extra:expr),* $(,)?) => {
         &[
             $($extra,)*
-            Param::optional("name", ParamKind::Str, "Description shown in the library (default: Ø<d> flat end mill)"),
+            Param::optional("name", ParamKind::Str, "Description shown in the library (default: Ø<d> flat or ball end mill)"),
             Param::optional("diameter", LENGTH, "Cutting diameter, mm"),
             Param::optional("flutes", ParamKind::Integer { min: 1, max: 32 }, "Number of flutes (default 3, 2 below Ø3)"),
             Param::optional("flute_length", LENGTH, "Length of cut, mm (default 3 × diameter)"),
@@ -93,7 +93,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             Param::optional(
                 "type",
                 ParamKind::Choice(TOOL_TYPES),
-                "Tool type (default flat; only flat end mills so far)"
+                "Tool type (default flat; flat and ball end mills so far)"
             ),
             Param::optional("number", NUMBER, "Tool number (default: the lowest free one)"),
         ),
@@ -113,7 +113,22 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         enabled: always,
         run: create,
     },
-    placeholder!("tool.create.ball", "Ball nose"),
+    CommandSpec {
+        id: "tool.create.ball",
+        label: "Ball end mill",
+        tooltip: "Add a ball nose end mill to the active machine's library (for 3D and multi-axis finishing)",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: tool_params!(Param::optional("number", NUMBER, "Tool number (default: the lowest free one)")),
+        returns: TOOL_RETURNS,
+        enabled: always,
+        run: |s, p| {
+            let mut p = p.clone();
+            p["type"] = json!("ball");
+            create(s, &p)
+        },
+    },
     placeholder!("tool.create.bull", "Bull nose"),
     placeholder!("tool.create.chamfer", "Chamfer mill"),
     placeholder!("tool.create.drill", "Drill"),
@@ -350,6 +365,10 @@ fn apply(t: &mut Tool, p: &Value) -> EngineResult<()> {
     if let Some(f) = p.get("flutes").and_then(Value::as_u64) {
         t.flutes = u32::try_from(f).unwrap_or(0);
     }
+    // A ball's corner radius is half its diameter.
+    if t.kind == "ball" {
+        t.corner_radius = t.diameter / 2.0;
+    }
     if let Some(m) = params::opt_str(p, "material")? {
         t.material = m.to_owned();
     }
@@ -396,10 +415,15 @@ fn create(s: &mut Session, p: &Value) -> EngineResult<Value> {
     let flute_length = micron(3.0 * diameter);
     let mut t = Tool {
         number,
-        name: format!("Ø{} {} flat end mill", units.plain(diameter), units.length()),
+        name: format!(
+            "Ø{} {} {} end mill",
+            units.plain(diameter),
+            units.length(),
+            if kind == "ball" { "ball" } else { "flat" }
+        ),
         kind: kind.to_owned(),
         diameter,
-        corner_radius: 0.0,
+        corner_radius: if kind == "ball" { diameter / 2.0 } else { 0.0 },
         flutes: if diameter < 3.0 { 2 } else { 3 },
         flute_length,
         overall_length: micron(flute_length + (2.0 * diameter).max(15.0)),

@@ -175,14 +175,15 @@ cc.machine_activate(id="machine.1")
 cc.tool_library_import(path="router-tools.json", replace=True)
 ```
 
-Only flat end mills can be created so far. Ball, bull nose, chamfer, drill, spot drill, face
-mill, tap and thread mill are listed (`tool.create.ball`, …) and report "not supported yet".
+Flat and ball end mills can be created (`tool.create.flat`, `tool.create.ball`; a ball's corner
+radius is half its diameter). Bull nose, chamfer, drill, spot drill, face mill, tap and thread
+mill are listed (`tool.create.bull`, …) and report "not supported yet".
 Tools are checked against their machine: a spindle speed or feed above the machine's limits
 is refused, and so is lowering a machine's limits below a tool in its library. Tools are named
 `<machine id>/tool.<number>` for `selection.set`, so the inspector can show one.
 
-Controller dialect and post-processing are part of the Python machine configurations planned
-for Phase 8; a machine's `post` field will name its post module.
+A machine's `post` field names its post-processor and `post_properties` keeps the post's
+settings for that machine (see "G-code and post-processors").
 
 ## Toolpaths: 2D contour
 
@@ -273,7 +274,8 @@ cc.toolpath_waterline(stepdown=0.5)
 cc.toolpath_raster(stepover=0.5, angle=45)
 ```
 
-The 3D strategies (rough, waterline, raster) use flat end mills for now.
+Rough and waterline use flat end mills; raster takes flat or ball end mills, and the multi-axis
+finish a ball (see "4- and 5-axis machining").
 
 ## Showing, renaming, copying
 
@@ -294,39 +296,93 @@ cc.job_clipboard_paste()
 ## Simulation
 
 The simulation runs the toolpaths against the stock in machine time (feeds as programmed, rapids
-at the machine's rapid rate) and shows the stock as it is cut. It models 3-axis cutting with flat
-end mills on a height grid of the stock.
+at the machine's rapid rate) and shows the stock as it is cut, with flat and ball end mills.
+When every toolpath works along one tool axis the stock is a height grid in that axis's frame;
+when the tool tilts (multi-axis toolpaths, or 3+2 toolpaths along different axes) it is a voxel
+model, cut by the tool swept along each move with its axis. `mode` forces one or the other.
 
 ```python
-cc.sim_start(cell=0.25)                 # all toolpaths; or toolpaths=["toolpath.2", ...]
+cc.sim_start(cell=0.25)                 # all toolpaths; or toolpaths=["toolpath.2", ...], mode="voxel"
 cc.sim_seek(fraction=0.5)               # or time=seconds
 state = cc.sim_get()                    # time, duration, move, toolpath, removed_volume, events
 cc.sim_speed(speed=50); cc.sim_play()   # plays in the app; sim_pause() stops
 cc.sim_step(moves=10)
-print(cc.sim_collision_check())         # rapids through material, cuts deeper than the flutes
+print(cc.sim_collision_check())         # rapids through material, the shank rubbing
 print(cc.sim_gouge_check(tolerance=0.05))  # cells cut below the part, deepest first
 cc.sim_stop()
 ```
 
 Any change to the job ends the simulation; start it again to run the changed program.
 
-## G-code
+## G-code and post-processors
 
-Until the Python post-processors of Phase 8 exist, CosmicCAM writes plain, generic G-code:
+`post_gcode_export` posts the toolpaths with the machine's post-processor (see
+[posts.md](../posts.md)): a Python post for a controller (Fanuc, Haas, LinuxCNC, Grbl, Mach) or,
+when none is chosen, the built-in generic writer.
 
 ```python
-cc.post_gcode_export(path="part.nc")                       # all toolpaths, in the units setting
-cc.post_gcode_export(path="part-mm.nc", units="mm", line_numbers=True, program_number=1234)
-text = cc.post_gcode_get(toolpaths=["toolpath.2"])["text"]  # the same program as text
+cc.post_processor_select(post="fanuc")                # the active machine's post
+cc.post_gcode_export(path="part.nc")                  # all toolpaths, in the units setting
+cc.post_gcode_export(path="part.ngc", post="linuxcnc", units="mm", arc_tolerance=0.005)
+text = cc.post_gcode_get(toolpaths=["toolpath.2"])["text"]
+print(cc.post_limits_check())                         # travel, spindle and feed problems
+cc.toolpath_cl_export(path="part.cl.json")            # the CL data a post reads
 ```
 
-The program opens with a safety block (`G90 G94 G17 G40 G49 G80`, then `G20` or `G21`). Each
-toolpath gets a tool change (`T# M6`, skipped when the tool stays), `S… M3`, its WCS's work
-offset (`G54` for the job's first WCS, `G55` for the second, …), `G43 H#` on the first Z move,
-coolant (`M8` flood, `M7` mist or air) and its moves as `G0` / `G1` in that WCS, modal values
-written only when they change. It ends `M9`, `M5`, `G91 G28 Z0`, `G90 G49`, `M30`. A toolpath
-whose tool has no spindle speed is refused. Check the program against your machine before
-running it.
+Python posts fit arcs (G2/G3, helical too) within `arc_tolerance`, write each controller's work
+offsets, canned cycles, tool changes and coolant codes, and need Python 3 on the machine
+running CosmicCAM. Check new programs against your machine before running them.
+
+Each post offers settings (sequence numbers, tool preselection, LinuxCNC path blending, rigid
+tapping, subroutines, …), kept per machine, and each toolpath can add a stop, an operator note
+and pass-through G-code:
+
+```python
+for p in cc.post_properties_get()["properties"]:
+    print(p["name"], p["value"], p["choices"])
+cc.post_properties_set(name="line_numbers", value="true")
+cc.post_properties_set(name="blend_finish", value="0.005")   # empty value: the default again
+settings = cc.toolpath_edit(id="toolpath.2")                # regenerate with a stop and a note
+cc.toolpath_contour(**dict(settings, id="toolpath.2", post_stop=True, post_comment="Flip the part"))
+```
+
+## 4- and 5-axis machining
+
+A machine of kind `mill_4axis` or `mill_5axis` has rotary axes: their layout (both on the table,
+table and head, or both on the head), names, travel and centres. A new 5-axis machine starts as a
+trunnion with A tilting ±120° and a continuous C.
+
+```python
+cc.machine_create(name="UMC", kind="mill_5axis", max_feed=20000)
+cc.machine_edit(primary_min=-35, primary_max=120, primary_centre=[0, 0, -60], secondary_centre=[0, 0, -60])
+cc.machine_edit(layout="head_table", primary_axis="C", secondary_axis="B", pivot_length=180)
+```
+
+**3+2**: any strategy takes an `orientation`, another WCS whose Z is the tool axis; the program
+stays in the toolpath's `wcs`, and the post turns the rotary axes once for it.
+
+```python
+cc.setup_wcs_create(name="Angled face", activate=False)
+cc.setup_wcs_rotate(id="wcs.2", axis="x", degrees=30)
+cc.toolpath_pocket(geometry=[face], orientation="wcs.2")
+```
+
+**Simultaneous**: `toolpath_multiaxis` finishes with a ball end mill that tilts as it follows the
+surface; `tool_axis` says how (tilted from Z, from the surface normal, towards or away from a point
+or line, or fixed), within `max_tilt` and turning at most `max_axis_rate` degrees per mm, leaning
+back where its flutes or shank would touch the part.
+
+```python
+cc.tool_create_ball(diameter=6, feed=1500, spindle_rpm=12000)
+tp = cc.toolpath_multiaxis(stepover=0.5, tool_axis="tilt", tilt_angle=15, lead_angle=5)
+print(cc.toolpath_get(id=tp["id"], moves=True)["move_list"][10])   # {kind, to, feed, axis}
+cc.sim_start()          # tilting tools are simulated on voxels ("mode": "voxel")
+cc.sim_gouge_check()
+cc.post_gcode_export(path="part.nc", post="fanuc")
+```
+
+How rotary work is written (tool centre point control, tilted planes or the machine's own
+positions) is a post setting; see [posts.md](../posts.md#4--and-5-axis-output).
 
 ## Selecting geometry
 

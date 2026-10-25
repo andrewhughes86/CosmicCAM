@@ -52,10 +52,21 @@ impl Common {
     }
 }
 
-/// Reads the shared settings. `stepover` and `stepdown` defaults are fractions of the tool
-/// diameter, used when neither the parameters nor the tool give one.
+/// Reads the shared settings for a flat end mill. `stepover` and `stepdown` defaults are
+/// fractions of the tool diameter, used when neither the parameters nor the tool give one.
 pub(super) fn common(s: &Session, p: &Value, stepover_of_d: f64, stepdown_of_d: f64) -> EngineResult<Common> {
-    let (machine, tool) = super::contour::pick_tool(s, p)?;
+    common_for(s, p, stepover_of_d, stepdown_of_d, &["flat"])
+}
+
+/// [`common`] for a strategy that takes the tool types `kinds`.
+pub(super) fn common_for(
+    s: &Session,
+    p: &Value,
+    stepover_of_d: f64,
+    stepdown_of_d: f64,
+    kinds: &[&str],
+) -> EngineResult<Common> {
+    let (machine, tool) = super::contour::pick_tool(s, p, kinds)?;
     let (frame, wcs) = super::contour::frame(s, p)?;
     let num = |key: &str, lo: f64, hi: f64| params::opt_f64(p, key, lo, hi);
     let pick = |v: Option<f64>, fallback: f64| v.filter(|f| *f > 0.0).unwrap_or(fallback);
@@ -300,13 +311,7 @@ pub(super) struct Emitter {
 
 impl Emitter {
     pub fn new(frame: Frame, clearance: f64, retract: f64, gap: f64) -> Self {
-        Self {
-            b: Builder { frame, moves: Vec::new(), at: DVec3::ZERO },
-            clearance,
-            retract,
-            gap: gap.max(0.5),
-            started: false,
-        }
+        Self { b: Builder::new(frame), clearance, retract, gap: gap.max(0.5), started: false }
     }
 
     fn helix(&mut self, c: &Common, center: DVec2, from: f64, to: f64, safe: Option<&[Shape]>) -> EngineResult<bool> {
@@ -383,6 +388,11 @@ impl Emitter {
         Ok(())
     }
 
+    /// For strategies that place their own first moves: the emitter has started.
+    pub fn mark_started(&mut self) {
+        self.started = !self.b.moves.is_empty();
+    }
+
     /// Ends at clearance height and makes the toolpath.
     pub fn finish(
         mut self,
@@ -411,6 +421,7 @@ impl Emitter {
         let mut stored = p.as_object().cloned().unwrap_or_else(Map::new);
         stored.insert("tool".into(), json!(c.tool.number));
         stored.remove("id");
+        let axes = self.b.axes.take().map(Arc::new);
         Ok(Toolpath {
             id,
             name,
@@ -418,6 +429,8 @@ impl Emitter {
             machine: c.machine,
             tool: c.tool.number,
             wcs: c.wcs,
+            axis: c.frame.world_dir(DVec3::Z),
+            axes,
             params: Value::Object(stored),
             start,
             moves: Arc::new(self.b.moves),

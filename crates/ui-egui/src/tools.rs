@@ -21,8 +21,15 @@ pub fn has_start(id: &str) -> bool {
 }
 
 /// Commands whose `path` comes from a file dialog.
-const FILE_COMMANDS: &[&str] =
-    &["tool.library.import", "tool.library.export", "post.gcode.export", "job.open", "job.save", "job.save.as"];
+const FILE_COMMANDS: &[&str] = &[
+    "tool.library.import",
+    "tool.library.export",
+    "post.gcode.export",
+    "job.open",
+    "job.save",
+    "job.save.as",
+    "toolpath.cl.export",
+];
 
 /// Commands started by the WCS panel.
 const WCS_COMMANDS: &[&str] = &["setup.wcs.create", "setup.wcs.align"];
@@ -117,19 +124,28 @@ impl Tools {
                 {
                     let mut trial = session.clone();
                     let text = trial.execute("post.gcode.get", &serde_json::Value::Null).map_err(|e| e.to_string())?;
-                    download("program.nc", text["text"].as_str().unwrap_or_default())
+                    let ext = text["extension"].as_str().unwrap_or("nc");
+                    download(&format!("{}.{ext}", session.job.name), text["text"].as_str().unwrap_or_default())
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    // Check there is something to export before asking where to put it.
+                    // Post first: a problem is reported before asking where to save, and the post
+                    // says which extension its programs take.
                     let mut trial = session.clone();
-                    trial.execute("post.gcode.get", &serde_json::Value::Null).map_err(|e| e.to_string())?;
-                    self.pending = Some(Pending::File("post.gcode.export", pick_file(&GCODE_OUT, None)?));
+                    let text = trial.execute("post.gcode.get", &serde_json::Value::Null).map_err(|e| e.to_string())?;
+                    let ext = text["extension"].as_str().unwrap_or("nc");
+                    let name = format!("{}.{ext}", session.job.name);
+                    self.pending = Some(Pending::File("post.gcode.export", pick_file(&GCODE_OUT, Some(name))?));
                     Ok(())
                 }
             }
             "job.open" => {
                 self.pending = Some(Pending::File("job.open", pick_file(&JOB_IN, None)?));
+                Ok(())
+            }
+            "toolpath.cl.export" => {
+                let name = format!("{}.cl.json", session.job.name);
+                self.pending = Some(Pending::File("toolpath.cl.export", pick_file(&CL_OUT, Some(name))?));
                 Ok(())
             }
             "job.save" | "job.save.as" => {
@@ -318,11 +334,17 @@ const JOB_OUT: FileKind = FileKind {
     extensions: &["cosmic", "COSMIC"],
     save_as: Some("job.cosmic"),
 };
+const CL_OUT: FileKind = FileKind {
+    title: "Export CL data",
+    filter: "CL data (JSON)",
+    extensions: &["json", "JSON"],
+    save_as: Some("part.cl.json"),
+};
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 const GCODE_OUT: FileKind = FileKind {
     title: "Export G-code",
     filter: "G-code program",
-    extensions: &["nc", "NC", "gcode", "ngc", "tap"],
+    extensions: &["nc", "NC", "gcode", "ngc", "tap", "txt", "cnc"],
     save_as: Some("program.nc"),
 };
 

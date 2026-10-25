@@ -28,9 +28,178 @@ pub const MAX_TEXT_CHARS: usize = 128;
 pub const TOOL_TYPES: &[&str] =
     &["flat", "ball", "bull", "chamfer", "drill", "spot_drill", "face_mill", "tap", "thread_mill"];
 /// Tool types that can be created now.
-pub const SUPPORTED_TOOL_TYPES: &[&str] = &["flat"];
+pub const SUPPORTED_TOOL_TYPES: &[&str] = &["flat", "ball"];
 pub const TOOL_MATERIALS: &[&str] = &["carbide", "hss", "cobalt", "ceramic", "diamond"];
-pub const MACHINE_KINDS: &[&str] = &["mill_3axis"];
+pub const MACHINE_KINDS: &[&str] = &["mill_3axis", "mill_4axis", "mill_5axis"];
+/// Which units carry a 4- or 5-axis machine's rotary axes.
+pub const LAYOUTS: &[&str] = &["table_table", "head_table", "head_head"];
+/// Rotary axis names; A turns about X, B about Y, C about Z.
+pub const ROTARY_NAMES: &[&str] = &["A", "B", "C"];
+/// Widest rotary travel either way, degrees (a continuous axis is given a large travel).
+pub const MAX_ROTARY_TRAVEL: f64 = 100_000.0;
+
+/// One rotary axis of a 4- or 5-axis machine.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RotaryAxis {
+    /// `A`, `B` or `C`: it turns about X, Y or Z.
+    pub name: String,
+    /// It turns the other way from the ISO convention.
+    #[serde(default)]
+    pub reversed: bool,
+    /// Travel, degrees.
+    pub min: f64,
+    pub max: f64,
+}
+
+impl RotaryAxis {
+    fn new(name: &str, min: f64, max: f64) -> Self {
+        Self { name: name.into(), reversed: false, min, max }
+    }
+
+    /// The direction it turns about, with the sign of its convention.
+    pub fn direction(&self) -> glam::DVec3 {
+        let d = match self.name.as_str() {
+            "A" => glam::DVec3::X,
+            "B" => glam::DVec3::Y,
+            _ => glam::DVec3::Z,
+        };
+        if self.reversed { -d } else { d }
+    }
+
+    fn joint(&self) -> CosmicCAM_geom::kinematics::Joint {
+        CosmicCAM_geom::kinematics::Joint {
+            axis: self.direction(),
+            min: self.min.to_radians(),
+            max: self.max.to_radians(),
+        }
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if !ROTARY_NAMES.contains(&self.name.as_str()) {
+            return Err(format!("rotary axis `{}` must be A, B or C", self.name));
+        }
+        let ok = |v: f64| v.is_finite() && v.abs() <= MAX_ROTARY_TRAVEL;
+        if !(ok(self.min) && ok(self.max) && self.min < self.max) {
+            return Err(format!(
+                "{} travel must run from a lower to a higher angle within ±{MAX_ROTARY_TRAVEL}°",
+                self.name
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({ "name": self.name, "reversed": self.reversed, "min": self.min, "max": self.max })
+    }
+}
+
+/// How a 4- or 5-axis machine's rotary axes are arranged.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Kinematics {
+    /// One of [`LAYOUTS`].
+    pub layout: String,
+    /// The axis nearer the machine's base (for head-table machines, the table's axis).
+    pub primary: RotaryAxis,
+    /// The axis it carries (for head-table machines, the head's axis); none on a 4-axis machine.
+    pub secondary: Option<RotaryAxis>,
+    /// Where the primary axis passes, relative to the work origin, mm (tables; used when the
+    /// control does not follow the tool tip itself).
+    #[serde(default)]
+    pub primary_centre: [f64; 3],
+    /// Where the secondary axis passes, relative to the work origin, mm (table-table).
+    #[serde(default)]
+    pub secondary_centre: [f64; 3],
+    /// From where the head turns to the spindle's gauge line, mm (heads).
+    #[serde(default)]
+    pub pivot_length: f64,
+}
+
+impl Kinematics {
+    /// A machine of `kind` with typical axes: a trunnion (A tilting ±120°, C continuous) for
+    /// 5-axis, a rotary A for 4-axis.
+    pub fn typical(kind: &str) -> Option<Self> {
+        let secondary = match kind {
+            "mill_5axis" => Some(RotaryAxis::new("C", -MAX_ROTARY_TRAVEL, MAX_ROTARY_TRAVEL)),
+            "mill_4axis" => None,
+            _ => return None,
+        };
+        let primary = if secondary.is_some() {
+            RotaryAxis::new("A", -120.0, 120.0)
+        } else {
+            RotaryAxis::new("A", -MAX_ROTARY_TRAVEL, MAX_ROTARY_TRAVEL)
+        };
+        Some(Self {
+            layout: "table_table".into(),
+            primary,
+            secondary,
+            primary_centre: [0.0; 3],
+            secondary_centre: [0.0; 3],
+            pivot_length: 0.0,
+        })
+    }
+
+    pub fn geom(&self) -> CosmicCAM_geom::kinematics::Kinematics {
+        use CosmicCAM_geom::kinematics::Layout;
+        let v = |a: [f64; 3]| glam::DVec3::from_array(a);
+        CosmicCAM_geom::kinematics::Kinematics {
+            layout: match self.layout.as_str() {
+                "head_head" => Layout::HeadHead,
+                "head_table" => Layout::HeadTable,
+                _ => Layout::TableTable,
+            },
+            primary: self.primary.joint(),
+            secondary: self.secondary.as_ref().map(RotaryAxis::joint),
+            primary_centre: v(self.primary_centre),
+            secondary_centre: v(self.secondary_centre),
+            pivot_length: self.pivot_length,
+        }
+    }
+
+    /// The rotary axis names, primary first.
+    pub fn names(&self) -> Vec<String> {
+        std::iter::once(&self.primary).chain(self.secondary.as_ref()).map(|a| a.name.clone()).collect()
+    }
+
+    fn validate(&self, kind: &str) -> Result<(), String> {
+        if !LAYOUTS.contains(&self.layout.as_str()) {
+            return Err(format!("unknown layout `{}`", self.layout));
+        }
+        self.primary.validate()?;
+        if let Some(s) = &self.secondary {
+            s.validate()?;
+            if s.name == self.primary.name {
+                return Err("the two rotary axes must turn about different directions".into());
+            }
+            if self.layout == "head_table" && s.name == "C" {
+                return Err("a head-table machine tilts its head about A or B".into());
+            }
+        }
+        match (kind, &self.secondary) {
+            ("mill_5axis", None) => return Err("a 5-axis machine needs two rotary axes".into()),
+            ("mill_4axis", Some(_)) => return Err("a 4-axis machine has one rotary axis".into()),
+            _ => {}
+        }
+        let ok = |v: &[f64; 3]| v.iter().all(|x| x.is_finite() && x.abs() <= 100_000.0);
+        if !ok(&self.primary_centre) || !ok(&self.secondary_centre) {
+            return Err("rotary centres must be within 100000 mm".into());
+        }
+        if !(self.pivot_length.is_finite() && (0.0..=10_000.0).contains(&self.pivot_length)) {
+            return Err("`pivot_length` must be between 0 and 10000 mm".into());
+        }
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "layout": self.layout,
+            "primary": self.primary.to_json(),
+            "secondary": self.secondary.as_ref().map(RotaryAxis::to_json),
+            "primary_centre": self.primary_centre,
+            "secondary_centre": self.secondary_centre,
+            "pivot_length": self.pivot_length,
+        })
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tool {
@@ -142,10 +311,19 @@ pub struct Machine {
     pub max_feed: f64,
     /// Tool changer pockets; 0 for manual tool changes.
     pub tool_capacity: u32,
-    /// The Python post-processor module, once posts exist (Phase 8).
+    /// The post-processor its programs are written with (empty for the generic one).
     pub post: String,
+    /// The user's choices for the post's settings, by name (text, as the post reads them).
+    #[serde(default)]
+    pub post_properties: std::collections::BTreeMap<String, String>,
+    /// The rotary axes of a 4- or 5-axis machine; none on a 3-axis one.
+    #[serde(default)]
+    pub kinematics: Option<Kinematics>,
     pub tools: Vec<Tool>,
 }
+
+/// Most post settings one machine keeps.
+pub const MAX_POST_PROPERTIES: usize = 200;
 
 impl Machine {
     pub fn to_json(&self, active: bool) -> Value {
@@ -160,13 +338,25 @@ impl Machine {
             "max_feed": self.max_feed,
             "tool_capacity": self.tool_capacity,
             "post": self.post,
+            "kinematics": self.kinematics.as_ref().map(Kinematics::to_json),
             "tools": self.tools.len(),
         })
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        if self.post_properties.len() > MAX_POST_PROPERTIES
+            || self.post_properties.iter().any(|(k, v)| k.len() > 64 || v.chars().count() > 2048)
+        {
+            return Err("post settings: too many, or a name or value too long".into());
+        }
         if !MACHINE_KINDS.contains(&self.kind.as_str()) {
             return Err(format!("unknown machine kind `{}`", self.kind));
+        }
+        match (&self.kinematics, self.kind.as_str()) {
+            (Some(_), "mill_3axis") => return Err("a 3-axis mill has no rotary axes".into()),
+            (None, "mill_4axis" | "mill_5axis") => return Err(format!("a {} needs its rotary axes", self.kind)),
+            (Some(k), kind) => k.validate(kind)?,
+            (None, _) => {}
         }
         if self.name.trim().is_empty() {
             return Err("`name` must not be empty".into());
@@ -224,6 +414,8 @@ impl Machine {
             max_feed: 10_000.0,
             tool_capacity: 0,
             post: String::new(),
+            post_properties: std::collections::BTreeMap::new(),
+            kinematics: None,
             tools: Vec::new(),
         }
     }

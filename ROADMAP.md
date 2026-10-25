@@ -5,11 +5,11 @@
 | 1 | Desktop UI & theme engine | **Done** (2026-10-24) |
 | 2 | Model import & geometry ingestion | **Done except STEP/IGES** (2026-10-24) |
 | 3 | Work coordinate system (WCS) creation | **Done** (2026-10-24) |
-| 4 | Tool library & management | **In progress** (flat end mills, machine libraries 2026-10-24) |
+| 4 | Tool library & management | **In progress** (flat and ball end mills, machine libraries, 4/5-axis kinematics 2026-10-25) |
 | 5 | Stock setup & material definition | **In progress** (setups, box stock options 2026-10-25) |
-| 6 | Toolpath creation engine | **In progress** (contour, face, pocket, drill, 3D rough, waterline, raster 2026-10-25) |
-| 7 | Material removal simulation & verification | **In progress** (3-axis stock simulation, gouges, collisions 2026-10-25) |
-| 8 | Post-processor & G-code export | **Started** (generic G-code 2026-10-24) |
+| 6 | Toolpath creation engine | **In progress** (contour, face, pocket, drill, 3D rough, waterline, raster, 3+2, multi-axis finish 2026-10-25) |
+| 7 | Material removal simulation & verification | **In progress** (height-field and voxel stock simulation, gouges, collisions 2026-10-25) |
+| 8 | Post-processor & G-code export | **In progress** (Python posts, arc fitting, limits, 4/5-axis output 2026-10-25) |
 | 9 | MCP agent integration | Planned |
 | 10 | Scripting & add-ons (scripts panel, add-on packages, isolation) | Planned |
 | 11 | VS Code integration & extension (run/debug scripts, build add-ons) | Planned |
@@ -33,6 +33,63 @@
   `hostile_params_never_panic` covers every command.
 - `cargo xtask ci`: fmt, clippy `-D warnings`, tests, assets, layers, ui-containers, wasm.
 
+## Post-processors (2026-10-25)
+
+- Posts are Python modules run out of process (`python3 -I`, CL data JSON on stdin, two-minute
+  timeout): a broken or missing post is an error, never a crash. The shipped posts (`posts/`)
+  are copied to `<data folder>/posts/builtin/`; your own go in `<data folder>/posts/`.
+- `cosmiccam_post.Post`: configuration as class attributes (units, framing, line numbers,
+  comments, number formats, modal output, arcs IJK/R and helical, linearising, tool changes and
+  preselect, length offsets, spindle and coolant codes, work offsets incl. extended ones, canned
+  cycles or expanded drilling, rigid tapping, dwell units, homing) and overridable hooks.
+- Posts: fanuc, haas, linuxcnc, grbl, mach (plus the Rust generic writer).
+- Rust: CL data (`toolpath.cl.export`), arc fitting (`geom::arcfit`, lines kept where straight,
+  chords checked against the tolerance, helices), limit checks (`post.limits.check`);
+  `post.processor.list` / `select` / `folder`; machines carry their post.
+- Post settings: posts declare `Property` settings (merged along the class hierarchy), shown in
+  the Post-processor dialog by group and kept per machine (`post.properties.get` / `set`,
+  `Machine::post_properties`). Common: sequence numbers, word spacing, comments, header tool list,
+  arcs, rapids as feed, preselect, manual changes, tool-change position, restart blocks, safe
+  retract, units. LinuxCNC: G64 P/Q per roughing or finishing or G61, G33.1 or G84 tapping, M64/M65
+  coolant outputs, o-word subroutines, `(MSG, …)`, M2/M30, G53/G28/clearance retract.
+- Per-operation post options (toolpath Post tab): stop before, operator note, G-code before and
+  after.
+- Still to do: more controllers, machine simulation of the rotary axes.
+
+## 4- and 5-axis machining (2026-10-25)
+
+- Machines: kinds `mill_4axis` and `mill_5axis` with their kinematics (`library::Kinematics`):
+  table-table, head-table or head-head layout, A/B/C axes with travel and direction, rotary
+  centres from the WCS origin and the head's pivot length; `machine.create` / `machine.edit`
+  parameters and the generated dialog.
+- `geom::kinematics`: the rotary angles for a tool direction (two solutions where there are, fitted
+  to travel and nearest the current angles, the free axis kept at a singularity) and the machine's
+  linear positions for given angles. `geom::collide`: a 3D-binned mesh index with segment–triangle
+  clearance. `geom::voxel`: voxel stock cut by flat and ball tools swept along a move with any
+  axis, part cells for gouges, surface nets for display. `geom::cutter`: a ball drop cutter that
+  also gives the contact point.
+- Toolpaths record their tool axis (`Toolpath::axis`) and, for simultaneous ones, each move's
+  (`axes`, saved in job files). Any strategy takes `orientation` (3+2): it works along that WCS's
+  Z while programming in its own WCS.
+- Ball end mills (`tool.create.ball`), for Raster and the new **Multi-axis finish**
+  (`toolpath.multiaxis`): raster rows with a ball drop cutter, the axis from a rule (tilt, normal,
+  towards/away from a point or line, fixed) within a tilt limit and an axis rate, leaned back
+  towards Z where the flutes or shank would touch the part (at its points and along each move
+  between them). Rows (here and in Raster) are refined
+  over edges so a move never cuts the corner between a sample on top and one below.
+- CL data: rotary angles per operation, the tilted work plane (with ZXZ Euler angles), WCS and
+  machine positions for 3+2, and per-move axis, angles, machine position and inverse-time feed for
+  simultaneous operations, split where joint interpolation strays beyond the tolerance
+  (`engine::fiveaxis`). The generic post and 3-axis machines refuse tilted work.
+- Posts: tilted plane (Fanuc G68.2/G53.1, Haas G254/G255), tool centre point control (G43.4,
+  G234) or machine positions with G93 (LinuxCNC, Mach); Grbl stays 3-axis.
+- Simulation: tools are told apart by machine and number (two machines' T1 were mixed up);
+  voxel stock in world coordinates when the tool tilts (`sim.start` `mode`), the tool
+  drawn along its axis; gouges as part cells removed. The toolpath panel's Multi-axis tab picks the
+  orientation and the tool axis rule; the viewport draws the tool axis along multi-axis toolpaths.
+- Still to do: swarf and flowline strategies, 4-axis wrapping, holder and machine collision checks,
+  the rotary axes in the simulation (the part turning), bull-nose tools.
+
 ## Simulation (2026-10-25)
 
 - Stock simulation on a height grid ("Z-map", `geom::zmap`) in the toolpaths' WCS: each move
@@ -45,7 +102,7 @@
 - `sim.gouge.check`: cells cut below the part's surface (measured against the lowest surface
   around each cell, so cuts beside walls are not flagged); `sim.collision.check`: rapids that
   remove material and cuts deeper than the flutes (cells wholly under the cutter only).
-- Still to come: ball and bull-nose tools, holder geometry, fixtures, multi-axis, comparing the
+- Still to come: bull-nose tools, holder geometry, fixtures, comparing the
   cut stock with the part (rest material), background computation for long programs.
 
 ## Demo project (2026-10-25)

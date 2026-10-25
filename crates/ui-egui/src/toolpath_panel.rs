@@ -28,6 +28,7 @@ enum Tab {
     Heights,
     Passes,
     Linking,
+    Post,
 }
 
 const TABS: &[(Tab, &str)] = &[
@@ -37,6 +38,7 @@ const TABS: &[(Tab, &str)] = &[
     (Tab::Heights, "Heights"),
     (Tab::Passes, "Passes"),
     (Tab::Linking, "Linking"),
+    (Tab::Post, "Post"),
 ];
 
 /// The strategy a panel edits.
@@ -49,6 +51,7 @@ pub enum Strategy {
     Rough,
     Waterline,
     Raster,
+    MultiAxis,
 }
 
 impl Strategy {
@@ -62,6 +65,7 @@ impl Strategy {
             "toolpath.rough" => Self::Rough,
             "toolpath.waterline" => Self::Waterline,
             "toolpath.raster" => Self::Raster,
+            "toolpath.multiaxis" => Self::MultiAxis,
             _ => return None,
         })
     }
@@ -75,6 +79,7 @@ impl Strategy {
             "rough3d" => Self::Rough,
             "waterline" => Self::Waterline,
             "raster" => Self::Raster,
+            "multiaxis" => Self::MultiAxis,
             _ => Self::Contour,
         }
     }
@@ -88,6 +93,7 @@ impl Strategy {
             Self::Rough => "toolpath.rough",
             Self::Waterline => "toolpath.waterline",
             Self::Raster => "toolpath.raster",
+            Self::MultiAxis => "toolpath.multiaxis",
         }
     }
 
@@ -100,6 +106,7 @@ impl Strategy {
             Self::Rough => "3D rough",
             Self::Waterline => "waterline",
             Self::Raster => "raster",
+            Self::MultiAxis => "multi-axis finish",
         }
     }
 
@@ -114,6 +121,7 @@ impl Strategy {
             Self::Rough => st::ROUGH,
             Self::Waterline => st::WATERLINE,
             Self::Raster => st::RASTER,
+            Self::MultiAxis => CosmicCAM_engine::toolpath::multiaxis::MULTIAXIS,
         }
     }
 
@@ -121,9 +129,8 @@ impl Strategy {
         TABS.iter()
             .copied()
             .filter(|(t, _)| match self {
-                Self::Contour => true,
-                Self::Drill => !matches!(t, Tab::MultiAxis | Tab::Linking),
-                _ => *t != Tab::MultiAxis,
+                Self::Drill | Self::MultiAxis => *t != Tab::Linking,
+                _ => true,
             })
             .collect()
     }
@@ -142,7 +149,7 @@ impl Strategy {
             Self::Pocket => st::POCKET_HEIGHTS.to_vec(),
             Self::Drill => CosmicCAM_engine::toolpath::drill::DRILL_HEIGHTS.to_vec(),
             Self::Rough => st::ROUGH_HEIGHTS.to_vec(),
-            Self::Waterline | Self::Raster => st::FINISH_HEIGHTS.to_vec(),
+            Self::Waterline | Self::Raster | Self::MultiAxis => st::FINISH_HEIGHTS.to_vec(),
         }
     }
 }
@@ -352,7 +359,7 @@ impl ToolpathPanel {
                 |ui| {
                     let changed = match self.tab {
                         Tab::Tool => self.tool_tab(ui, session, tokens, units),
-                        Tab::MultiAxis => self.multi_axis_tab(ui, tokens),
+                        Tab::MultiAxis => self.multi_axis_tab(ui, session, tokens, units),
                         Tab::Geometry if self.strategy != Strategy::Contour => {
                             self.strategy_geometry_tab(ui, session, tokens, units)
                         }
@@ -362,6 +369,7 @@ impl ToolpathPanel {
                         Tab::Passes => self.passes_tab(ui, units),
                         Tab::Linking if self.strategy != Strategy::Contour => self.strategy_linking_tab(ui, units),
                         Tab::Linking => self.linking_tab(ui, units),
+                        Tab::Post => self.post_tab(ui, tokens),
                     };
                     self.dirty |= changed;
                 },
@@ -445,6 +453,46 @@ impl ToolpathPanel {
         }
     }
 
+    /// Text for a parameter; empty removes it. True when it changed.
+    fn text(&mut self, ui: &mut Ui, key: &str, hint: &str, rows: usize) -> bool {
+        let mut value = self.values.get(key).and_then(Value::as_str).unwrap_or("").to_owned();
+        let edit = if rows > 1 {
+            egui::TextEdit::multiline(&mut value).desired_rows(rows).code_editor()
+        } else {
+            egui::TextEdit::singleline(&mut value)
+        };
+        let changed = ui.add(edit.desired_width(f32::INFINITY).hint_text(hint)).changed();
+        if changed {
+            if value.is_empty() {
+                self.values.remove(key);
+            } else {
+                self.values.insert(key.to_owned(), json!(value));
+            }
+        }
+        changed
+    }
+
+    /// What the post writes around this operation: a stop, a note, the user's own G-code.
+    fn post_tab(&mut self, ui: &mut Ui, tokens: &Tokens) -> bool {
+        let mut changed = false;
+        ui.label(
+            RichText::new("Written into the program by the post-processor around this operation.")
+                .color(tokens.text_muted),
+        );
+        ui.add_space(6.0);
+        changed |= self.check(ui, "post_stop", "Stop the machine before this operation (M0)", false);
+        ui.add_space(6.0);
+        ui.label("Note for the operator");
+        changed |= self.text(ui, "post_comment", "e.g. Turn the part over and clamp on the finished face", 2);
+        ui.add_space(6.0);
+        ui.label("G-code before the operation");
+        changed |= self.text(ui, "post_code_before", "Written as given, one block per line", 3);
+        ui.add_space(6.0);
+        ui.label("G-code after the operation");
+        changed |= self.text(ui, "post_code_after", "Written as given, one block per line", 3);
+        changed
+    }
+
     fn check(&mut self, ui: &mut Ui, key: &str, label: &str, default: bool) -> bool {
         let mut on = self.values.get(key).and_then(Value::as_bool).unwrap_or(default);
         if ui.checkbox(&mut on, label).changed() {
@@ -486,7 +534,7 @@ impl ToolpathPanel {
     fn takes_geometry(&self) -> bool {
         match self.strategy {
             Strategy::Rough | Strategy::Waterline => false,
-            Strategy::Face | Strategy::Raster => {
+            Strategy::Face | Strategy::Raster | Strategy::MultiAxis => {
                 self.values.get("boundary").and_then(Value::as_str) == Some("selection")
             }
             _ => true,
@@ -536,6 +584,7 @@ impl ToolpathPanel {
                     flute_length: t.flute_length,
                     overall_length: t.overall_length,
                     flutes: t.flutes,
+                    ball: t.kind == "ball",
                 }),
                 u,
                 tokens,
@@ -588,17 +637,142 @@ impl ToolpathPanel {
         changed
     }
 
-    fn multi_axis_tab(&mut self, ui: &mut Ui, tokens: &Tokens) -> bool {
-        ui.label(RichText::new("Tool orientation").strong());
-        ui.add_enabled_ui(false, |ui| {
-            egui::ComboBox::from_id_salt("tp-axis").selected_text("WCS Z axis (3-axis)").show_ui(ui, |_| {});
-            ui.checkbox(&mut false, "Tilt the tool");
+    /// A point or direction typed as three numbers (lengths in display units for points); all
+    /// empty removes it. True when it changed.
+    fn vector(&mut self, ui: &mut Ui, key: &str, hints: [&str; 3], scale: Option<DisplayUnits>) -> bool {
+        let current: Vec<f64> = self
+            .values
+            .get(key)
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(Value::as_f64).collect())
+            .unwrap_or_default();
+        let mut changed = false;
+        let mut parts: Vec<Option<f64>> = Vec::with_capacity(3);
+        for (k, hint) in hints.iter().enumerate() {
+            let slot = format!("{key}.{k}");
+            let shown = current.get(k).map(|v| scale.map_or_else(|| trim(*v), |u| u.plain(*v)));
+            let entry = self.text.entry(slot).or_insert_with(|| shown.unwrap_or_default());
+            changed |= ui.add(egui::TextEdit::singleline(entry).desired_width(48.0).hint_text(*hint)).changed();
+            let typed = entry.trim().parse::<f64>().ok().filter(|v| v.is_finite());
+            parts.push(typed.map(|v| scale.map_or(v, |u| u.to_mm(v))));
+        }
+        if !changed {
+            return false;
+        }
+        match parts.as_slice() {
+            [Some(x), Some(y), Some(z)] => {
+                self.values.insert(key.to_owned(), json!([x, y, z]));
+            }
+            _ => {
+                self.values.remove(key);
+            }
+        }
+        true
+    }
+
+    /// Tool orientation: along the WCS's Z, or tilted to another WCS (3+2); for the multi-axis
+    /// finish, how the tool leans as it goes.
+    fn multi_axis_tab(&mut self, ui: &mut Ui, session: &Session, tokens: &Tokens, u: DisplayUnits) -> bool {
+        let mut changed = false;
+        let rotary = session.library.active_machine().and_then(|m| m.kinematics.as_ref()).map(|k| k.names().join(""));
+        match &rotary {
+            Some(axes) => {
+                ui.label(
+                    RichText::new(format!("The machine turns the tool with its {axes} axes.")).color(tokens.text_muted),
+                );
+            }
+            None => {
+                ui.label(
+                    RichText::new("The active machine is a 3-axis mill: tilting the tool needs a 4- or 5-axis machine (Machine tab).")
+                        .color(tokens.warning),
+                );
+            }
+        }
+        ui.add_space(6.0);
+        let mut planes: Vec<(String, String)> = vec![(String::new(), "Along the WCS Z axis".into())];
+        planes.extend(session.job.wcs.iter().map(|w| (w.id.clone(), format!("Along {}'s Z (3+2)", w.name))));
+        let options: Vec<(&str, &str)> = planes.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        egui::Grid::new("tp-orientation").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+            changed |= Self::row(
+                ui,
+                "Tool orientation",
+                "3+2: work along another WCS's Z axis, programmed in this toolpath's WCS; the machine tilts the part or head to it",
+                |ui| {
+                    let c = self.choice(ui, "orientation", &options, "");
+                    if self.values.get("orientation").and_then(Value::as_str) == Some("") {
+                        self.values.remove("orientation");
+                    }
+                    c
+                },
+            );
         });
-        ui.label(
-            RichText::new("Multi-axis toolpaths are planned. This contour cuts with the tool along the WCS Z axis.")
-                .color(tokens.text_muted),
-        );
-        false
+        if self.strategy != Strategy::MultiAxis {
+            return changed;
+        }
+        ui.add_space(8.0);
+        ui.label(RichText::new("Tool axis").strong());
+        let rules = [
+            ("tilt", "Tilted from Z"),
+            ("normal", "Surface normal"),
+            ("toward_point", "Towards a point"),
+            ("away_from_point", "Away from a point"),
+            ("toward_line", "Towards a line"),
+            ("away_from_line", "Away from a line"),
+            ("fixed", "Fixed direction"),
+        ];
+        let rule = self.values.get("tool_axis").and_then(Value::as_str).unwrap_or("tilt").to_owned();
+        let deg = |ui: &mut Ui, me: &mut Self, key: &str, hint: &str| {
+            let c = me.number(ui, key, hint, None, false);
+            ui.label("°");
+            c
+        };
+        egui::Grid::new("tp-tool-axis").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+            changed |= Self::row(ui, "Lean", "How the tool axis is chosen at each point", |ui| {
+                self.choice(ui, "tool_axis", &rules, "tilt")
+            });
+            if matches!(rule.as_str(), "tilt" | "normal") {
+                let tilt_hint = if rule == "tilt" { "15" } else { "0" };
+                changed |= Self::row(
+                    ui,
+                    "Side tilt",
+                    "Positive leans the tool's top to the right of the row direction",
+                    |ui| deg(ui, self, "tilt_angle", tilt_hint),
+                );
+                changed |= Self::row(ui, "Lead", "Positive leans the tool's top forward along the travel", |ui| {
+                    deg(ui, self, "lead_angle", "0")
+                });
+            }
+            if matches!(rule.as_str(), "toward_point" | "away_from_point" | "toward_line" | "away_from_line") {
+                changed |= Self::row(ui, "Point", "In the WCS", |ui| {
+                    let c = self.vector(ui, "axis_point", ["X", "Y", "Z"], Some(u));
+                    ui.label(u.length());
+                    c
+                });
+            }
+            if matches!(rule.as_str(), "toward_line" | "away_from_line" | "fixed") {
+                let label = if rule == "fixed" { "Tool axis" } else { "Line direction" };
+                changed |= Self::row(ui, label, "A direction in the WCS", |ui| {
+                    self.vector(ui, "axis_direction", ["I", "J", "K"], None)
+                });
+            }
+            changed |= Self::row(ui, "Most tilt", "The tool never leans more than this from the toolpath's Z", |ui| {
+                deg(ui, self, "max_tilt", "60")
+            });
+            changed |= Self::row(ui, "Axis rate", "Fastest the tool axis turns, degrees per mm of travel", |ui| {
+                let c = self.number(ui, "max_axis_rate", "5", None, false);
+                ui.label("°/mm");
+                c
+            });
+            changed |= Self::row(ui, "", "", |ui| {
+                self.check(ui, "avoid_collisions", "Lean back towards Z where the flutes or shank would touch", true)
+            });
+            changed |= Self::row(ui, "Shank clearance", "Gap kept around the shank", |ui| {
+                let c = self.number(ui, "shank_clearance", &u.plain(0.5), Some(u), false);
+                ui.label(u.length());
+                c
+            });
+        });
+        changed
     }
 
     fn geometry_tab(&mut self, ui: &mut Ui, session: &Session, tokens: &Tokens) -> bool {
@@ -688,7 +862,7 @@ impl ToolpathPanel {
         };
         ui.label(RichText::new(hint).color(tokens.accent));
         ui.add_space(4.0);
-        if matches!(self.strategy, Strategy::Face | Strategy::Raster) {
+        if matches!(self.strategy, Strategy::Face | Strategy::Raster | Strategy::MultiAxis) {
             egui::Grid::new("tp-boundary").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                 let areas = [("stock", "Stock"), ("model", "Model"), ("selection", "Selected faces")];
                 let default = if self.strategy == Strategy::Face { "stock" } else { "model" };
@@ -758,21 +932,22 @@ impl ToolpathPanel {
             if strategy != Strategy::Waterline {
                 changed |= Self::row(ui, "Stepover", "Distance between passes", |ui| len(ui, self, "stepover", over));
             }
-            if strategy != Strategy::Raster {
+            let rows_like_raster = matches!(strategy, Strategy::Raster | Strategy::MultiAxis);
+            if !rows_like_raster {
                 changed |= Self::row(ui, "Stepdown", "Depth per level", |ui| len(ui, self, "stepdown", down));
             }
             if matches!(strategy, Strategy::Face | Strategy::Pocket) {
                 let default = strategy == Strategy::Pocket;
                 changed |= Self::row(ui, "", "", |ui| self.check(ui, "multiple_depths", "Multiple depths", default));
             }
-            if matches!(strategy, Strategy::Face | Strategy::Rough | Strategy::Raster) {
+            if matches!(strategy, Strategy::Face | Strategy::Rough) || rows_like_raster {
                 changed |= Self::row(ui, "Row angle", "Direction of the rows, degrees from X", |ui| {
                     let c = self.number(ui, "angle", "0", None, false);
                     ui.label("°");
                     c
                 });
             }
-            if matches!(strategy, Strategy::Face | Strategy::Raster) {
+            if strategy == Strategy::Face || rows_like_raster {
                 let patterns = [("zigzag", "Back and forth"), ("one_way", "One way")];
                 changed |= Self::row(ui, "Pattern", "", |ui| self.choice(ui, "pattern", &patterns, "zigzag"));
             }
@@ -781,7 +956,7 @@ impl ToolpathPanel {
                     len(ui, self, "overrun", "Ø/4")
                 });
             }
-            if strategy == Strategy::Raster {
+            if rows_like_raster {
                 changed |= Self::row(ui, "Point spacing", "Spacing of points along each row", |ui| {
                     len(ui, self, "sample_step", "Ø/8")
                 });

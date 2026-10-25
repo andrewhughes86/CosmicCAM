@@ -53,6 +53,7 @@ another project (MIT OR Apache-2.0 compatible only) and every asset file in the 
 | `assets/icons/ui/design/svg/toolpath_height_retract.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_height_top.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_face.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/toolpath_multiaxis.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_pocket.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_profile.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_rough.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |

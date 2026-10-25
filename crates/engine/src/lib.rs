@@ -12,10 +12,12 @@
 pub mod cmd;
 pub mod demo;
 pub mod error;
+pub mod fiveaxis;
 pub mod jobfile;
 pub mod library;
 pub mod params;
 pub mod post;
+pub mod postproc;
 pub mod session;
 pub mod sim;
 pub mod toolpath;

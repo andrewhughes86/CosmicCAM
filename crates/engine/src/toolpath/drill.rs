@@ -152,7 +152,7 @@ pub fn drill(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
         order.push(h);
     }
     // Moves for the viewport: down in pecks where the cycle pecks, back up to the retract plane.
-    let mut b = Builder { frame: f, moves: Vec::new(), at: DVec3::ZERO };
+    let mut b = Builder::new(f);
     let first = order.first().map_or(DVec2::ZERO, |h| DVec2::new(h[0], h[1]));
     b.at = first.extend(clearance);
     for h in &order {
@@ -203,6 +203,8 @@ pub fn drill(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
         machine: m.id.clone(),
         tool: tool.number,
         wcs,
+        axis: f.world_dir(DVec3::Z),
+        axes: None,
         params: Value::Object(stored),
         start,
         moves: Arc::new(b.moves),

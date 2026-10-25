@@ -11,12 +11,13 @@ use crate::sim::{self, Sim};
 
 /// Playback speeds the Speed button steps through, machine seconds per second.
 const SPEEDS: [f64; 8] = [1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0];
-const STATE: &str = "the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}";
+const STATE: &str = "the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}";
+const MODES: &[&str] = &["auto", "height", "voxel"];
 
 /// The simulation, started on all toolpaths if none is open.
 fn ensure(s: &mut Session) -> EngineResult<&mut Sim> {
     if s.sim.is_none() {
-        s.sim = Some(Box::new(Sim::new(s, &[], None)?));
+        s.sim = Some(Box::new(Sim::new(s, &[], None, None)?));
     }
     s.sim.as_deref_mut().ok_or_else(|| EngineError::Internal("simulation".into()))
 }
@@ -47,7 +48,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             Param::optional(
                 "cell",
                 ParamKind::Length { min: 0.0, max: 100.0 },
-                "Stock grid spacing, mm (default: a quarter of the smallest tool radius)",
+                "Stock grid spacing, mm (default: a quarter of the smallest tool radius; voxels: a third, coarser for big stock)",
+            ),
+            Param::optional(
+                "mode",
+                ParamKind::Choice(MODES),
+                "Stock model: a height field (one tool axis), voxels (any axis), or auto: voxels when the tool tilts",
             ),
         ],
         returns: STATE,
@@ -55,7 +61,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         run: |s, p| {
             let ids = params::str_list(p, "toolpaths")?;
             let cell = params::opt_f64(p, "cell", 0.0, 100.0)?;
-            s.sim = Some(Box::new(Sim::new(s, &ids, cell)?));
+            let mode = params::opt_str(p, "mode")?;
+            s.sim = Some(Box::new(Sim::new(s, &ids, cell, mode)?));
             Ok(state(s))
         },
     },
@@ -224,13 +231,24 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         run: |s, p| {
             let tolerance = params::opt_f64(p, "tolerance", 0.0, 100.0)?.unwrap_or(0.05);
             let whole = run_to_end(s)?;
-            let found = sim::gouges(s, &whole, tolerance);
-            let report = sim::gouge_report(&whole, &found, tolerance);
-            // Show the result: the finished cut with the gouges marked.
             let mut shown = whole;
+            let report = if shown.voxels.is_some() {
+                let found = sim::voxel_gouges(s, &shown);
+                let report = sim::voxel_gouge_report(&shown, &found);
+                shown.voxel_gouges = Some(found);
+                report
+            } else {
+                let found = sim::gouges(s, &shown, tolerance);
+                let report = sim::gouge_report(&shown, &found, tolerance);
+                shown.gouges = Some(found);
+                report
+            };
+            // Show the result: the finished cut with the gouges marked.
             shown.marks_revision = s.sim.as_ref().map_or(0, |x| x.marks_revision).wrapping_add(1);
             shown.zmap.revision = s.sim.as_ref().map_or(0, |x| x.zmap.revision).wrapping_add(1);
-            shown.gouges = Some(found);
+            if let Some(v) = shown.voxels.as_mut() {
+                v.revision = v.revision.wrapping_add(1);
+            }
             s.sim = Some(Box::new(shown));
             Ok(report)
         },

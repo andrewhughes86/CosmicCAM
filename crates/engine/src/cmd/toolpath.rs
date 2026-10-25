@@ -51,6 +51,10 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             Param::optional("lead_feed", RATE, "Lead-in and lead-out feed, mm/min (default: the cutting feed)"),
             Param::optional("coolant", ParamKind::Choice(COOLANTS), "Coolant (default flood)"),
+            Param::optional("post_stop", ParamKind::Bool, "Stop the machine (M0) before this operation"),
+            Param::optional("post_comment", ParamKind::Str, "Note for the operator, written in the program"),
+            Param::optional("post_code_before", ParamKind::Str, "G-code written as given before the operation"),
+            Param::optional("post_code_after", ParamKind::Str, "G-code written as given after the operation"),
             // Multi-axis
             Param::optional(
                 "tool_axis",
@@ -70,6 +74,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             ),
             Param::optional("reverse", ParamKind::Bool, "Run the contour the other way"),
             Param::optional("wcs", ParamKind::Str, "WCS to program in (default: the active one)"),
+            Param::optional(
+                "orientation",
+                ParamKind::Str,
+                "3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine)",
+            ),
             // Heights
             Param::optional("clearance_from", REFS, "Clearance height reference (default model_top)"),
             Param::optional("clearance_offset", OFFSET, "Clearance height above its reference, mm (default 15)"),

@@ -1,14 +1,18 @@
-//! Simulation geometry for the viewport: the cut stock as a shaded height surface with walls,
-//! and the tool at its current position.
+//! Simulation geometry for the viewport: the cut stock as a shaded height surface with walls
+//! (or, for tilting tools, a smooth mesh of the voxel stock), and the tool at its current
+//! position and axis.
 
 use CosmicCAM_engine::sim::{Sim, SimFrame, SimTool};
 use CosmicCAM_geom::Vec3;
+use CosmicCAM_geom::voxel::Voxels;
 use CosmicCAM_render::scene::Rgba;
 use CosmicCAM_render::scene::{SceneGeometry, Vertex};
 use glam::{DVec2, DVec3};
 
 /// Most grid points along one side of the drawn stock; finer stock grids are drawn sampled.
 const MAX_DRAWN: usize = 240;
+/// Most voxel cells meshed for drawing; finer voxel stock is drawn sampled.
+const MAX_DRAWN_VOXELS: f64 = 1.5e6;
 
 /// Colours for the simulated stock.
 pub struct SimColours {
@@ -26,6 +30,9 @@ fn world_normal(f: &SimFrame, n: DVec3) -> Vec3 {
 /// The stock as cut so far: a smooth top surface over the height field, the walls around it
 /// and its bottom. Cut areas, uncut stock and gouges get their own colours.
 pub fn stock(sim: &Sim, c: &SimColours) -> SceneGeometry {
+    if let Some(v) = &sim.voxels {
+        return voxel_stock(sim, v, c);
+    }
     let z = &sim.zmap;
     let f = &sim.frame;
     let (nx, ny) = z.size();
@@ -131,30 +138,99 @@ pub fn stock(sim: &Sim, c: &SimColours) -> SceneGeometry {
     g
 }
 
-/// The tool with its tip at `tip`: flutes in one colour, the shank above them in another.
-pub fn tool(f: &SimFrame, tip: DVec3, t: &SimTool, c: &SimColours) -> SceneGeometry {
+/// The voxel stock as cut so far: its surface meshed smooth, cut areas, uncut stock and gouges
+/// in their own colours.
+fn voxel_stock(sim: &Sim, v: &Voxels, c: &SimColours) -> SceneGeometry {
+    let [nx, ny, nz] = v.dims();
+    let cells = (nx * ny * nz) as f64;
+    let step = ((cells / MAX_DRAWN_VOXELS).cbrt().ceil() as usize).max(1);
+    let surface = v.surface(step);
+    let gouged: std::collections::HashSet<[usize; 3]> =
+        sim.voxel_gouges.iter().flatten().map(|g| [g[0] / step, g[1] / step, g[2] / step]).collect();
+    let colour = |i: usize| -> Rgba {
+        let cell = surface.cells.get(i).copied().unwrap_or_default();
+        let near_gouge = !gouged.is_empty() && {
+            let b = [cell[0] / step, cell[1] / step, cell[2] / step];
+            (0..27).any(|n| {
+                let d = |k: usize| (n / 3usize.pow(k as u32)) % 3;
+                let at = |k: usize| (b[k] + d(k)).checked_sub(1);
+                matches!((at(0), at(1), at(2)), (Some(x), Some(y), Some(z)) if gouged.contains(&[x, y, z]))
+            })
+        };
+        if near_gouge {
+            c.gouge
+        } else if surface.cut.get(i).copied().unwrap_or(false) {
+            c.cut
+        } else {
+            c.stock
+        }
+    };
     let mut g = SceneGeometry::default();
-    let flutes = t.flute_length.max(t.radius).min(t.length.max(t.radius));
-    cylinder(&mut g, f, tip, t.radius, flutes, c.flutes);
-    let shank = (t.length - flutes).max(0.0);
-    if shank > 1.0e-6 {
-        cylinder(&mut g, f, tip + DVec3::Z * flutes, t.shank_radius.max(t.radius * 0.5), shank, c.shank);
+    g.triangles.reserve(surface.triangles.len() * 3);
+    for t in &surface.triangles {
+        for &i in t {
+            let i = i as usize;
+            let (Some(p), Some(n)) = (surface.positions.get(i), surface.normals.get(i)) else { continue };
+            g.triangles.push(Vertex::lit(*p, *n, colour(i)));
+            g.bounds.include(*p);
+        }
     }
     g
 }
 
-fn cylinder(g: &mut SceneGeometry, f: &SimFrame, base: DVec3, radius: f64, height: f64, colour: Rgba) {
+/// The tool with its tip at `tip` and its axis along `axis` (both in the frame): flutes (a ball
+/// end on a ball end mill) in one colour, the shank above them in another.
+pub fn tool(f: &SimFrame, tip: DVec3, axis: DVec3, t: &SimTool, c: &SimColours) -> SceneGeometry {
+    let mut g = SceneGeometry::default();
+    let axis = axis.normalize_or(DVec3::Z);
+    let flutes = t.flute_length.max(t.radius).min(t.length.max(t.radius));
+    if t.ball {
+        sphere(&mut g, f, tip + axis * t.radius, t.radius, c.flutes);
+        cylinder(&mut g, f, tip + axis * t.radius, axis, t.radius, (flutes - t.radius).max(0.0), c.flutes);
+    } else {
+        cylinder(&mut g, f, tip, axis, t.radius, flutes, c.flutes);
+    }
+    let shank = (t.length - flutes).max(0.0);
+    if shank > 1.0e-6 {
+        cylinder(&mut g, f, tip + axis * flutes, axis, t.shank_radius.max(t.radius * 0.5), shank, c.shank);
+    }
+    g
+}
+
+fn sphere(g: &mut SceneGeometry, f: &SimFrame, centre: DVec3, radius: f64, colour: Rgba) {
+    const SIDES: usize = 24;
+    const RINGS: usize = 12;
+    let at = |ring: usize, k: usize| -> DVec3 {
+        let (polar, around) =
+            (std::f64::consts::PI * ring as f64 / RINGS as f64, std::f64::consts::TAU * k as f64 / SIDES as f64);
+        DVec3::new(polar.sin() * around.cos(), polar.sin() * around.sin(), polar.cos())
+    };
+    let v = |d: DVec3| Vertex::lit(f.world(centre + d * radius), world_normal(f, d), colour);
+    for ring in 0..RINGS {
+        for k in 0..SIDES {
+            let (a, b, cc, d) = (at(ring, k), at(ring + 1, k), at(ring + 1, k + 1), at(ring, k + 1));
+            g.triangles.extend_from_slice(&[v(a), v(b), v(cc), v(a), v(cc), v(d)]);
+        }
+    }
+}
+
+fn cylinder(g: &mut SceneGeometry, f: &SimFrame, base: DVec3, axis: DVec3, radius: f64, height: f64, colour: Rgba) {
     const SIDES: usize = 32;
+    if height <= 1.0e-9 {
+        return;
+    }
+    let u = axis.any_orthonormal_vector();
+    let w = axis.cross(u);
     let ring = |k: usize| {
         let a = std::f64::consts::TAU * k as f64 / SIDES as f64;
-        DVec2::new(a.cos(), a.sin())
+        u * a.cos() + w * a.sin()
     };
-    let top = base + DVec3::Z * height;
+    let top = base + axis * height;
     for k in 0..SIDES {
         let (d0, d1) = (ring(k), ring(k + 1));
-        let p = |c: DVec3, d: DVec2| f.world(c + (d * radius).extend(0.0));
-        let n0 = world_normal(f, d0.extend(0.0));
-        let n1 = world_normal(f, d1.extend(0.0));
+        let p = |c: DVec3, d: DVec3| f.world(c + d * radius);
+        let n0 = world_normal(f, d0);
+        let n1 = world_normal(f, d1);
         let (a, b, cc, d) = (
             Vertex::lit(p(base, d0), n0, colour),
             Vertex::lit(p(base, d1), n1, colour),
@@ -162,7 +238,7 @@ fn cylinder(g: &mut SceneGeometry, f: &SimFrame, base: DVec3, radius: f64, heigh
             Vertex::lit(p(top, d0), n0, colour),
         );
         g.triangles.extend_from_slice(&[a, b, cc, a, cc, d]);
-        let (up, down) = (world_normal(f, DVec3::Z), world_normal(f, DVec3::NEG_Z));
+        let (up, down) = (world_normal(f, axis), world_normal(f, -axis));
         g.triangles.extend_from_slice(&[
             Vertex::lit(f.world(top), up, colour),
             Vertex::lit(p(top, d0), up, colour),

@@ -177,14 +177,15 @@ cc.machine_activate(id="machine.1")
 cc.tool_library_import(path="router-tools.json", replace=True)
 ```
 
-Only flat end mills can be created so far. Ball, bull nose, chamfer, drill, spot drill, face
-mill, tap and thread mill are listed (`tool.create.ball`, …) and report "not supported yet".
+Flat and ball end mills can be created (`tool.create.flat`, `tool.create.ball`; a ball's corner
+radius is half its diameter). Bull nose, chamfer, drill, spot drill, face mill, tap and thread
+mill are listed (`tool.create.bull`, …) and report "not supported yet".
 Tools are checked against their machine: a spindle speed or feed above the machine's limits
 is refused, and so is lowering a machine's limits below a tool in its library. Tools are named
 `<machine id>/tool.<number>` for `selection.set`, so the inspector can show one.
 
-Controller dialect and post-processing are part of the Python machine configurations planned
-for Phase 8; a machine's `post` field will name its post module.
+A machine's `post` field names its post-processor and `post_properties` keeps the post's
+settings for that machine (see "G-code and post-processors").
 
 ## Toolpaths: 2D contour
 
@@ -275,7 +276,8 @@ cc.toolpath_waterline(stepdown=0.5)
 cc.toolpath_raster(stepover=0.5, angle=45)
 ```
 
-The 3D strategies (rough, waterline, raster) use flat end mills for now.
+Rough and waterline use flat end mills; raster takes flat or ball end mills, and the multi-axis
+finish a ball (see "4- and 5-axis machining").
 
 ## Showing, renaming, copying
 
@@ -296,39 +298,93 @@ cc.job_clipboard_paste()
 ## Simulation
 
 The simulation runs the toolpaths against the stock in machine time (feeds as programmed, rapids
-at the machine's rapid rate) and shows the stock as it is cut. It models 3-axis cutting with flat
-end mills on a height grid of the stock.
+at the machine's rapid rate) and shows the stock as it is cut, with flat and ball end mills.
+When every toolpath works along one tool axis the stock is a height grid in that axis's frame;
+when the tool tilts (multi-axis toolpaths, or 3+2 toolpaths along different axes) it is a voxel
+model, cut by the tool swept along each move with its axis. `mode` forces one or the other.
 
 ```python
-cc.sim_start(cell=0.25)                 # all toolpaths; or toolpaths=["toolpath.2", ...]
+cc.sim_start(cell=0.25)                 # all toolpaths; or toolpaths=["toolpath.2", ...], mode="voxel"
 cc.sim_seek(fraction=0.5)               # or time=seconds
 state = cc.sim_get()                    # time, duration, move, toolpath, removed_volume, events
 cc.sim_speed(speed=50); cc.sim_play()   # plays in the app; sim_pause() stops
 cc.sim_step(moves=10)
-print(cc.sim_collision_check())         # rapids through material, cuts deeper than the flutes
+print(cc.sim_collision_check())         # rapids through material, the shank rubbing
 print(cc.sim_gouge_check(tolerance=0.05))  # cells cut below the part, deepest first
 cc.sim_stop()
 ```
 
 Any change to the job ends the simulation; start it again to run the changed program.
 
-## G-code
+## G-code and post-processors
 
-Until the Python post-processors of Phase 8 exist, CosmicCAM writes plain, generic G-code:
+`post_gcode_export` posts the toolpaths with the machine's post-processor (see
+[posts.md](../posts.md)): a Python post for a controller (Fanuc, Haas, LinuxCNC, Grbl, Mach) or,
+when none is chosen, the built-in generic writer.
 
 ```python
-cc.post_gcode_export(path="part.nc")                       # all toolpaths, in the units setting
-cc.post_gcode_export(path="part-mm.nc", units="mm", line_numbers=True, program_number=1234)
-text = cc.post_gcode_get(toolpaths=["toolpath.2"])["text"]  # the same program as text
+cc.post_processor_select(post="fanuc")                # the active machine's post
+cc.post_gcode_export(path="part.nc")                  # all toolpaths, in the units setting
+cc.post_gcode_export(path="part.ngc", post="linuxcnc", units="mm", arc_tolerance=0.005)
+text = cc.post_gcode_get(toolpaths=["toolpath.2"])["text"]
+print(cc.post_limits_check())                         # travel, spindle and feed problems
+cc.toolpath_cl_export(path="part.cl.json")            # the CL data a post reads
 ```
 
-The program opens with a safety block (`G90 G94 G17 G40 G49 G80`, then `G20` or `G21`). Each
-toolpath gets a tool change (`T# M6`, skipped when the tool stays), `S… M3`, its WCS's work
-offset (`G54` for the job's first WCS, `G55` for the second, …), `G43 H#` on the first Z move,
-coolant (`M8` flood, `M7` mist or air) and its moves as `G0` / `G1` in that WCS, modal values
-written only when they change. It ends `M9`, `M5`, `G91 G28 Z0`, `G90 G49`, `M30`. A toolpath
-whose tool has no spindle speed is refused. Check the program against your machine before
-running it.
+Python posts fit arcs (G2/G3, helical too) within `arc_tolerance`, write each controller's work
+offsets, canned cycles, tool changes and coolant codes, and need Python 3 on the machine
+running CosmicCAM. Check new programs against your machine before running them.
+
+Each post offers settings (sequence numbers, tool preselection, LinuxCNC path blending, rigid
+tapping, subroutines, …), kept per machine, and each toolpath can add a stop, an operator note
+and pass-through G-code:
+
+```python
+for p in cc.post_properties_get()["properties"]:
+    print(p["name"], p["value"], p["choices"])
+cc.post_properties_set(name="line_numbers", value="true")
+cc.post_properties_set(name="blend_finish", value="0.005")   # empty value: the default again
+settings = cc.toolpath_edit(id="toolpath.2")                # regenerate with a stop and a note
+cc.toolpath_contour(**dict(settings, id="toolpath.2", post_stop=True, post_comment="Flip the part"))
+```
+
+## 4- and 5-axis machining
+
+A machine of kind `mill_4axis` or `mill_5axis` has rotary axes: their layout (both on the table,
+table and head, or both on the head), names, travel and centres. A new 5-axis machine starts as a
+trunnion with A tilting ±120° and a continuous C.
+
+```python
+cc.machine_create(name="UMC", kind="mill_5axis", max_feed=20000)
+cc.machine_edit(primary_min=-35, primary_max=120, primary_centre=[0, 0, -60], secondary_centre=[0, 0, -60])
+cc.machine_edit(layout="head_table", primary_axis="C", secondary_axis="B", pivot_length=180)
+```
+
+**3+2**: any strategy takes an `orientation`, another WCS whose Z is the tool axis; the program
+stays in the toolpath's `wcs`, and the post turns the rotary axes once for it.
+
+```python
+cc.setup_wcs_create(name="Angled face", activate=False)
+cc.setup_wcs_rotate(id="wcs.2", axis="x", degrees=30)
+cc.toolpath_pocket(geometry=[face], orientation="wcs.2")
+```
+
+**Simultaneous**: `toolpath_multiaxis` finishes with a ball end mill that tilts as it follows the
+surface; `tool_axis` says how (tilted from Z, from the surface normal, towards or away from a point
+or line, or fixed), within `max_tilt` and turning at most `max_axis_rate` degrees per mm, leaning
+back where its flutes or shank would touch the part.
+
+```python
+cc.tool_create_ball(diameter=6, feed=1500, spindle_rpm=12000)
+tp = cc.toolpath_multiaxis(stepover=0.5, tool_axis="tilt", tilt_angle=15, lead_angle=5)
+print(cc.toolpath_get(id=tp["id"], moves=True)["move_list"][10])   # {kind, to, feed, axis}
+cc.sim_start()          # tilting tools are simulated on voxels ("mode": "voxel")
+cc.sim_gouge_check()
+cc.post_gcode_export(path="part.nc", post="fanuc")
+```
+
+How rotary work is written (tool centre point control, tilted planes or the machine's own
+positions) is a post setting; see [posts.md](../posts.md#4--and-5-axis-output).
 
 ## Selecting geometry
 
@@ -384,7 +440,7 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-143 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+148 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.demo.open`](#jobdemoopen), [`job.clipboard.copy`](#jobclipboardcopy), [`job.clipboard.paste`](#jobclipboardpaste), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
@@ -396,12 +452,12 @@ with cosmiccam.launch(sample=True) as cc:
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
-- **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.visibility.set`](#toolpathvisibilityset), [`toolpath.rename`](#toolpathrename), [`toolpath.duplicate`](#toolpathduplicate), [`toolpath.remove`](#toolpathremove), [`toolpath.face`](#toolpathface), [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.rough`](#toolpathrough), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
-- **post**: [`post.processor.select`](#postprocessorselect), [`post.limits.check`](#postlimitscheck), [`post.gcode.export`](#postgcodeexport), [`post.gcode.get`](#postgcodeget)
+- **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.visibility.set`](#toolpathvisibilityset), [`toolpath.rename`](#toolpathrename), [`toolpath.duplicate`](#toolpathduplicate), [`toolpath.remove`](#toolpathremove), [`toolpath.face`](#toolpathface), [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.rough`](#toolpathrough), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.multiaxis`](#toolpathmultiaxis), [`toolpath.cl.export`](#toolpathclexport)
 - **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.create.spot_drill`](#toolcreatespot_drill), [`tool.create.face_mill`](#toolcreateface_mill), [`tool.create.tap`](#toolcreatetap), [`tool.create.thread_mill`](#toolcreatethread_mill), [`tool.edit`](#tooledit), [`tool.feeds`](#toolfeeds), [`tool.duplicate`](#toolduplicate), [`tool.remove`](#toolremove), [`tool.list`](#toollist), [`tool.get`](#toolget), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
 - **machine**: [`machine.create`](#machinecreate), [`machine.edit`](#machineedit), [`machine.duplicate`](#machineduplicate), [`machine.remove`](#machineremove), [`machine.activate`](#machineactivate), [`machine.list`](#machinelist), [`machine.get`](#machineget), [`machine.library.open`](#machinelibraryopen)
 - **settings**: [`settings.open`](#settingsopen), [`settings.get`](#settingsget), [`settings.units.set`](#settingsunitsset)
 - **sim**: [`sim.start`](#simstart), [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.seek`](#simseek), [`sim.speed`](#simspeed), [`sim.stop`](#simstop), [`sim.get`](#simget), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
+- **post**: [`post.processor.select`](#postprocessorselect), [`post.gcode.export`](#postgcodeexport), [`post.gcode.get`](#postgcodeget), [`post.processor.list`](#postprocessorlist), [`post.properties.get`](#postpropertiesget), [`post.properties.set`](#postpropertiesset), [`post.processor.folder`](#postprocessorfolder), [`post.limits.check`](#postlimitscheck)
 
 ### job
 
@@ -1738,7 +1794,7 @@ Returns: null
 #### `toolpath.contour`
 
 ```python
-cc.toolpath_contour(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, lead_feed=None, coolant=None, tool_axis=None, geometry=None, side=None, reverse=None, wcs=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, direction=None, both_ways=None, radial_passes=None, radial_stepover=None, spring_passes=None, stock_radial=None, stock_axial=None, multiple_depths=None, max_stepdown=None, feed_optimization=None, optimization_angle=None, optimization_feed=None, optimization_distance=None, tolerance=None, entry_from=None, entry_point=None, lead_in=None, lead_in_radius=None, lead_in_sweep=None, lead_in_length=None, lead_out_same=None, lead_out=None, lead_out_radius=None, lead_out_sweep=None, lead_out_length=None, ramp=None, ramp_angle=None, retract=None, stay_down_distance=None, rapid_links=None, link_feed=None)
+cc.toolpath_contour(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, lead_feed=None, coolant=None, post_stop=None, post_comment=None, post_code_before=None, post_code_after=None, tool_axis=None, geometry=None, side=None, reverse=None, wcs=None, orientation=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, direction=None, both_ways=None, radial_passes=None, radial_stepover=None, spring_passes=None, stock_radial=None, stock_axial=None, multiple_depths=None, max_stepdown=None, feed_optimization=None, optimization_angle=None, optimization_feed=None, optimization_distance=None, tolerance=None, entry_from=None, entry_point=None, lead_in=None, lead_in_radius=None, lead_in_sweep=None, lead_in_length=None, lead_out_same=None, lead_out=None, lead_out_radius=None, lead_out_sweep=None, lead_out_length=None, ramp=None, ramp_angle=None, retract=None, stay_down_distance=None, rapid_links=None, link_feed=None)
 ```
 
 Follow selected edges or a face outline at depth, offset by the tool radius.
@@ -1754,11 +1810,16 @@ Follow selected edges or a face outline at depth, offset by the tool radius.
 | `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
 | `lead_feed` | number | no | Lead-in and lead-out feed, mm/min (default: the cutting feed) (0 to 1e6 mm/min) |
 | `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
+| `post_stop` | bool | no | Stop the machine (M0) before this operation |
+| `post_comment` | string | no | Note for the operator, written in the program |
+| `post_code_before` | string | no | G-code written as given before the operation |
+| `post_code_after` | string | no | G-code written as given after the operation |
 | `tool_axis` | choice | no | Tool orientation (only the WCS Z axis for now) — one of wcs_z |
 | `geometry` | list | no | Edges and faces to follow (model.N/edge.N, model.N/face.N) |
 | `side` | choice | no | Cut outside or inside closed contours, or on the line (open contours: outside = left) — one of outside, inside, on |
 | `reverse` | bool | no | Run the contour the other way |
 | `wcs` | string | no | WCS to program in (default: the active one) |
+| `orientation` | string | no | 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine) |
 | `clearance_from` | choice | no | Clearance height reference (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
 | `clearance_offset` | number | no | Clearance height above its reference, mm (default 15) (-1e5 to 1e5 mm) |
 | `retract_from` | choice | no | Retract height reference (default model_top) — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
@@ -1913,7 +1974,7 @@ Returns: {"removed": id}
 #### `toolpath.face`
 
 ```python
-cc.toolpath_face(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, boundary=None, boundary_offset=None, overrun=None, angle=None, pattern=None, multiple_depths=None)
+cc.toolpath_face(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, orientation=None, post_stop=None, post_comment=None, post_code_before=None, post_code_after=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, boundary=None, boundary_offset=None, overrun=None, angle=None, pattern=None, multiple_depths=None)
 ```
 
 Rows across the top of the stock to bring it flat and down to height.
@@ -1929,6 +1990,11 @@ Rows across the top of the stock to bring it flat and down to height.
 | `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
 | `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
 | `wcs` | string | no | WCS to program in (default: the active one) |
+| `orientation` | string | no | 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine) |
+| `post_stop` | bool | no | Stop the machine (M0) before this operation |
+| `post_comment` | string | no | Note for the operator, written in the program |
+| `post_code_before` | string | no | G-code written as given before the operation |
+| `post_code_after` | string | no | G-code written as given after the operation |
 | `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
 | `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
 | `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
@@ -1964,7 +2030,7 @@ Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length
 #### `toolpath.pocket`
 
 ```python
-cc.toolpath_pocket(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, multiple_depths=None, finishing_pass=None)
+cc.toolpath_pocket(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, orientation=None, post_stop=None, post_comment=None, post_code_before=None, post_code_after=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, multiple_depths=None, finishing_pass=None)
 ```
 
 Clear the inside of selected floor faces or closed edges, around any islands.
@@ -1980,6 +2046,11 @@ Clear the inside of selected floor faces or closed edges, around any islands.
 | `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
 | `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
 | `wcs` | string | no | WCS to program in (default: the active one) |
+| `orientation` | string | no | 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine) |
+| `post_stop` | bool | no | Stop the machine (M0) before this operation |
+| `post_comment` | string | no | Note for the operator, written in the program |
+| `post_code_before` | string | no | G-code written as given before the operation |
+| `post_code_after` | string | no | G-code written as given after the operation |
 | `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
 | `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
 | `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
@@ -2011,7 +2082,7 @@ Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length
 #### `toolpath.drill`
 
 ```python
-cc.toolpath_drill(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, cycle=None, peck_depth=None, dwell=None, pitch=None)
+cc.toolpath_drill(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, orientation=None, post_stop=None, post_comment=None, post_code_before=None, post_code_after=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, cycle=None, peck_depth=None, dwell=None, pitch=None)
 ```
 
 Drill, spot, peck, tap or bore holes picked as cylinders, circular edges or points.
@@ -2027,6 +2098,11 @@ Drill, spot, peck, tap or bore holes picked as cylinders, circular edges or poin
 | `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
 | `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
 | `wcs` | string | no | WCS to program in (default: the active one) |
+| `orientation` | string | no | 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine) |
+| `post_stop` | bool | no | Stop the machine (M0) before this operation |
+| `post_comment` | string | no | Note for the operator, written in the program |
+| `post_code_before` | string | no | G-code written as given before the operation |
+| `post_code_after` | string | no | G-code written as given after the operation |
 | `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
 | `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
 | `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
@@ -2051,7 +2127,7 @@ Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length
 #### `toolpath.rough`
 
 ```python
-cc.toolpath_rough(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, angle=None)
+cc.toolpath_rough(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, orientation=None, post_stop=None, post_comment=None, post_code_before=None, post_code_after=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, angle=None)
 ```
 
 Clear the stock around the part level by level, leaving stock for finishing.
@@ -2067,6 +2143,11 @@ Clear the stock around the part level by level, leaving stock for finishing.
 | `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
 | `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
 | `wcs` | string | no | WCS to program in (default: the active one) |
+| `orientation` | string | no | 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine) |
+| `post_stop` | bool | no | Stop the machine (M0) before this operation |
+| `post_comment` | string | no | Note for the operator, written in the program |
+| `post_code_before` | string | no | G-code written as given before the operation |
+| `post_code_after` | string | no | G-code written as given after the operation |
 | `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
 | `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
 | `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
@@ -2097,7 +2178,7 @@ Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length
 #### `toolpath.waterline`
 
 ```python
-cc.toolpath_waterline(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None)
+cc.toolpath_waterline(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, orientation=None, post_stop=None, post_comment=None, post_code_before=None, post_code_after=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None)
 ```
 
 Finish steep walls with passes around the part at constant heights.
@@ -2113,6 +2194,11 @@ Finish steep walls with passes around the part at constant heights.
 | `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
 | `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
 | `wcs` | string | no | WCS to program in (default: the active one) |
+| `orientation` | string | no | 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine) |
+| `post_stop` | bool | no | Stop the machine (M0) before this operation |
+| `post_comment` | string | no | Note for the operator, written in the program |
+| `post_code_before` | string | no | G-code written as given before the operation |
+| `post_code_after` | string | no | G-code written as given after the operation |
 | `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
 | `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
 | `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
@@ -2142,7 +2228,7 @@ Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length
 #### `toolpath.raster`
 
 ```python
-cc.toolpath_raster(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, boundary=None, boundary_offset=None, angle=None, pattern=None, sample_step=None)
+cc.toolpath_raster(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, orientation=None, post_stop=None, post_comment=None, post_code_before=None, post_code_after=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, boundary=None, boundary_offset=None, angle=None, pattern=None, sample_step=None)
 ```
 
 Finish shallow surfaces with parallel rows that follow the part.
@@ -2158,6 +2244,11 @@ Finish shallow surfaces with parallel rows that follow the part.
 | `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
 | `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
 | `wcs` | string | no | WCS to program in (default: the active one) |
+| `orientation` | string | no | 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine) |
+| `post_stop` | bool | no | Stop the machine (M0) before this operation |
+| `post_comment` | string | no | Note for the operator, written in the program |
+| `post_code_before` | string | no | G-code written as given before the operation |
+| `post_code_after` | string | no | G-code written as given after the operation |
 | `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
 | `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
 | `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
@@ -2189,86 +2280,89 @@ Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length
 
 <sub>ribbon: Toolpaths › Strategies</sub>
 
+#### `toolpath.multiaxis`
+
+```python
+cc.toolpath_multiaxis(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, orientation=None, post_stop=None, post_comment=None, post_code_before=None, post_code_after=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, boundary=None, boundary_offset=None, angle=None, pattern=None, sample_step=None, tool_axis=None, tilt_angle=None, lead_angle=None, axis_point=None, axis_direction=None, max_tilt=None, max_axis_rate=None, avoid_collisions=None, shank_clearance=None)
+```
+
+Finish the part with a ball end mill that tilts as it follows the surface (simultaneous 4/5-axis).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Regenerate this toolpath with these settings instead of adding one |
+| `name` | string | no | Name in the job outline (default: the strategy and tool) |
+| `tool` | integer | no | Tool number in the active machine's library (default: the first) (1 to 9999) |
+| `spindle_rpm` | number | no | Spindle speed, rpm (default: the tool's) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
+| `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
+| `wcs` | string | no | WCS to program in (default: the active one) |
+| `orientation` | string | no | 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine) |
+| `post_stop` | bool | no | Stop the machine (M0) before this operation |
+| `post_comment` | string | no | Note for the operator, written in the program |
+| `post_code_before` | string | no | G-code written as given before the operation |
+| `post_code_after` | string | no | G-code written as given after the operation |
+| `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
+| `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
+| `retract_from` | choice | no | Retract height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `retract_offset` | number | no | Retract height above its reference, mm (-1e5 to 1e5 mm) |
+| `feed_height_from` | choice | no | Feed height reference: where rapids stop — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `feed_height_offset` | number | no | Feed height above its reference, mm (-1e5 to 1e5 mm) |
+| `top_from` | choice | no | Top height reference: where cutting starts — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `top_offset` | number | no | Top height offset, mm (-1e5 to 1e5 mm) |
+| `bottom_from` | choice | no | Bottom height reference: the final depth — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `bottom_offset` | number | no | Bottom height offset, mm (negative goes deeper) (-1e5 to 1e5 mm) |
+| `tolerance` | number | no | How far the path may stray from true curves, mm (default 0.01) (0 to 1 mm) |
+| `stepover` | number | no | Distance between passes, mm (default: a share of the tool diameter) (0 to 10000 mm) |
+| `stepdown` | number | no | Depth per level, mm (default: the tool's, else a share of its diameter) (0 to 10000 mm) |
+| `direction` | choice | no | Climb or conventional milling (default climb) — one of climb, conventional |
+| `stock_radial` | number | no | Stock to leave on walls, mm (default 0) (-1000 to 1000 mm) |
+| `stock_axial` | number | no | Stock to leave on floors, mm (default 0) (-1000 to 1000 mm) |
+| `entry` | choice | no | Into the material: a helical ramp or a plunge (default helix) — one of helix, plunge |
+| `ramp_angle` | number | no | Helix ramp angle, degrees (default 2) (0.1 to 90) |
+| `helix_radius` | number | no | Helix radius, mm (default 0.4 × Ø, at most the tool radius) (0 to 10000 mm) |
+| `rapid_links` | bool | no | Link between passes at rapid traverse (default true) |
+| `boundary` | choice | no | Area to cover: the stock, the model or the selection (default model) — one of stock, model, selection |
+| `boundary_offset` | number | no | Grow (or shrink) the area by this, mm (default 0) (-1e5 to 1e5 mm) |
+| `angle` | number | no | Row direction, degrees from +X (default 0) (-360 to 360) |
+| `pattern` | choice | no | Back and forth, or all one way (default zigzag) — one of zigzag, one_way |
+| `sample_step` | number | no | Spacing of points along a row, mm (default Ø/8, 0.05–1) (0 to 1000 mm) |
+| `tool_axis` | choice | no | How the tool leans: tilted from Z, from the surface normal, towards or away from a point or line, or fixed (default tilt) — one of tilt, normal, toward_point, away_from_point, toward_line, away_from_line, fixed |
+| `tilt_angle` | number | no | Sideways lean, degrees: positive leans the tool's top to the right of the row direction (default 15 for tilt, else 0) (-89 to 89) |
+| `lead_angle` | number | no | Lean along the travel, degrees: positive leans the top forward (default 0) (-89 to 89) |
+| `axis_point` | vec3 | no | The point (WCS mm) for toward/away from a point or line — [x, y, z] in mm |
+| `axis_direction` | vec3 | no | The line's direction, or the fixed tool axis (WCS) — [x, y, z] in mm |
+| `max_tilt` | number | no | Most the tool may lean from the toolpath's Z, degrees (default 60) (0 to 120) |
+| `max_axis_rate` | number | no | Fastest the tool axis may turn, degrees per mm of travel (default 5) (0.01 to 180) |
+| `avoid_collisions` | bool | no | Lean the tool back towards Z where its flutes or shank would touch the part (default true) |
+| `shank_clearance` | number | no | Gap kept around the shank, mm (default 0.5) (0 to 100 mm) |
+
+Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
+
+<sub>ribbon: Toolpaths › Strategies</sub>
+
 #### `toolpath.cl.export`
 
 ```python
-cc.toolpath_cl_export()
+cc.toolpath_cl_export(path=…, toolpaths=None, units=None, arc_tolerance=None)
 ```
 
-Write machine-neutral cutter location data (Phase 6).
- **Planned — not available yet.**
+Write machine-neutral cutter location data (JSON) for a post-processor or another program.
 
-Returns: not defined yet
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | string | yes | File to write, e.g. part.cl.json |
+| `toolpaths` | list | no | Toolpath ids in order (default: all) |
+| `units` | choice | no | Units the program should be written in — one of in, mm |
+| `arc_tolerance` | number | no | Fit arcs within this, mm; 0 for lines only (default 0.01) (0 to 1 mm) |
+
+Returns: {"path": path, "operations": count, "moves": count}
 
 <sub>ribbon: Toolpaths › Output</sub>
-
-
-### post
-
-#### `post.processor.select`
-
-```python
-cc.post_processor_select()
-```
-
-Choose the machine controller dialect (Phase 8).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Export › Post</sub>
-
-#### `post.limits.check`
-
-```python
-cc.post_limits_check()
-```
-
-Validate travel, spindle and feed limits (Phase 8).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Export › Post</sub>
-
-#### `post.gcode.export`
-
-```python
-cc.post_gcode_export(path=…, toolpaths=None, units=None, program_number=None, line_numbers=None)
-```
-
-Write the toolpaths as a G-code program (.nc) with the generic writer.
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `path` | string | yes | File to write, e.g. part.nc |
-| `toolpaths` | list | no | Toolpath ids in order (default: all) |
-| `units` | choice | no | Program units, in or mm (default: the units setting) — one of in, mm |
-| `program_number` | integer | no | O number (default 1000) (1 to 9999) |
-| `line_numbers` | bool | no | Number the lines N5, N10, … (default false) |
-
-Returns: {"path": path, "lines": count, "toolpaths": count}
-
-<sub>ribbon: Export › Post</sub>
-
-#### `post.gcode.get`
-
-```python
-cc.post_gcode_get(toolpaths=None, units=None, program_number=None, line_numbers=None)
-```
-
-The G-code program the export would write, as text.
-
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `toolpaths` | list | no | Toolpath ids in order (default: all) |
-| `units` | choice | no | Program units, in or mm (default: the units setting) — one of in, mm |
-| `program_number` | integer | no | O number (default 1000) (1 to 9999) |
-| `line_numbers` | bool | no | Number the lines (default false) |
-
-Returns: {"text": program, "lines": count}
 
 
 ### tool
@@ -2284,9 +2378,9 @@ Add a cutting tool to the active machine's library.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `type` | choice | no | Tool type (default flat; only flat end mills so far) — one of flat, ball, bull, chamfer, drill, spot_drill, face_mill, tap, thread_mill |
+| `type` | choice | no | Tool type (default flat; flat and ball end mills so far) — one of flat, ball, bull, chamfer, drill, spot_drill, face_mill, tap, thread_mill |
 | `number` | integer | no | Tool number (default: the lowest free one) (1 to 9999) |
-| `name` | string | no | Description shown in the library (default: Ø<d> flat end mill) |
+| `name` | string | no | Description shown in the library (default: Ø<d> flat or ball end mill) |
 | `diameter` | number | no | Cutting diameter, mm (0.001 to 2000 mm) |
 | `flutes` | integer | no | Number of flutes (default 3, 2 below Ø3) (1 to 32) |
 | `flute_length` | number | no | Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm) |
@@ -2320,7 +2414,7 @@ Add a flat (square corner) end mill to the active machine's library.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `number` | integer | no | Tool number (default: the lowest free one) (1 to 9999) |
-| `name` | string | no | Description shown in the library (default: Ø<d> flat end mill) |
+| `name` | string | no | Description shown in the library (default: Ø<d> flat or ball end mill) |
 | `diameter` | number | no | Cutting diameter, mm (0.001 to 2000 mm) |
 | `flutes` | integer | no | Number of flutes (default 3, 2 below Ø3) (1 to 32) |
 | `flute_length` | number | no | Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm) |
@@ -2343,13 +2437,34 @@ Returns: the tool {id, machine, number, name, type, diameter, corner_radius, flu
 #### `tool.create.ball`
 
 ```python
-cc.tool_create_ball()
+cc.tool_create_ball(number=None, name=None, diameter=None, flutes=None, flute_length=None, overall_length=None, shank_diameter=None, material=None, coating=None, spindle_rpm=None, feed=None, plunge_feed=None, stepover=None, stepdown=None, length_offset=None, diameter_offset=None, notes=None, machine=None)
 ```
 
-Ball nose tools are not supported yet.
- **Planned — not available yet.**
+Add a ball nose end mill to the active machine's library (for 3D and multi-axis finishing).
 
-Returns: not defined yet
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `number` | integer | no | Tool number (default: the lowest free one) (1 to 9999) |
+| `name` | string | no | Description shown in the library (default: Ø<d> flat or ball end mill) |
+| `diameter` | number | no | Cutting diameter, mm (0.001 to 2000 mm) |
+| `flutes` | integer | no | Number of flutes (default 3, 2 below Ø3) (1 to 32) |
+| `flute_length` | number | no | Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm) |
+| `overall_length` | number | no | Stick-out from the holder to the tip, mm (0.001 to 2000 mm) |
+| `shank_diameter` | number | no | Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm) |
+| `material` | choice | no | Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond |
+| `coating` | string | no | Coating, e.g. TiAlN |
+| `spindle_rpm` | number | no | Spindle speed, rpm (0 = not set) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min) |
+| `stepover` | number | no | Radial depth of cut, mm (0 = not set) (0 to 2000 mm) |
+| `stepdown` | number | no | Axial depth of cut, mm (0 = not set) (0 to 2000 mm) |
+| `length_offset` | integer | no | Length offset register (default: the tool number) (0 to 9999) |
+| `diameter_offset` | integer | no | Diameter offset register (default: the tool number) (0 to 9999) |
+| `notes` | string | no | Free notes |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
 
 #### `tool.create.bull`
 
@@ -2441,7 +2556,7 @@ Change a tool's geometry, cutting data or number.
 | --- | --- | --- | --- |
 | `number` | integer | yes | The tool to change (1 to 9999) |
 | `new_number` | integer | no | Renumber the tool (1 to 9999) |
-| `name` | string | no | Description shown in the library (default: Ø<d> flat end mill) |
+| `name` | string | no | Description shown in the library (default: Ø<d> flat or ball end mill) |
 | `diameter` | number | no | Cutting diameter, mm (0.001 to 2000 mm) |
 | `flutes` | integer | no | Number of flutes (default 3, 2 below Ø3) (1 to 32) |
 | `flute_length` | number | no | Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm) |
@@ -2604,7 +2719,7 @@ Returns: {"exported": count, "path": path}
 #### `machine.create`
 
 ```python
-cc.machine_create(activate=None, name=None, description=None, kind=None, travel_x=None, travel_y=None, travel_z=None, max_spindle_rpm=None, max_feed=None, tool_capacity=None)
+cc.machine_create(activate=None, name=None, description=None, kind=None, travel_x=None, travel_y=None, travel_z=None, max_spindle_rpm=None, max_feed=None, tool_capacity=None, post=None, layout=None, primary_axis=None, primary_min=None, primary_max=None, primary_reversed=None, secondary_axis=None, secondary_min=None, secondary_max=None, secondary_reversed=None, primary_centre=None, secondary_centre=None, pivot_length=None)
 ```
 
 Add a machine configuration with its own, empty tool library.
@@ -2615,22 +2730,35 @@ Add a machine configuration with its own, empty tool library.
 | `activate` | bool | no | Make it the active machine (default true) |
 | `name` | string | no | Machine name |
 | `description` | string | no | Notes about the machine |
-| `kind` | choice | no | Machine type (3-axis mill for now) — one of mill_3axis |
+| `kind` | choice | no | Machine type: 3-, 4- or 5-axis mill (a new 4- or 5-axis machine starts with typical rotary axes) — one of mill_3axis, mill_4axis, mill_5axis |
 | `travel_x` | number | no | X travel, mm (0.001 to 1e5 mm) |
 | `travel_y` | number | no | Y travel, mm (0.001 to 1e5 mm) |
 | `travel_z` | number | no | Z travel, mm (0.001 to 1e5 mm) |
 | `max_spindle_rpm` | number | no | Highest spindle speed, rpm (1 to 5e5) |
 | `max_feed` | number | no | Fastest cutting feed, mm/min (0.001 to 1e6 mm/min) |
 | `tool_capacity` | integer | no | Tool changer pockets (0 = manual tool changes) (0 to 9999) |
+| `post` | string | no | Post-processor id its programs are written with (see post.processor.list) |
+| `layout` | choice | no | 4/5-axis: which units turn: both on the table (trunnion), table and head, or both on the head — one of table_table, head_table, head_head |
+| `primary_axis` | choice | no | 4/5-axis: the axis nearer the base (head-table: the table's axis); A turns about X, B about Y, C about Z — one of A, B, C |
+| `primary_min` | number | no | 4/5-axis: primary axis travel, lowest angle (degrees) (-1e5 to 1e5) |
+| `primary_max` | number | no | 4/5-axis: primary axis travel, highest angle (degrees) (-1e5 to 1e5) |
+| `primary_reversed` | bool | no | 4/5-axis: the primary axis turns opposite to the ISO convention |
+| `secondary_axis` | choice | no | 5-axis: the axis the primary carries (head-table: the head's axis) — one of A, B, C |
+| `secondary_min` | number | no | 5-axis: secondary axis travel, lowest angle (degrees) (-1e5 to 1e5) |
+| `secondary_max` | number | no | 5-axis: secondary axis travel, highest angle (degrees) (-1e5 to 1e5) |
+| `secondary_reversed` | bool | no | 5-axis: the secondary axis turns opposite to the ISO convention |
+| `primary_centre` | vec3 | no | Tables: where the primary axis passes, relative to the work origin, mm (for posts that move the linear axes themselves) — [x, y, z] in mm |
+| `secondary_centre` | vec3 | no | Table-table: where the secondary axis passes, relative to the work origin, mm — [x, y, z] in mm |
+| `pivot_length` | number | no | Heads: from where the head turns to the spindle gauge line, mm (0 to 10000 mm) |
 
-Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, kinematics, tools}
 
 <sub>ribbon: Machine › Machines</sub>
 
 #### `machine.edit`
 
 ```python
-cc.machine_edit(id=None, name=None, description=None, kind=None, travel_x=None, travel_y=None, travel_z=None, max_spindle_rpm=None, max_feed=None, tool_capacity=None)
+cc.machine_edit(id=None, name=None, description=None, kind=None, travel_x=None, travel_y=None, travel_z=None, max_spindle_rpm=None, max_feed=None, tool_capacity=None, post=None, layout=None, primary_axis=None, primary_min=None, primary_max=None, primary_reversed=None, secondary_axis=None, secondary_min=None, secondary_max=None, secondary_reversed=None, primary_centre=None, secondary_centre=None, pivot_length=None)
 ```
 
 Change a machine's name, travel and limits.
@@ -2641,15 +2769,28 @@ Change a machine's name, travel and limits.
 | `id` | string | no | Machine id, e.g. machine.1 (default: the active machine) |
 | `name` | string | no | Machine name |
 | `description` | string | no | Notes about the machine |
-| `kind` | choice | no | Machine type (3-axis mill for now) — one of mill_3axis |
+| `kind` | choice | no | Machine type: 3-, 4- or 5-axis mill (a new 4- or 5-axis machine starts with typical rotary axes) — one of mill_3axis, mill_4axis, mill_5axis |
 | `travel_x` | number | no | X travel, mm (0.001 to 1e5 mm) |
 | `travel_y` | number | no | Y travel, mm (0.001 to 1e5 mm) |
 | `travel_z` | number | no | Z travel, mm (0.001 to 1e5 mm) |
 | `max_spindle_rpm` | number | no | Highest spindle speed, rpm (1 to 5e5) |
 | `max_feed` | number | no | Fastest cutting feed, mm/min (0.001 to 1e6 mm/min) |
 | `tool_capacity` | integer | no | Tool changer pockets (0 = manual tool changes) (0 to 9999) |
+| `post` | string | no | Post-processor id its programs are written with (see post.processor.list) |
+| `layout` | choice | no | 4/5-axis: which units turn: both on the table (trunnion), table and head, or both on the head — one of table_table, head_table, head_head |
+| `primary_axis` | choice | no | 4/5-axis: the axis nearer the base (head-table: the table's axis); A turns about X, B about Y, C about Z — one of A, B, C |
+| `primary_min` | number | no | 4/5-axis: primary axis travel, lowest angle (degrees) (-1e5 to 1e5) |
+| `primary_max` | number | no | 4/5-axis: primary axis travel, highest angle (degrees) (-1e5 to 1e5) |
+| `primary_reversed` | bool | no | 4/5-axis: the primary axis turns opposite to the ISO convention |
+| `secondary_axis` | choice | no | 5-axis: the axis the primary carries (head-table: the head's axis) — one of A, B, C |
+| `secondary_min` | number | no | 5-axis: secondary axis travel, lowest angle (degrees) (-1e5 to 1e5) |
+| `secondary_max` | number | no | 5-axis: secondary axis travel, highest angle (degrees) (-1e5 to 1e5) |
+| `secondary_reversed` | bool | no | 5-axis: the secondary axis turns opposite to the ISO convention |
+| `primary_centre` | vec3 | no | Tables: where the primary axis passes, relative to the work origin, mm (for posts that move the linear axes themselves) — [x, y, z] in mm |
+| `secondary_centre` | vec3 | no | Table-table: where the secondary axis passes, relative to the work origin, mm — [x, y, z] in mm |
+| `pivot_length` | number | no | Heads: from where the head turns to the spindle gauge line, mm (0 to 10000 mm) |
 
-Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, kinematics, tools}
 
 <sub>ribbon: Machine › Machines</sub>
 
@@ -2667,7 +2808,7 @@ Copy a machine and its whole tool library under a new name.
 | `id` | string | no | Machine id, e.g. machine.1 (default: the active machine) |
 | `name` | string | no | Name of the copy (default: <name> copy) |
 
-Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, kinematics, tools}
 
 #### `machine.remove`
 
@@ -2697,7 +2838,7 @@ Work with this machine and its tool library.
 | --- | --- | --- | --- |
 | `id` | string | yes | Machine id, e.g. machine.1 |
 
-Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, kinematics, tools}
 
 #### `machine.list`
 
@@ -2723,7 +2864,7 @@ One machine configuration.
 | --- | --- | --- | --- |
 | `id` | string | no | Machine id, e.g. machine.1 (default: the active machine) |
 
-Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, tools}
+Returns: the machine {id, name, description, kind, active, travel, max_spindle_rpm, max_feed, tool_capacity, post, kinematics, tools}
 
 #### `machine.library.open`
 
@@ -2786,7 +2927,7 @@ Returns: {units, theme, fps_limit}
 #### `sim.start`
 
 ```python
-cc.sim_start(toolpaths=None, cell=None)
+cc.sim_start(toolpaths=None, cell=None, mode=None)
 ```
 
 Start the material removal simulation from the beginning.
@@ -2795,9 +2936,10 @@ Start the material removal simulation from the beginning.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `toolpaths` | list | no | Toolpaths to run, in order (default: all) |
-| `cell` | number | no | Stock grid spacing, mm (default: a quarter of the smallest tool radius) (0 to 100 mm) |
+| `cell` | number | no | Stock grid spacing, mm (default: a quarter of the smallest tool radius; voxels: a third, coarser for big stock) (0 to 100 mm) |
+| `mode` | choice | no | Stock model: a height field (one tool axis), voxels (any axis), or auto: voxels when the tool tilts — one of auto, height, voxel |
 
-Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
 #### `sim.play`
 
@@ -2808,7 +2950,7 @@ cc.sim_play()
 Run the material removal simulation.
 
 
-Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
 <sub>shortcut `Space` · ribbon: Simulation › Playback</sub>
 
@@ -2821,7 +2963,7 @@ cc.sim_pause()
 Pause the simulation.
 
 
-Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
 <sub>ribbon: Simulation › Playback</sub>
 
@@ -2838,7 +2980,7 @@ Advance to the next move (or several).
 | --- | --- | --- | --- |
 | `moves` | integer | no | How many moves to step; negative goes back (default 1) (-1000000 to 1000000) |
 
-Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
 <sub>ribbon: Simulation › Playback</sub>
 
@@ -2856,7 +2998,7 @@ Jump to a time in the simulation.
 | `time` | number | no | Machine time, seconds (0 to 1e9) |
 | `fraction` | number | no | Share of the whole program, 0 to 1 (0 to 1) |
 
-Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
 #### `sim.speed`
 
@@ -2871,7 +3013,7 @@ Playback speed: machine seconds per second (the button steps through 1× to 250�
 | --- | --- | --- | --- |
 | `speed` | number | no | Speed multiplier (0.1 to 10000) |
 
-Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, events}
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
 <sub>ribbon: Simulation › Playback</sub>
 
@@ -2926,4 +3068,140 @@ Run the whole program and find where it cuts below the part's surface.
 Returns: {tolerance, gouges, area, worst_depth, deepest: [{at, depth}]}
 
 <sub>ribbon: Simulation › Verify</sub>
+
+
+### post
+
+#### `post.processor.select`
+
+```python
+cc.post_processor_select(post=…, machine=None)
+```
+
+Choose the post-processor (controller dialect) the machine's programs are written with.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `post` | string | yes | Post-processor id, e.g. fanuc, haas, linuxcnc, grbl, mach, generic |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: {"machine": id, "post": id}
+
+<sub>ribbon: Export › Post</sub>
+
+#### `post.gcode.export`
+
+```python
+cc.post_gcode_export(path=…, post=None, toolpaths=None, units=None, program_number=None, line_numbers=None, arc_tolerance=None)
+```
+
+Post the toolpaths with the machine's post-processor and write the program.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | string | yes | File to write, e.g. part.nc |
+| `post` | string | no | Post-processor id (default: the machine's, else generic); see post.processor.list |
+| `toolpaths` | list | no | Toolpath ids in order (default: all) |
+| `units` | choice | no | Program units, in or mm (default: the units setting; a post may fix its own) — one of in, mm |
+| `program_number` | integer | no | O number (default 1000) (1 to 99999) |
+| `line_numbers` | bool | no | Number the lines (default: the post's choice) |
+| `arc_tolerance` | number | no | Fit arcs (G2/G3) within this, mm; 0 writes lines only (default 0.01) (0 to 1 mm) |
+
+Returns: {"path": path, "lines": count, "toolpaths": count, "post": id, "extension": ext, "warnings": [...]}
+
+<sub>ribbon: Export › Post</sub>
+
+#### `post.gcode.get`
+
+```python
+cc.post_gcode_get(post=None, toolpaths=None, units=None, program_number=None, line_numbers=None, arc_tolerance=None)
+```
+
+The program the export would write, as text.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `post` | string | no | Post-processor id (default: the machine's, else generic); see post.processor.list |
+| `toolpaths` | list | no | Toolpath ids in order (default: all) |
+| `units` | choice | no | Program units, in or mm (default: the units setting; a post may fix its own) — one of in, mm |
+| `program_number` | integer | no | O number (default 1000) (1 to 99999) |
+| `line_numbers` | bool | no | Number the lines (default: the post's choice) |
+| `arc_tolerance` | number | no | Fit arcs (G2/G3) within this, mm; 0 writes lines only (default 0.01) (0 to 1 mm) |
+
+Returns: {"text": program, "lines": count, "post": id, "extension": ext, "warnings": [...]}
+
+#### `post.processor.list`
+
+```python
+cc.post_processor_list()
+```
+
+The post-processors that can be chosen: generic, the shipped ones and your own.
+
+
+Returns: list of {id, description, builtin, path}
+
+#### `post.properties.get`
+
+```python
+cc.post_properties_get(machine=None, post=None)
+```
+
+The settings the machine's post offers, with the values chosen for the machine.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `machine` | string | no | Machine id (default: the active machine) |
+| `post` | string | no | Another post's settings (default: the machine's post) |
+
+Returns: {"post": id, "properties": [{name, title, description, group, kind, default, choices, value}]}
+
+#### `post.properties.set`
+
+```python
+cc.post_properties_set(name=…, value=…, machine=None)
+```
+
+Choose a value for one of the machine's post settings (empty restores the post's default).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes | Setting name, e.g. blend_finish |
+| `value` | string | yes | Its value as text (true/false, numbers, a choice); empty for the default |
+| `machine` | string | no | Machine id (default: the active machine) |
+
+Returns: {"machine": id, "properties": {name: value}}
+
+#### `post.processor.folder`
+
+```python
+cc.post_processor_folder()
+```
+
+Where post-processors live: copy one from builtin/ into this folder to change it.
+
+
+Returns: {"path": folder, "builtin": folder}
+
+#### `post.limits.check`
+
+```python
+cc.post_limits_check(toolpaths=None)
+```
+
+Check the toolpaths against the machine's travel, spindle speed and feed limits.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `toolpaths` | list | no | Toolpath ids (default: all) |
+
+Returns: {"ok": bool, "problems": [text]}
+
+<sub>ribbon: Export › Post</sub>
 
