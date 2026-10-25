@@ -13,6 +13,7 @@ pub mod cmd;
 pub mod error;
 pub mod library;
 pub mod params;
+pub mod post;
 pub mod session;
 pub mod toolpath;
 pub mod units;

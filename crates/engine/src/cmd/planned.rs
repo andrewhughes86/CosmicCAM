@@ -92,10 +92,4 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         "Validate travel, spindle and feed limits (Phase 8)",
         small(Export, "Post")
     ),
-    planned!(
-        "post.gcode.export",
-        "Export G-code",
-        "Write .nc / .gcode for the machine (Phase 8)",
-        large(Export, "Post")
-    ),
 ];

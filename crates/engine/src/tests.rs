@@ -1181,3 +1181,76 @@ fn contour_refuses_what_it_cannot_cut() {
     );
     assert!(s.execute("toolpath.remove", &json!({"id": "toolpath.9"})).is_err());
 }
+
+fn gcode(s: &mut Session, p: Value) -> String {
+    let r = s.execute("post.gcode.get", &p);
+    assert!(r.is_ok(), "{r:?}");
+    r.unwrap_or_default()["text"].as_str().unwrap_or_default().to_owned()
+}
+
+#[test]
+fn gcode_has_a_safety_block_tool_change_and_the_moves() {
+    let mut s = sample_with_tool();
+    assert!(s.execute("post.gcode.get", &Value::Null).is_err(), "no toolpaths yet");
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom], "lead_in": "none"})).is_ok());
+    let text = gcode(&mut s, json!({}));
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.first(), Some(&"%"));
+    assert_eq!(lines.get(1), Some(&"O1000"));
+    for want in ["G90 G94 G17 G40 G49 G80", "G20", "T1 M6", "S10000 M3", "G54", "M8", "M9", "M5", "G91 G28 Z0", "M30"] {
+        assert!(lines.contains(&want), "missing {want}:\n{text}");
+    }
+    assert_eq!(lines.last(), Some(&"%"));
+    // Length compensation on the first Z move: clearance, model top 42 mm + 0.5 in = 2.1535 in.
+    assert!(lines.iter().any(|l| l.starts_with("G43 Z2.1535 H1")), "{text}");
+    // Cutting feed 1000 mm/min = 39.37 in/min, written once until it changes.
+    assert!(lines.iter().any(|l| l.starts_with("G1 Z0.0000 F11.81")), "plunge feed, G1 once: {text}");
+    assert!(lines.iter().any(|l| l.ends_with("F39.37")), "{text}");
+    assert_eq!(text.matches("F39.37").count(), 1, "modal feed");
+    // The contour sits 3 mm outside the base: X reaches ±53 mm = 2.0866 in.
+    assert!(text.contains("X2.0866") || text.contains("X-2.0866"), "{text}");
+    // Nothing is written without an axis, and no "-0".
+    assert!(!lines.iter().any(|l| *l == "G1" || *l == "G0"));
+    assert!(!text.contains("-0.0000"));
+
+    // Millimetres, line numbers and the program number.
+    let mm = gcode(&mut s, json!({"units": "mm", "line_numbers": true, "program_number": 42}));
+    assert!(mm.contains("O0042") && mm.contains("G21") && mm.contains("F1000.0"), "{mm}");
+    assert!(mm.lines().any(|l| l.starts_with("N5 ")), "{mm}");
+    assert!(mm.contains("X53.000") || mm.contains("X-53.000"), "{mm}");
+}
+
+#[test]
+fn gcode_is_written_in_the_toolpaths_wcs() {
+    let mut s = sample_with_tool();
+    assert!(s.execute("setup.wcs.create", &json!({"name": "Vice", "activate": false})).is_ok());
+    let w2 =
+        s.execute("setup.wcs.create", &json!({"origin": "point", "origin_point": [10, 20, 0]})).unwrap_or_default();
+    assert_eq!(w2["id"], "wcs.2");
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom], "lead_in": "none"})).is_ok());
+    let text = gcode(&mut s, json!({"units": "mm"}));
+    assert!(text.lines().any(|l| l == "G55"), "second WCS is G55:\n{text}");
+    // World X 53 is X 43 from an origin at X 10.
+    assert!(text.contains("X43.000"), "{text}");
+    assert!(!text.contains("X53.000"));
+}
+
+#[test]
+fn gcode_refuses_a_toolpath_without_spindle_speed() {
+    let mut s = Session::with_sample();
+    assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "feed": 800})).is_ok());
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom]})).is_ok());
+    let r = s.execute("post.gcode.get", &Value::Null);
+    assert!(matches!(r, Err(EngineError::InvalidParams(ref m)) if m.contains("spindle speed")), "{r:?}");
+    // A speed on the toolpath is enough.
+    let id = s.execute("toolpath.list", &Value::Null).unwrap_or_default()[0]["id"].clone();
+    assert!(s.execute("toolpath.contour", &json!({"id": id, "geometry": [bottom], "spindle_rpm": 9000})).is_ok());
+    assert!(gcode(&mut s, json!({})).contains("S9000 M3"));
+    let file = TempFile::new("part.nc", b"");
+    let r = s.execute("post.gcode.export", &json!({"path": file.path()})).unwrap_or_default();
+    assert!(r["lines"].as_u64().unwrap_or(0) > 10);
+    assert!(std::fs::read_to_string(file.path()).unwrap_or_default().ends_with("%\n"));
+}

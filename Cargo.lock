@@ -61,12 +61,15 @@ dependencies = [
  "egui-wgpu",
  "egui_dock",
  "getrandom 0.4.3",
+ "js-sys",
  "log",
  "png",
  "resvg",
  "rfd",
  "serde_json",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-sys",
  "wgpu",
 ]
 

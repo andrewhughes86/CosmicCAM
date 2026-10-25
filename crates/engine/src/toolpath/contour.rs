@@ -771,6 +771,11 @@ pub fn generate(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
     if let Some((at, _, _)) = exit {
         b.push(MoveKind::Rapid, at.extend(clearance), 0.0)?;
     }
+    // The tool starts over the first entry point, at clearance height.
+    let start = b.moves.first().map_or(start, |first| {
+        let l = f.local(first.to);
+        f.world(DVec3::new(l.x, l.y, clearance))
+    });
     if set.tool.spindle_rpm <= 0.0 && p.get("spindle_rpm").and_then(Value::as_f64).unwrap_or(0.0) <= 0.0 {
         warnings.push(format!("T{} has no spindle speed set", set.tool.number));
     }

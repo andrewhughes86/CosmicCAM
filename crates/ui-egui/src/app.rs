@@ -63,6 +63,8 @@ pub struct CosmicApp {
     applied_theme: Option<Theme>,
     /// Last command failure, shown in the status bar.
     status: Option<String>,
+    /// A success worth telling the user about (e.g. a file written), shown when there is no failure.
+    notice: Option<String>,
     shortcuts: Vec<(KeyboardShortcut, &'static str)>,
     automation: Automation,
     control: Option<ControlServer>,
@@ -150,6 +152,7 @@ impl CosmicApp {
             render_state: cc.wgpu_render_state.clone(),
             applied_theme: None,
             status: startup_status,
+            notice: None,
             shortcuts: cmd::all().filter_map(|c| Some((parse_shortcut(c.shortcut?)?, c.id))).collect(),
             automation,
             control,
@@ -185,8 +188,24 @@ impl CosmicApp {
             return;
         }
         match self.session.execute(id, params) {
-            Ok(_) => self.status = None,
-            Err(e) => self.status = Some(e.to_string()),
+            Ok(result) => {
+                self.status = None;
+                self.notice = match id {
+                    "post.gcode.export" => Some(format!(
+                        "Wrote {} lines of G-code to {}",
+                        result["lines"].as_u64().unwrap_or(0),
+                        result["path"].as_str().unwrap_or_default()
+                    )),
+                    "tool.library.export" => {
+                        Some(format!("Wrote the tool library to {}", result["path"].as_str().unwrap_or_default()))
+                    }
+                    _ => self.notice.take().filter(|_| id.ends_with(".get") || id == "selection.set"),
+                };
+            }
+            Err(e) => {
+                self.status = Some(e.to_string());
+                self.notice = None;
+            }
         }
     }
 
@@ -422,9 +441,10 @@ impl eframe::App for CosmicApp {
         let fps = self.viewport.fps();
         Panel::bottom("status", Surface::StatusBar).show(ui, tokens, |ui| {
             ui.horizontal(|ui| {
-                match &status {
-                    Some(msg) => ui.label(RichText::new(msg).color(tokens.error)),
-                    None => ui.label(RichText::new("Ready").color(tokens.text_muted)),
+                match (&status, &self.notice) {
+                    (Some(msg), _) => ui.label(RichText::new(msg).color(tokens.error)),
+                    (None, Some(note)) => ui.label(RichText::new(note).color(tokens.success)),
+                    (None, None) => ui.label(RichText::new("Ready").color(tokens.text_muted)),
                 };
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(

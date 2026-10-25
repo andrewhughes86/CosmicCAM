@@ -1073,18 +1073,6 @@ class Commands:
         """
         return self.execute("post.limits.check")
 
-    def post_gcode_export(self) -> Any:
-        """Write .nc / .gcode for the machine (Phase 8).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``post.gcode.export``
-        """
-        return self.execute("post.gcode.export")
-
     def setup_stock_fit(self, *, margin_sides: Optional[float] = None, margin_top: Optional[float] = None, margin_bottom: Optional[float] = None) -> Any:
         """Size the stock box to the models' bounding box, plus margins.
 
@@ -1698,3 +1686,38 @@ class Commands:
         """
         params = {"id": id}
         return self.execute("toolpath.remove", {k: v for k, v in params.items() if v is not None})
+
+    def post_gcode_export(self, *, path: str, toolpaths: Optional[Sequence[str]] = None, units: Optional[Literal["in", "mm"]] = None, program_number: Optional[int] = None, line_numbers: Optional[bool] = None) -> Any:
+        """Write the toolpaths as a G-code program (.nc) with the generic writer.
+
+        Args:
+            path: File to write, e.g. part.nc.
+            toolpaths: Toolpath ids in order (default: all).
+            units: Program units, in or mm (default: the units setting) — one of in, mm.
+            program_number: O number (default 1000) (1 to 9999).
+            line_numbers: Number the lines N5, N10, … (default false).
+
+        Returns:
+            {"path": path, "lines": count, "toolpaths": count}
+
+        Command: ``post.gcode.export``
+        """
+        params = {"path": path, "toolpaths": toolpaths, "units": units, "program_number": program_number, "line_numbers": line_numbers}
+        return self.execute("post.gcode.export", {k: v for k, v in params.items() if v is not None})
+
+    def post_gcode_get(self, *, toolpaths: Optional[Sequence[str]] = None, units: Optional[Literal["in", "mm"]] = None, program_number: Optional[int] = None, line_numbers: Optional[bool] = None) -> Any:
+        """The G-code program the export would write, as text.
+
+        Args:
+            toolpaths: Toolpath ids in order (default: all).
+            units: Program units, in or mm (default: the units setting) — one of in, mm.
+            program_number: O number (default 1000) (1 to 9999).
+            line_numbers: Number the lines (default false).
+
+        Returns:
+            {"text": program, "lines": count}
+
+        Command: ``post.gcode.get``
+        """
+        params = {"toolpaths": toolpaths, "units": units, "program_number": program_number, "line_numbers": line_numbers}
+        return self.execute("post.gcode.get", {k: v for k, v in params.items() if v is not None})

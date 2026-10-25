@@ -215,6 +215,24 @@ top (where the material starts) and bottom (the final depth); they must not cros
 keeps the material on the right of the tool's travel: clockwise outside a contour, anticlockwise
 inside. Moves are `rapid`, `link`, `plunge` (plunges and ramps), `lead` and `cut`, in world mm.
 
+## G-code
+
+Until the Python post-processors of Phase 8 exist, CosmicCAM writes plain, generic G-code:
+
+```python
+cc.post_gcode_export(path="part.nc")                       # all toolpaths, in the units setting
+cc.post_gcode_export(path="part-mm.nc", units="mm", line_numbers=True, program_number=1234)
+text = cc.post_gcode_get(toolpaths=["toolpath.2"])["text"]  # the same program as text
+```
+
+The program opens with a safety block (`G90 G94 G17 G40 G49 G80`, then `G20` or `G21`). Each
+toolpath gets a tool change (`T# M6`, skipped when the tool stays), `S… M3`, its WCS's work
+offset (`G54` for the job's first WCS, `G55` for the second, …), `G43 H#` on the first Z move,
+coolant (`M8` flood, `M7` mist or air) and its moves as `G0` / `G1` in that WCS, modal values
+written only when they change. It ends `M9`, `M5`, `G91 G28 Z0`, `G90 G49`, `M30`. A toolpath
+whose tool has no spindle speed is refused. Check the program against your machine before
+running it.
+
 ## Selecting geometry
 
 Clicking in the viewport selects what is under the pointer: a vertex (corner) if one is close,
@@ -269,7 +287,7 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-118 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+119 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.outline.get`](#joboutlineget), [`job.open`](#jobopen), [`job.save`](#jobsave)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
@@ -283,7 +301,7 @@ with cosmiccam.launch(sample=True) as cc:
 - **app**: [`app.quit`](#appquit)
 - **toolpath**: [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport), [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.remove`](#toolpathremove)
 - **sim**: [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.speed`](#simspeed), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
-- **post**: [`post.processor.select`](#postprocessorselect), [`post.limits.check`](#postlimitscheck), [`post.gcode.export`](#postgcodeexport)
+- **post**: [`post.processor.select`](#postprocessorselect), [`post.limits.check`](#postlimitscheck), [`post.gcode.export`](#postgcodeexport), [`post.gcode.get`](#postgcodeget)
 - **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.create.spot_drill`](#toolcreatespot_drill), [`tool.create.face_mill`](#toolcreateface_mill), [`tool.create.tap`](#toolcreatetap), [`tool.create.thread_mill`](#toolcreatethread_mill), [`tool.edit`](#tooledit), [`tool.feeds`](#toolfeeds), [`tool.duplicate`](#toolduplicate), [`tool.remove`](#toolremove), [`tool.list`](#toollist), [`tool.get`](#toolget), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
 - **machine**: [`machine.create`](#machinecreate), [`machine.edit`](#machineedit), [`machine.duplicate`](#machineduplicate), [`machine.remove`](#machineremove), [`machine.activate`](#machineactivate), [`machine.list`](#machinelist), [`machine.get`](#machineget), [`machine.library.open`](#machinelibraryopen)
 - **settings**: [`settings.open`](#settingsopen), [`settings.get`](#settingsget), [`settings.units.set`](#settingsunitsset)
@@ -1658,15 +1676,41 @@ Returns: not defined yet
 #### `post.gcode.export`
 
 ```python
-cc.post_gcode_export()
+cc.post_gcode_export(path=…, toolpaths=None, units=None, program_number=None, line_numbers=None)
 ```
 
-Write .nc / .gcode for the machine (Phase 8).
- **Planned — not available yet.**
+Write the toolpaths as a G-code program (.nc) with the generic writer.
 
-Returns: not defined yet
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | string | yes | File to write, e.g. part.nc |
+| `toolpaths` | list | no | Toolpath ids in order (default: all) |
+| `units` | choice | no | Program units, in or mm (default: the units setting) — one of in, mm |
+| `program_number` | integer | no | O number (default 1000) (1 to 9999) |
+| `line_numbers` | bool | no | Number the lines N5, N10, … (default false) |
+
+Returns: {"path": path, "lines": count, "toolpaths": count}
 
 <sub>ribbon: Export › Post</sub>
+
+#### `post.gcode.get`
+
+```python
+cc.post_gcode_get(toolpaths=None, units=None, program_number=None, line_numbers=None)
+```
+
+The G-code program the export would write, as text.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `toolpaths` | list | no | Toolpath ids in order (default: all) |
+| `units` | choice | no | Program units, in or mm (default: the units setting) — one of in, mm |
+| `program_number` | integer | no | O number (default 1000) (1 to 9999) |
+| `line_numbers` | bool | no | Number the lines (default false) |
+
+Returns: {"text": program, "lines": count}
 
 
 ### tool

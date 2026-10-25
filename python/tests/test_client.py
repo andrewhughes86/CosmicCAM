@@ -147,6 +147,16 @@ class ClientTests(unittest.TestCase):
         )
         cc.close()
 
+    def test_gcode_export(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.post_gcode_export(path="part.nc", units="mm", line_numbers=True)
+        self.assertEqual(
+            app.requests[0]["params"],
+            {"command": "post.gcode.export", "params": {"path": "part.nc", "units": "mm", "line_numbers": True}},
+        )
+        cc.close()
+
     def test_settings_units(self):
         app = FakeApp()
         cc = CosmicCAM(app.port, TOKEN, timeout=5)

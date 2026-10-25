@@ -21,7 +21,7 @@ pub fn has_start(id: &str) -> bool {
 }
 
 /// Commands whose `path` comes from a file dialog.
-const FILE_COMMANDS: &[&str] = &["tool.library.import", "tool.library.export"];
+const FILE_COMMANDS: &[&str] = &["tool.library.import", "tool.library.export", "post.gcode.export"];
 
 /// Commands started by the WCS panel.
 const WCS_COMMANDS: &[&str] = &["setup.wcs.create", "setup.wcs.align"];
@@ -103,12 +103,29 @@ impl Tools {
                 Ok(())
             }
             "tool.library.import" => {
-                self.pending = Some(Pending::File("tool.library.import", pick_json_file(false)?));
+                self.pending = Some(Pending::File("tool.library.import", pick_file(&LIBRARY_IN)?));
                 Ok(())
             }
             "tool.library.export" => {
-                self.pending = Some(Pending::File("tool.library.export", pick_json_file(true)?));
+                self.pending = Some(Pending::File("tool.library.export", pick_file(&LIBRARY_OUT)?));
                 Ok(())
+            }
+            "post.gcode.export" => {
+                // The browser has no file paths: build the program and download it instead.
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let mut trial = session.clone();
+                    let text = trial.execute("post.gcode.get", &serde_json::Value::Null).map_err(|e| e.to_string())?;
+                    download("program.nc", text["text"].as_str().unwrap_or_default())
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    // Check there is something to export before asking where to put it.
+                    let mut trial = session.clone();
+                    trial.execute("post.gcode.get", &serde_json::Value::Null).map_err(|e| e.to_string())?;
+                    self.pending = Some(Pending::File("post.gcode.export", pick_file(&GCODE_OUT)?));
+                    Ok(())
+                }
             }
             other if FORM_COMMANDS.contains(&other) => {
                 let spec = cmd::find(other).ok_or_else(|| format!("unknown command `{other}`"))?;
@@ -247,14 +264,44 @@ fn pick_model_file() -> Result<Receiver<Option<ImportChoice>>, String> {
     Ok(rx)
 }
 
-/// An open or save dialog for a tool library file.
+/// What a file dialog asks for: title, filter label, extensions, suggested name (saves).
+struct FileKind {
+    title: &'static str,
+    filter: &'static str,
+    extensions: &'static [&'static str],
+    save_as: Option<&'static str>,
+}
+
+const LIBRARY_IN: FileKind = FileKind {
+    title: "Import tool library",
+    filter: "Tool library (JSON)",
+    extensions: &["json", "JSON"],
+    save_as: None,
+};
+const LIBRARY_OUT: FileKind = FileKind {
+    title: "Export tool library",
+    filter: "Tool library (JSON)",
+    extensions: &["json", "JSON"],
+    save_as: Some("tools.json"),
+};
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+const GCODE_OUT: FileKind = FileKind {
+    title: "Export G-code",
+    filter: "G-code program",
+    extensions: &["nc", "NC", "gcode", "ngc", "tap"],
+    save_as: Some("program.nc"),
+};
+
+/// An open or save dialog; the chosen path arrives on the channel.
 #[cfg(not(target_arch = "wasm32"))]
-fn pick_json_file(save: bool) -> Result<Receiver<Option<PathBuf>>, String> {
+fn pick_file(kind: &FileKind) -> Result<Receiver<Option<PathBuf>>, String> {
     let (tx, rx) = channel();
-    let dialog = rfd::FileDialog::new()
-        .set_title(if save { "Export tool library" } else { "Import tool library" })
-        .add_filter("Tool library (JSON)", &["json", "JSON"]);
-    let dialog = if save { dialog.set_file_name("tools.json") } else { dialog };
+    let dialog = rfd::FileDialog::new().set_title(kind.title).add_filter(kind.filter, kind.extensions);
+    let save = kind.save_as.is_some();
+    let dialog = match kind.save_as {
+        Some(name) => dialog.set_file_name(name),
+        None => dialog,
+    };
     let pick = move || if save { dialog.save_file() } else { dialog.pick_file() };
     #[cfg(target_os = "macos")]
     {
@@ -262,7 +309,7 @@ fn pick_json_file(save: bool) -> Result<Receiver<Option<PathBuf>>, String> {
     }
     #[cfg(not(target_os = "macos"))]
     std::thread::Builder::new()
-        .name("library-dialog".into())
+        .name("file-dialog".into())
         .spawn(move || {
             let _ = tx.send(pick());
         })
@@ -271,8 +318,32 @@ fn pick_json_file(save: bool) -> Result<Receiver<Option<PathBuf>>, String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn pick_json_file(_save: bool) -> Result<Receiver<Option<PathBuf>>, String> {
-    Err("importing and exporting tool library files is not available in the browser yet".into())
+fn pick_file(kind: &FileKind) -> Result<Receiver<Option<PathBuf>>, String> {
+    let _ = (kind.filter, kind.extensions, kind.save_as);
+    Err(format!("{} is not available in the browser yet", kind.title))
+}
+
+/// Offers `text` to the browser user as a download named `name`.
+#[cfg(target_arch = "wasm32")]
+pub fn download(name: &str, text: &str) -> Result<(), String> {
+    use wasm_bindgen::JsCast as _;
+    let fail = |what: &str| format!("could not start the download ({what})");
+    let parts = js_sys::Array::of1(&wasm_bindgen::JsValue::from_str(text));
+    let options = web_sys::BlobPropertyBag::new();
+    options.set_type("text/plain");
+    let blob = web_sys::Blob::new_with_str_sequence_and_options(&parts, &options).map_err(|_| fail("blob"))?;
+    let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(|_| fail("url"))?;
+    let document = web_sys::window().and_then(|w| w.document()).ok_or_else(|| fail("document"))?;
+    let a = document
+        .create_element("a")
+        .map_err(|_| fail("link"))?
+        .dyn_into::<web_sys::HtmlAnchorElement>()
+        .map_err(|_| fail("link"))?;
+    a.set_href(&url);
+    a.set_download(name);
+    a.click();
+    let _ = web_sys::Url::revoke_object_url(&url);
+    Ok(())
 }
 
 /// The browser's file picker; the chosen file's bytes arrive on the channel.

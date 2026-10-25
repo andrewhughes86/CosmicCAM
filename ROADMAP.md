@@ -9,7 +9,7 @@
 | 5 | Stock setup & material definition | Planned |
 | 6 | Toolpath creation engine | **In progress** (2D contour 2026-10-24) |
 | 7 | Material removal simulation & verification | Planned |
-| 8 | Post-processor & G-code export | Planned |
+| 8 | Post-processor & G-code export | **Started** (generic G-code 2026-10-24) |
 | 9 | MCP agent integration | Planned |
 
 ## Phase 1 — what landed
@@ -136,6 +136,17 @@
   Geometry (click edges/faces), Heights, Passes, Linking tabs, a live preview, OK / Cancel.
   Double-clicking a toolpath in the explorer edits it.
 - Still to do in Phase 6: pocketing, drilling, 3D strategies, CL data export, gouge checks.
+
+## Phase 8 — generic G-code (2026-10-24)
+
+- A built-in generic G-code writer (`crate::post`), until the Python posts and machine
+  configurations replace it: safety block, tool change, spindle and coolant, the toolpath's WCS
+  work offset (G54…), G43 length compensation, modal G0 / G1 moves in inches or millimetres, end
+  block; optional line numbers and program number.
+- `post.gcode.export` (Export tab: a save dialog on the desktop, a download in the browser) and
+  `post.gcode.get` (the program as text). Toolpaths without a spindle speed are refused.
+- Still to do in Phase 8: Python post-processors and machine configurations, arcs (G2/G3),
+  limit checks.
 
 ## Web app (2026-10-24)
 

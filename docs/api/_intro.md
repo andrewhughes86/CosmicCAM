@@ -213,6 +213,24 @@ top (where the material starts) and bottom (the final depth); they must not cros
 keeps the material on the right of the tool's travel: clockwise outside a contour, anticlockwise
 inside. Moves are `rapid`, `link`, `plunge` (plunges and ramps), `lead` and `cut`, in world mm.
 
+## G-code
+
+Until the Python post-processors of Phase 8 exist, CosmicCAM writes plain, generic G-code:
+
+```python
+cc.post_gcode_export(path="part.nc")                       # all toolpaths, in the units setting
+cc.post_gcode_export(path="part-mm.nc", units="mm", line_numbers=True, program_number=1234)
+text = cc.post_gcode_get(toolpaths=["toolpath.2"])["text"]  # the same program as text
+```
+
+The program opens with a safety block (`G90 G94 G17 G40 G49 G80`, then `G20` or `G21`). Each
+toolpath gets a tool change (`T# M6`, skipped when the tool stays), `S… M3`, its WCS's work
+offset (`G54` for the job's first WCS, `G55` for the second, …), `G43 H#` on the first Z move,
+coolant (`M8` flood, `M7` mist or air) and its moves as `G0` / `G1` in that WCS, modal values
+written only when they change. It ends `M9`, `M5`, `G91 G28 Z0`, `G90 G49`, `M30`. A toolpath
+whose tool has no spindle speed is refused. Check the program against your machine before
+running it.
+
 ## Selecting geometry
 
 Clicking in the viewport selects what is under the pointer: a vertex (corner) if one is close,
