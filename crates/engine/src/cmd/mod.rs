@@ -13,6 +13,7 @@ mod post;
 mod settings;
 mod setup;
 mod stock;
+mod strategies;
 mod tool;
 mod toolpath;
 mod ui;
@@ -358,6 +359,7 @@ pub fn all() -> impl Iterator<Item = &'static CommandSpec> {
         .chain(ui::COMMANDS.iter())
         // Working toolpath strategies come before the planned ones so they lead the gallery.
         .chain(toolpath::COMMANDS.iter())
+        .chain(strategies::COMMANDS.iter())
         .chain(setup::COMMANDS.iter())
         .chain(planned::COMMANDS.iter())
         .chain(stock::COMMANDS.iter())

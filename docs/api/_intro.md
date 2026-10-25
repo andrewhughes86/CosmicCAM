@@ -227,6 +227,12 @@ cc.setup_activate(id="setup.1")
 print(cc.setup_list())
 ```
 
+## The demo project
+
+`cc.job_demo_open()` opens the built-in demo project (also on the Home tab): a part, WCS, setup,
+stock, tools and toolpaths, ready to change and post. `cosmiccam.launch(demo=True)` starts the app
+with it open; `launch()` starts with an empty job.
+
 ## Job files and tabs
 
 Jobs are saved as `.cosmic` files. Each open job is a document in its own tab; commands work on
@@ -241,6 +247,33 @@ cc.job_tab_activate(index=0)
 cc.job_tab_close(index=1)                   # refused while it has unsaved changes...
 cc.job_tab_close(index=1, discard=True)     # ...unless they are discarded
 ```
+
+## Toolpath strategies
+
+Every strategy is a command that adds a toolpath (or regenerates one when given its `id`). They
+share the tool, feeds, coolant, WCS and the five heights (`clearance`, `retract`, `feed_height`,
+`top`, `bottom`, each `<name>_from` a reference plus `<name>_offset`).
+
+| Command | What it cuts | Picks (`geometry`) |
+| --- | --- | --- |
+| `toolpath_contour` | along edges or a face outline, offset by the tool radius | edges or faces |
+| `toolpath_face` | rows across the stock top, down to a height | none (or faces with `boundary="selection"`) |
+| `toolpath_pocket` | offset rings inside floor faces or closed edges, around islands | floor faces or closed edges |
+| `toolpath_drill` | drill, spot, peck, chip break, tap or bore cycles (canned cycles in the G-code) | hole walls, rims or points |
+| `toolpath_rough` | Z-level clearing of the stock around the whole part | none |
+| `toolpath_waterline` | Z-level passes around the part, for steep walls | none |
+| `toolpath_raster` | parallel rows following the surface, for shallow areas | none (or faces with `boundary="selection"`) |
+
+```python
+cc.toolpath_face(stepover=4, multiple_depths=True, stepdown=1)
+cc.toolpath_pocket(geometry=["model.1/face.8"], stepover=2.5, stepdown=2, bottom_offset=-5)
+cc.toolpath_drill(geometry=["model.1/edge.12"], cycle="peck", peck_depth=3, bottom_offset=-12)
+cc.toolpath_rough(stepdown=3, stock_radial=0.5, stock_axial=0.3)
+cc.toolpath_waterline(stepdown=0.5)
+cc.toolpath_raster(stepover=0.5, angle=45)
+```
+
+The 3D strategies (rough, waterline, raster) use flat end mills for now.
 
 ## G-code
 

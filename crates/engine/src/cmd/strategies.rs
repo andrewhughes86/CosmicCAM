@@ -1,0 +1,232 @@
+//! Toolpath strategy commands beyond the 2D contour: face, pocket, drill, 3D rough, waterline
+//! and raster. Each adds a toolpath, or regenerates one when given its `id`.
+
+use serde_json::Value;
+
+use super::toolpath::add_toolpath;
+use super::{CommandSpec, Param, ParamKind, Placement, RibbonTab, always};
+use crate::toolpath::contour::{COOLANTS, DIRECTIONS, HEIGHT_REFS};
+use crate::toolpath::drill::{self, CYCLES};
+use crate::toolpath::strategies::{self, BOUNDARIES, PATTERNS};
+
+const LENGTH: ParamKind = ParamKind::Length { min: 0.0, max: 10_000.0 };
+const OFFSET: ParamKind = ParamKind::Length { min: -100_000.0, max: 100_000.0 };
+const STOCK: ParamKind = ParamKind::Length { min: -1000.0, max: 1000.0 };
+const RATE: ParamKind = ParamKind::Rate { min: 0.0, max: 1.0e6 };
+const REFS: ParamKind = ParamKind::Choice(HEIGHT_REFS);
+const ENTRY: &[&str] = &["helix", "plunge"];
+const RETURNS: &str = "the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}";
+
+/// Parameters every strategy takes, then its own.
+macro_rules! strategy_params {
+    ($($extra:expr),* $(,)?) => {
+        &[
+            Param::optional("id", ParamKind::Str, "Regenerate this toolpath with these settings instead of adding one"),
+            Param::optional("name", ParamKind::Str, "Name in the job outline (default: the strategy and tool)"),
+            Param::optional(
+                "tool",
+                ParamKind::Integer { min: 1, max: 9999 },
+                "Tool number in the active machine's library (default: the first)",
+            ),
+            Param::optional(
+                "spindle_rpm",
+                ParamKind::Number { min: 0.0, max: 500_000.0 },
+                "Spindle speed, rpm (default: the tool's)",
+            ),
+            Param::optional("feed", RATE, "Cutting feed, mm/min (default: the tool's)"),
+            Param::optional("plunge_feed", RATE, "Plunge and ramp feed, mm/min (default: the tool's, else half the feed)"),
+            Param::optional("coolant", ParamKind::Choice(COOLANTS), "Coolant (default flood)"),
+            Param::optional("wcs", ParamKind::Str, "WCS to program in (default: the active one)"),
+            Param::optional("geometry", ParamKind::StrList { max: 10_000 }, "Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N)"),
+            Param::optional("clearance_from", REFS, "Clearance height reference"),
+            Param::optional("clearance_offset", OFFSET, "Clearance height above its reference, mm"),
+            Param::optional("retract_from", REFS, "Retract height reference"),
+            Param::optional("retract_offset", OFFSET, "Retract height above its reference, mm"),
+            Param::optional("feed_height_from", REFS, "Feed height reference: where rapids stop"),
+            Param::optional("feed_height_offset", OFFSET, "Feed height above its reference, mm"),
+            Param::optional("top_from", REFS, "Top height reference: where cutting starts"),
+            Param::optional("top_offset", OFFSET, "Top height offset, mm"),
+            Param::optional("bottom_from", REFS, "Bottom height reference: the final depth"),
+            Param::optional("bottom_offset", OFFSET, "Bottom height offset, mm (negative goes deeper)"),
+            Param::optional(
+                "tolerance",
+                ParamKind::Length { min: 0.0, max: 1.0 },
+                "How far the path may stray from true curves, mm (default 0.01)",
+            ),
+            $($extra),*
+        ]
+    };
+}
+
+/// Passes shared by the milling strategies.
+macro_rules! milling_params {
+    ($($extra:expr),* $(,)?) => {
+        strategy_params![
+            Param::optional("stepover", LENGTH, "Distance between passes, mm (default: a share of the tool diameter)"),
+            Param::optional("stepdown", LENGTH, "Depth per level, mm (default: the tool's, else a share of its diameter)"),
+            Param::optional("direction", ParamKind::Choice(DIRECTIONS), "Climb or conventional milling (default climb)"),
+            Param::optional("stock_radial", STOCK, "Stock to leave on walls, mm (default 0)"),
+            Param::optional("stock_axial", STOCK, "Stock to leave on floors, mm (default 0)"),
+            Param::optional("entry", ParamKind::Choice(ENTRY), "Into the material: a helical ramp or a plunge (default helix)"),
+            Param::optional("ramp_angle", ParamKind::Number { min: 0.1, max: 90.0 }, "Helix ramp angle, degrees (default 2)"),
+            Param::optional("helix_radius", LENGTH, "Helix radius, mm (default 0.4 × Ø, at most the tool radius)"),
+            Param::optional("rapid_links", ParamKind::Bool, "Link between passes at rapid traverse (default true)"),
+            $($extra),*
+        ]
+    };
+}
+
+fn run_face(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, strategies::face)
+}
+fn run_pocket(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, strategies::pocket)
+}
+fn run_drill(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, drill::drill)
+}
+fn run_rough(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, strategies::rough)
+}
+fn run_waterline(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, strategies::waterline)
+}
+fn run_raster(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, strategies::raster)
+}
+
+pub(super) static COMMANDS: &[CommandSpec] = &[
+    CommandSpec {
+        id: "toolpath.face",
+        label: "Face",
+        tooltip: "Rows across the top of the stock to bring it flat and down to height",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![
+            Param::optional(
+                "boundary",
+                ParamKind::Choice(BOUNDARIES),
+                "Area to face: the stock, the model or the selection (default stock)"
+            ),
+            Param::optional("boundary_offset", OFFSET, "Grow (or shrink) the area by this, mm (default 0)"),
+            Param::optional(
+                "overrun",
+                LENGTH,
+                "How far rows run past the area, beyond the tool radius, mm (default Ø/4)"
+            ),
+            Param::optional(
+                "angle",
+                ParamKind::Number { min: -360.0, max: 360.0 },
+                "Row direction, degrees from +X (default 0)"
+            ),
+            Param::optional("pattern", ParamKind::Choice(PATTERNS), "Back and forth, or all one way (default zigzag)"),
+            Param::optional("multiple_depths", ParamKind::Bool, "Step down in several levels (default false)"),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_face,
+    },
+    CommandSpec {
+        id: "toolpath.pocket",
+        label: "Pocket",
+        tooltip: "Clear the inside of selected floor faces or closed edges, around any islands",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![
+            Param::optional("multiple_depths", ParamKind::Bool, "Step down in several levels (default true)"),
+            Param::optional(
+                "finishing_pass",
+                ParamKind::Bool,
+                "Finish the walls to size after leaving radial stock (default false)"
+            ),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_pocket,
+    },
+    CommandSpec {
+        id: "toolpath.drill",
+        label: "Drill",
+        tooltip: "Drill, spot, peck, tap or bore holes picked as cylinders, circular edges or points",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        icon: None,
+        shortcut: None,
+        params: strategy_params![
+            Param::optional("cycle", ParamKind::Choice(CYCLES), "Drilling cycle (default drill)"),
+            Param::optional("peck_depth", LENGTH, "Depth per peck for peck and chip break, mm (default Ø)"),
+            Param::optional(
+                "dwell",
+                ParamKind::Number { min: 0.0, max: 60.0 },
+                "Pause at the bottom, seconds (default 0.5 for spot, else 0)"
+            ),
+            Param::optional(
+                "pitch",
+                ParamKind::Length { min: 0.0, max: 100.0 },
+                "Thread pitch for tapping, mm per turn"
+            ),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_drill,
+    },
+    CommandSpec {
+        id: "toolpath.rough",
+        label: "3D rough",
+        tooltip: "Clear the stock around the part level by level, leaving stock for finishing",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![Param::optional(
+            "angle",
+            ParamKind::Number { min: -360.0, max: 360.0 },
+            "Row direction, degrees from +X (default 0)"
+        )],
+        returns: RETURNS,
+        enabled: always,
+        run: run_rough,
+    },
+    CommandSpec {
+        id: "toolpath.waterline",
+        label: "Waterline",
+        tooltip: "Finish steep walls with passes around the part at constant heights",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![],
+        returns: RETURNS,
+        enabled: always,
+        run: run_waterline,
+    },
+    CommandSpec {
+        id: "toolpath.raster",
+        label: "Raster",
+        tooltip: "Finish shallow surfaces with parallel rows that follow the part",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![
+            Param::optional(
+                "boundary",
+                ParamKind::Choice(BOUNDARIES),
+                "Area to cover: the stock, the model or the selection (default model)"
+            ),
+            Param::optional("boundary_offset", OFFSET, "Grow (or shrink) the area by this, mm (default 0)"),
+            Param::optional(
+                "angle",
+                ParamKind::Number { min: -360.0, max: 360.0 },
+                "Row direction, degrees from +X (default 0)"
+            ),
+            Param::optional("pattern", ParamKind::Choice(PATTERNS), "Back and forth, or all one way (default zigzag)"),
+            Param::optional(
+                "sample_step",
+                ParamKind::Length { min: 0.0, max: 1000.0 },
+                "Spacing of points along a row, mm (default Ø/8, 0.05–1)"
+            ),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_raster,
+    },
+];

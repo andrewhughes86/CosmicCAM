@@ -38,9 +38,12 @@ fn every_ribbon_tab_has_primary_actions() {
 #[test]
 fn planned_commands_are_disabled_and_say_so() {
     let mut s = Session::new();
-    let spec = cmd::find("toolpath.pocket");
+    let spec = cmd::find("setup.stock.cylinder");
     assert!(spec.is_some_and(|c| !s.is_enabled(c)));
-    assert_eq!(s.execute("toolpath.pocket", &Value::Null), Err(EngineError::Disabled("toolpath.pocket".into())));
+    assert_eq!(
+        s.execute("setup.stock.cylinder", &Value::Null),
+        Err(EngineError::Disabled("setup.stock.cylinder".into()))
+    );
     let run = spec.map(|c| (c.run)(&mut s, &Value::Null));
     assert!(matches!(run, Some(Err(EngineError::NotSupported(_)))));
 }
@@ -1360,7 +1363,7 @@ fn hostile_job_files_are_refused() {
 }
 
 fn jobfile_text(s: &Session) -> String {
-    crate::jobfile::to_string(&s.job, &s.view.camera)
+    crate::jobfile::to_string(&s.job, &s.view.camera, &s.library)
 }
 
 #[test]
@@ -1468,4 +1471,187 @@ fn a_tighter_tolerance_puts_more_points_on_curves() {
     };
     let (coarse, fine) = (moves(&mut s, 0.1), moves(&mut s, 0.001));
     assert!(coarse > 8 && fine > coarse * 4, "coarse {coarse}, fine {fine}");
+}
+
+/// The boss's top rim: the circular edge at z = 42.
+fn boss_rim(s: &mut Session) -> String {
+    let edges = s.execute("model.edges.list", &json!({"id": "model.sample"})).unwrap_or_default();
+    edges
+        .as_array()
+        .and_then(|e| e.iter().find(|e| e["kind"] == "circle" && (vec3(&e["center"])[2] - 42.0).abs() < 1e-3))
+        .and_then(|e| e["edge"].as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+fn new_toolpath(s: &mut Session, command: &str, params: Value) -> (Value, Vec<Value>) {
+    let r = s.execute(command, &params);
+    assert!(r.is_ok(), "{command}: {r:?}");
+    let tp = r.unwrap_or_default();
+    let id = tp["id"].as_str().unwrap_or_default().to_owned();
+    (tp, moves(s, &id))
+}
+
+#[test]
+fn facing_runs_rows_across_the_stock_down_to_the_model_top() {
+    let mut s = sample_with_tool();
+    let (tp, mv) =
+        new_toolpath(&mut s, "toolpath.face", json!({"stepover": 4, "multiple_depths": true, "stepdown": 1}));
+    assert_eq!(tp["strategy"], "face");
+    let cuts = cut_points(&mv);
+    // The stock top is 45 and the model top 42: three levels, the last at 42.
+    let mut zs: Vec<i64> = cuts.iter().map(|c| (c[2] * 1000.0).round() as i64).collect();
+    zs.sort_unstable();
+    zs.dedup();
+    assert_eq!(zs, [42_000, 43_000, 44_000]);
+    // Rows run past the stock's sides (±53 in X) by more than the tool radius.
+    let xs = cuts.iter().map(|c| c[0]);
+    let (lo, hi) = xs.fold((f64::MAX, f64::MIN), |(a, b), x| (a.min(x), b.max(x)));
+    assert!(lo < -56.0 && hi > 56.0, "{lo} {hi}");
+    let ys = cuts.iter().map(|c| c[1]).fold((f64::MAX, f64::MIN), |(a, b), y| (a.min(y), b.max(y)));
+    assert!(ys.0 <= -33.0 + 1e-6 && ys.1 >= 33.0 - 1e-6, "{ys:?}");
+}
+
+#[test]
+fn pockets_clear_inside_the_outline_down_to_depth() {
+    let mut s = sample_with_tool();
+    let top = one_face(&mut s, "plane", plane_at([0.0, 0.0, 1.0], 2, 35.0));
+    let (tp, mv) = new_toolpath(
+        &mut s,
+        "toolpath.pocket",
+        json!({"geometry": [top], "top_from": "selection", "bottom_offset": -5, "stepdown": 2.5, "stepover": 2.5}),
+    );
+    assert_eq!(tp["strategy"], "pocket2d");
+    let cuts = cut_points(&mv);
+    assert!(!cuts.is_empty());
+    // Every cut keeps the 3 mm tool inside the block's top (-40..5, -20..20).
+    for c in &cuts {
+        assert!(c[0] >= -37.0 - 1e-3 && c[0] <= 2.0 + 1e-3 && c[1].abs() <= 17.0 + 1e-3, "{c:?}");
+        assert!(c[2] >= 30.0 - 1e-6 && c[2] <= 35.0, "{c:?}");
+    }
+    assert!(cuts.iter().any(|c| (c[2] - 30.0).abs() < 1e-6), "reaches the bottom");
+    // The last ring of the last level runs along the wall, one radius in.
+    assert!(cuts.iter().any(|c| (c[0] + 37.0).abs() < 1e-3));
+    // Too big a tool is refused.
+    assert!(s.execute("toolpath.pocket", &json!({"geometry": [top], "stock_radial": 25})).is_err());
+}
+
+#[test]
+fn drilling_writes_canned_cycles() {
+    let mut s = sample_with_tool();
+    let rim = boss_rim(&mut s);
+    let r = s.execute("toolpath.drill", &json!({"geometry": [rim]}));
+    assert!(r.is_err(), "a rim alone has no depth: {r:?}");
+    let (tp, mv) = new_toolpath(
+        &mut s,
+        "toolpath.drill",
+        json!({"geometry": [rim], "bottom_offset": -10, "retract_offset": 2, "clearance_offset": 15, "cycle": "peck", "peck_depth": 4}),
+    );
+    assert_eq!(tp["strategy"], "drill");
+    // Three pecks down to 32 at the boss centre.
+    let plunges: Vec<[f64; 3]> = mv.iter().filter(|m| m["kind"] == "plunge").map(|m| vec3(&m["to"])).collect();
+    assert_eq!(plunges.len(), 3);
+    assert!(plunges.iter().all(|p| (p[0] - 28.0).abs() < 1e-3 && p[1].abs() < 1e-3));
+    assert!((plunges[2][2] - 32.0).abs() < 1e-3);
+    let text = gcode(&mut s, json!({"units": "mm"}));
+    assert!(text.contains("G99 G83 X28.000 Y0.000 Z32.000 R44.000 Q4.000 F300.0"), "{text}");
+    assert!(text.lines().any(|l| l == "G80"), "{text}");
+    // Tapping needs a pitch, and feeds at pitch × rpm.
+    assert!(s.execute("toolpath.drill", &json!({"geometry": [rim], "bottom_offset": -10, "cycle": "tap"})).is_err());
+    let id = tp["id"].clone();
+    assert!(
+        s.execute(
+            "toolpath.drill",
+            &json!({"id": id, "geometry": [rim], "bottom_offset": -10, "retract_offset": 2, "cycle": "tap", "pitch": 1.0})
+        )
+            .is_ok()
+    );
+    assert!(gcode(&mut s, json!({"units": "mm"})).contains("G99 G84 X28.000 Y0.000 Z32.000 R44.000 F10000.0"));
+}
+
+#[test]
+fn roughing_clears_around_the_part_without_touching_it() {
+    let mut s = sample_with_tool();
+    let (tp, mv) = new_toolpath(&mut s, "toolpath.rough", json!({"stepdown": 5, "stepover": 3, "stock_radial": 0.5}));
+    assert_eq!(tp["strategy"], "rough3d");
+    let cuts = cut_points(&mv);
+    assert!(cuts.len() > 20);
+    for c in &cuts {
+        let (x, y, z) = (c[0], c[1], c[2]);
+        // Below the boss top, the tool stays clear of the boss (r 12 + tool 3 + stock 0.5).
+        if z < 42.0 - 1e-6 {
+            let d = ((x - 28.0).powi(2) + y * y).sqrt();
+            assert!(d >= 15.5 - 0.05, "into the boss at {c:?}");
+        }
+        // Below the base top, nothing runs over the base.
+        if z < 20.0 - 1e-6 {
+            let d = (x.abs() - 50.0).max(0.0).hypot((y.abs() - 30.0).max(0.0));
+            assert!(d >= 3.5 - 0.05, "into the base at {c:?}");
+        }
+        assert!(z >= -1e-6);
+    }
+}
+
+#[test]
+fn waterline_and_raster_follow_the_part() {
+    let mut s = sample_with_tool();
+    let (tp, mv) = new_toolpath(&mut s, "toolpath.waterline", json!({"stepdown": 4, "top_offset": -2}));
+    assert_eq!(tp["strategy"], "waterline");
+    let cuts = cut_points(&mv);
+    // Around the boss above the block (z > 35), passes sit one radius off its wall.
+    let ring: Vec<&[f64; 3]> =
+        cuts.iter().filter(|c| c[2] > 35.5 && ((c[0] - 28.0).powi(2) + c[1] * c[1]).sqrt() < 20.0).collect();
+    assert!(!ring.is_empty());
+    for c in ring {
+        let d = ((c[0] - 28.0).powi(2) + c[1] * c[1]).sqrt();
+        assert!((d - 15.0).abs() < 0.1, "{d}");
+    }
+
+    let (tp, mv) = new_toolpath(&mut s, "toolpath.raster", json!({"stepover": 5}));
+    assert_eq!(tp["strategy"], "raster");
+    let cuts = cut_points(&mv);
+    assert!(cuts.len() > 20);
+    // Over the boss the tool rides its top; off the part it runs at the bottom height.
+    assert!(cuts.iter().any(|c| (c[0] - 28.0).abs() < 16.0 && c[1].abs() < 4.0 && (c[2] - 42.0).abs() < 1e-3));
+    assert!(cuts.iter().all(|c| c[2] >= -1e-6 && c[2] <= 42.0 + 1e-6));
+}
+
+#[test]
+fn the_demo_project_opens_ready_to_post() {
+    let mut s = Session::new();
+    let before = s.library.active_machine().map_or(0, |m| m.tools.len());
+    assert!(s.execute("job.demo.open", &Value::Null).is_ok());
+    assert_eq!(s.job.name, "Demo project");
+    assert_eq!(s.job.path, None, "saving the demo asks where");
+    assert!(!s.job.is_modified());
+    assert_eq!(s.job.models.len(), 1);
+    assert_eq!(s.job.wcs.len(), 1);
+    assert_eq!(s.job.setups.len(), 1);
+    assert!(s.job.stock.is_some());
+    assert!(s.job.toolpaths.len() >= 4);
+    // Its tools join the library, so the whole program posts.
+    assert!(s.library.active_machine().map_or(0, |m| m.tools.len()) >= before + 2);
+    let text = gcode(&mut s, json!({}));
+    assert!(text.lines().count() > 1000 && text.ends_with("%\n"));
+    // Opening it again shows a second copy only if the first was kept; a blank tab is replaced.
+    assert_eq!(s.tabs().len(), 1);
+}
+
+#[test]
+fn job_files_bring_their_tools() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom]})).is_ok());
+    let file = TempFile::new("tools.cosmic", b"");
+    assert!(s.execute("job.save", &json!({"path": file.path()})).is_ok());
+    // A session whose library has no tools opens the job and gains T1, and posts it.
+    let mut other = Session::new();
+    assert!(other.library.active_machine().is_some_and(|m| m.tools.is_empty()));
+    assert!(other.execute("job.open", &json!({"path": file.path()})).is_ok());
+    assert!(other.library.active_machine().is_some_and(|m| m.tool(1).is_some()));
+    assert!(gcode(&mut other, json!({})).contains("T1 M6"));
+    // A library that already has a T1 keeps its own.
+    let mut third = Session::new();
+    assert!(third.execute("tool.create.flat", &json!({"diameter": 12, "feed": 500, "spindle_rpm": 8000})).is_ok());
+    assert!(third.execute("job.open", &json!({"path": file.path()})).is_ok());
+    assert_eq!(third.library.active_machine().and_then(|m| m.tool(1)).map(|t| t.diameter), Some(12.0));
 }

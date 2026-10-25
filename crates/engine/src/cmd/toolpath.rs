@@ -187,34 +187,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         returns: "the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}",
         enabled: always,
-        run: |s, p| {
-            let replace = params::opt_str(p, "id")?.map(str::to_owned);
-            if let Some(id) = &replace
-                && s.job.toolpaths.iter().all(|t| &t.id != id)
-            {
-                return Err(EngineError::InvalidParams(format!("no toolpath `{id}`")));
-            }
-            if replace.is_none() && s.job.toolpaths.len() >= MAX_TOOLPATHS {
-                return Err(EngineError::InvalidParams(format!("a job holds at most {MAX_TOOLPATHS} toolpaths")));
-            }
-            let id = replace.clone().unwrap_or_else(|| format!("toolpath.{}", s.job.next_toolpath));
-            let tp = contour::generate(s, p, id.clone())?;
-            let result = tp.to_json(rapid_rate(s));
-            match replace {
-                Some(id) => {
-                    if let Some(slot) = s.job.toolpaths.iter_mut().find(|t| t.id == id) {
-                        *slot = tp;
-                    }
-                }
-                None => {
-                    s.job.next_toolpath = s.job.next_toolpath.saturating_add(1);
-                    s.job.toolpaths.push(tp);
-                }
-            }
-            s.view.selection = Some(id);
-            s.job.setup_changed();
-            Ok(result)
-        },
+        run: |s, p| add_toolpath(s, p, contour::generate),
     },
     CommandSpec {
         id: "toolpath.list",
@@ -302,4 +275,38 @@ fn find<'a>(s: &'a Session, id: &str) -> EngineResult<&'a Toolpath> {
 /// Rapid traverse for time estimates: the active machine's maximum feed, if it is faster.
 fn rapid_rate(s: &Session) -> f64 {
     s.library.active_machine().map_or(RAPID_RATE, |m| m.max_feed.max(RAPID_RATE))
+}
+
+/// Runs a strategy and adds its toolpath, or replaces the one `id` names.
+pub(super) fn add_toolpath(
+    s: &mut Session,
+    p: &Value,
+    generate: fn(&Session, &Value, String) -> EngineResult<Toolpath>,
+) -> EngineResult<Value> {
+    let replace = params::opt_str(p, "id")?.map(str::to_owned);
+    if let Some(id) = &replace
+        && s.job.toolpaths.iter().all(|t| &t.id != id)
+    {
+        return Err(EngineError::InvalidParams(format!("no toolpath `{id}`")));
+    }
+    if replace.is_none() && s.job.toolpaths.len() >= MAX_TOOLPATHS {
+        return Err(EngineError::InvalidParams(format!("a job holds at most {MAX_TOOLPATHS} toolpaths")));
+    }
+    let id = replace.clone().unwrap_or_else(|| format!("toolpath.{}", s.job.next_toolpath));
+    let tp = generate(s, p, id.clone())?;
+    let result = tp.to_json(rapid_rate(s));
+    match replace {
+        Some(id) => {
+            if let Some(slot) = s.job.toolpaths.iter_mut().find(|t| t.id == id) {
+                *slot = tp;
+            }
+        }
+        None => {
+            s.job.next_toolpath = s.job.next_toolpath.saturating_add(1);
+            s.job.toolpaths.push(tp);
+        }
+    }
+    s.view.selection = Some(id);
+    s.job.setup_changed();
+    Ok(result)
 }

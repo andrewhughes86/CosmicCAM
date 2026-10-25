@@ -18,7 +18,8 @@ const USAGE: &str =
     "usage: CosmicCAM [job.cosmic]... [--sample] [--run \"<command> [json]\"]... [--tab <name>] [--screenshot <file.png>] [--control <port>]
 
   job.cosmic            open these job files, each in its own tab
-  --sample              open with the built-in sample part
+  --empty               start with an empty job instead of the demo project
+  --sample              open with the built-in sample part instead of the demo project
   --run <line>          run a command after start-up, e.g. --run 'view.theme.set {\"theme\":\"light\"}'
   --tab <name>          open on this ribbon tab (Home, Setup, Tooling, ...)
   --screenshot <file>   save a PNG of the window once the steps have run, then quit
@@ -30,6 +31,8 @@ const USAGE: &str =
 fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let mut sample = false;
+    let mut empty = false;
+    let mut files = 0usize;
     let mut steps = Vec::new();
     let mut screenshot = None;
     let mut tab = None;
@@ -38,6 +41,7 @@ fn main() -> ExitCode {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--sample" => sample = true,
+            "--empty" => empty = true,
             "--run" => match args.next().map(|line| parse_console_line(&line)) {
                 Some(Ok(Some(step))) => steps.push(step),
                 Some(Ok(None)) => {}
@@ -66,6 +70,7 @@ fn main() -> ExitCode {
             }
             // A job file to open (a file manager passes the path on its own).
             path if !path.starts_with('-') => {
+                files += 1;
                 let line = format!("job.open {}", serde_json::json!({ "path": path }));
                 match parse_console_line(&line) {
                     Ok(Some(step)) => steps.push(step),
@@ -79,7 +84,12 @@ fn main() -> ExitCode {
     let session = if sample { Session::with_sample() } else { Session::new() };
     match CosmicCAM_ui_egui::run(
         session,
-        LaunchOptions { automation: automation(steps, screenshot, tab), control_port },
+        LaunchOptions {
+            automation: automation(steps, screenshot, tab),
+            control_port,
+            // Pre-release: the demo project opens unless a job, the sample or an empty start was asked for.
+            demo: !(sample || empty || files > 0),
+        },
     ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

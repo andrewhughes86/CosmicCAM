@@ -8,11 +8,11 @@ Python.
 ![CosmicCAM: a new job, importing a model, creating a WCS, a setup with its stock and a 2D contour toolpath](docs/images/cosmiccam-workflow.gif)
 
 *A new job, start to finish: import a model, create a WCS from a face and an edge, create a
-setup with fitted stock, then a 2D contour toolpath around the part.*
+setup with fitted stock, then a 2D contour around the part and 3D roughing of the stock.*
 
 ## Where the project is
 
-**Version 0.1.0, early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart
+**Version 0.2.0, early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart
 from STEP/IGES import. CosmicCAM imports models, defines WCS, setups, stock, machines and tools,
 makes 2D contour toolpaths and exports them as generic G-code. It has no machine-specific
 post-processors or simulation yet, so **check its G-code before running it on a machine**. See
@@ -26,7 +26,7 @@ for how versions are numbered (1.0.0 comes with machine-ready G-code).
 | 3 | Work coordinate system (WCS) creation | **Done** |
 | 4 | Tool library & management | **In progress** |
 | 5 | Stock setup & material definition | **In progress** (setups, box stock) |
-| 6 | Toolpath creation (2.5D and 3-axis strategies) | **In progress** (2D contour) |
+| 6 | Toolpath creation (2.5D and 3-axis strategies) | **In progress** (contour, face, pocket, drill, 3D rough, waterline, raster) |
 | 7 | Material-removal simulation & verification | Planned |
 | 8 | Post-processors & G-code export | **Started** (generic G-code) |
 | 9 | MCP agent integration | Planned |
@@ -45,10 +45,15 @@ for how versions are numbered (1.0.0 comes with machine-ready G-code).
 - **Setups and stock:** Create setup names a setup and picks its machine, WCS (or the origin) and
   stock: fitted to the model with margins, a fixed size, or two corners, rounded up if wanted, and
   shown see-through while it is defined.
-- **First toolpath, 2D contour:** follow edges or a face outline at depth with radial and axial
+- **Toolpaths:** 2D contour, Face, Pocket (with islands), Drill (canned cycles: drill, spot,
+  peck, chip break, tap, bore), 3D rough, Waterline and Raster, each set up in the toolpath panel
+  with a live preview. The 3D strategies use flat end mills for now.
+- **2D contour:** follow edges or a face outline at depth with radial and axial
   passes, stock to leave, leads, ramps, feed optimization, an entry point and a tolerance that
   follows true circles; set up in a panel with a live preview.
-- **Job files:** save and open jobs as `.cosmic` files, each open job in its own tab; on Linux,
+- **Demo project:** the app opens with a ready-made job to try things on (Home → Demo project).
+- **Job files:** save and open jobs as `.cosmic` files, each open job in its own tab, carrying the
+  tools their toolpaths use; on Linux,
   `packaging/linux/install-file-type.sh` gives `.cosmic` files their own icon and opens them in
   CosmicCAM.
 - **G-code:** generic G-code export with a safety block, tool changes, work offsets and length
@@ -67,7 +72,7 @@ for how versions are numbered (1.0.0 comes with machine-ready G-code).
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 129 commands. Each command has a typed parameter schema that the engine checks before
+  the same 132 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.
@@ -77,7 +82,7 @@ for how versions are numbered (1.0.0 comes with machine-ready G-code).
   - There is no `unwrap`/`panic` in production code.
 
 ### Placeholders
-Commands for later phases (cylinder stock, more tool types, toolpath strategies, simulation,
+Commands for later phases (cylinder stock, more tool types, simulation,
 post-processing)
 already appear in the ribbon and the API. They are disabled and report "not available yet" so the
 full surface is visible and scriptable ahead of time.
@@ -105,12 +110,18 @@ Pages. To turn that on, set **Settings → Pages → Source** to **GitHub Action
 You need Rust 1.88+ and a GPU with Vulkan, Metal or DirectX 12. Python 3.9+ is only needed for the API.
 
 ```bash
-cargo run --release -p CosmicCAM -- --sample
+cargo run --release -p CosmicCAM
 ```
+
+While CosmicCAM is in pre-release it opens with a **demo project** (`samples/demo.cosmic`): a
+part with a pocket and a boss, a WCS, a setup with its stock, two tools and five toolpaths (face,
+3D rough, pocket, waterline and a profile), ready to inspect, change and post. Reopen it any time
+with **Demo project** on the Home tab; its tools are added to your library if they are missing.
 
 | Option | Effect |
 | --- | --- |
-| `--sample` | Open with the built-in sample part |
+| `--empty` | Start with an empty job instead of the demo project |
+| `--sample` | Open with the simple built-in sample part instead |
 | `--control <port>` | Open the control channel for the Python API (`0` picks a free port) |
 | `--run "<command> <json>"` | Run a command after start-up (repeatable) |
 | `--tab <name>` | Open on a ribbon tab |

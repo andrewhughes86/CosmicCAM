@@ -10,6 +10,7 @@
 #![allow(non_snake_case)]
 
 pub mod cmd;
+pub mod demo;
 pub mod error;
 pub mod jobfile;
 pub mod library;

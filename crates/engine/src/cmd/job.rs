@@ -75,6 +75,21 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         run: save,
     },
     CommandSpec {
+        id: "job.demo.open",
+        label: "Demo project",
+        tooltip: "Open the demo project: a part with a WCS, a setup, stock, tools and toolpaths to try things on",
+        placement: Some(Placement::small(RibbonTab::Home, "Job")),
+        icon: Some("job_open"),
+        shortcut: None,
+        params: &[],
+        returns: "{\"job\": name, \"tab\": index}",
+        enabled: always,
+        run: |s, _| {
+            let tab = s.open_demo()?;
+            Ok(json!({ "job": s.job.name, "tab": tab }))
+        },
+    },
+    CommandSpec {
         id: "job.tab.list",
         label: "Open documents",
         tooltip: "The documents open in tabs",
@@ -329,10 +344,10 @@ fn open(s: &mut Session, p: &Value) -> EngineResult<Value> {
                 .map_err(|e| EngineError::InvalidParams(format!("could not read {path}: {e}")))?
         }
     };
-    let (mut job, camera) = jobfile::from_str(&text)?;
-    job.name = stem(&path);
-    job.path = (!path.starts_with(crate::session::UPLOAD_PREFIX)).then(|| path.clone());
-    let tab = s.open_tab(job, camera)?;
+    let mut loaded = jobfile::from_str(&text)?;
+    loaded.job.name = stem(&path);
+    loaded.job.path = (!path.starts_with(crate::session::UPLOAD_PREFIX)).then(|| path.clone());
+    let tab = s.open_loaded(loaded)?;
     Ok(json!({ "job": s.job.name, "tab": tab, "tabs": tabs_json(s)["tabs"] }))
 }
 
@@ -350,7 +365,7 @@ fn save(s: &mut Session, p: &Value) -> EngineResult<Value> {
             EngineError::InvalidParams("this job has not been saved yet; give a path to save it to".into())
         })?,
     };
-    let text = jobfile::to_string(&s.job, &s.view.camera);
+    let text = jobfile::to_string(&s.job, &s.view.camera, &s.library);
     std::fs::write(&path, &text).map_err(|e| EngineError::InvalidParams(format!("could not write {path}: {e}")))?;
     s.job.name = stem(&path);
     s.job.path = Some(path.clone());

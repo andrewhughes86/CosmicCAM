@@ -12,10 +12,12 @@
 )]
 #![allow(non_snake_case)]
 
+pub mod cutter;
 pub mod edges;
 pub mod faces;
 pub mod mesh;
 pub mod offset;
+pub mod region;
 
 pub use edges::{Edge, EdgeKind, EdgeMap};
 pub use faces::{Face, FaceKind, FaceMap};

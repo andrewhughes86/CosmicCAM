@@ -109,10 +109,14 @@ class CosmicCAM(Commands):
         """Job, camera, display, theme, selection, ribbon tab, open panes and job outline."""
         return self.request("engine.state")
 
-    def screenshot(self, path: "os.PathLike[str] | str") -> Dict[str, Any]:
+    def screenshot(self, path: "os.PathLike[str] | str", settle: bool = True) -> Dict[str, Any]:
         """Saves the whole window as PNG after the next frame. Returns ``{"path", "width", "height"}``.
-        The window must be visible."""
-        return self.request("ui.screenshot", {"path": str(Path(path).resolve())})
+        The window must be visible. ``settle=False`` captures without waiting for camera moves to
+        finish, for recordings."""
+        params: Dict[str, Any] = {"path": str(Path(path).resolve())}
+        if not settle:
+            params["settle"] = False
+        return self.request("ui.screenshot", params)
 
     def click(self, x: float, y: float) -> Any:
         """Clicks the left mouse button at window point (x, y), as a user would."""
@@ -196,16 +200,20 @@ def launch(
     port: int = 0,
     args: Sequence[str] = (),
     timeout: float = 60.0,
+    demo: bool = False,
 ) -> CosmicCAM:
     """Starts CosmicCAM with the control channel open and returns a connection to it.
 
-    Closing the connection (or leaving a ``with`` block) quits the app.
+    The app starts with an empty job, the built-in sample part (``sample=True``) or the demo
+    project (``demo=True``). Closing the connection (or leaving a ``with`` block) quits the app.
     """
     token = secrets.token_hex(32)
     env = dict(os.environ, **{TOKEN_ENV: token})
     cmd = [executable or find_executable(), "--control", str(port)]
     if sample:
         cmd.append("--sample")
+    elif not demo:
+        cmd.append("--empty")
     cmd.extend(args)
     proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1)
 

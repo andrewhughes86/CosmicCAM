@@ -192,6 +192,17 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(app.requests[0]["params"], {"text": "0.25", "replace": True})
         cc.close()
 
+    def test_strategies(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.toolpath_pocket(geometry=["model.1/face.8"], stepover=2.5)
+        cc.toolpath_drill(geometry=["model.1/edge.3"], cycle="peck")
+        self.assertEqual(
+            [r["params"]["command"] for r in app.requests],
+            ["toolpath.pocket", "toolpath.drill"],
+        )
+        cc.close()
+
     def test_settings_units(self):
         app = FakeApp()
         cc = CosmicCAM(app.port, TOKEN, timeout=5)

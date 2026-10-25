@@ -137,7 +137,10 @@ impl Tools {
                 // The browser has no file paths: the job file is downloaded instead.
                 #[cfg(target_arch = "wasm32")]
                 {
-                    download(&name, &CosmicCAM_engine::jobfile::to_string(&session.job, &session.view.camera))
+                    download(
+                        &name,
+                        &CosmicCAM_engine::jobfile::to_string(&session.job, &session.view.camera, &session.library),
+                    )
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 {

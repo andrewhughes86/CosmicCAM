@@ -25,7 +25,7 @@ fn main() {
             log::error!("CosmicCAM: no <canvas id=\"cosmiccam-canvas\"> on the page");
             return;
         };
-        let started = CosmicCAM_ui_egui::run_web(canvas, CosmicCAM_ui_egui::Session::with_sample()).await;
+        let started = CosmicCAM_ui_egui::run_web(canvas, CosmicCAM_ui_egui::Session::new()).await;
         // Replace the loading note with the outcome.
         if let Some(note) = document.as_ref().and_then(|d| d.get_element_by_id("cosmiccam-loading")) {
             match &started {

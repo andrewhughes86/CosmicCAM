@@ -33,10 +33,6 @@ const fn small(tab: RibbonTab, panel: &'static str) -> Option<Placement> {
     Some(Placement::small(tab, panel))
 }
 
-const fn gallery(tab: RibbonTab, panel: &'static str) -> Option<Placement> {
-    Some(Placement::gallery(tab, panel))
-}
-
 use RibbonTab::{Export, Setup, Simulation, Toolpaths};
 
 pub(super) static COMMANDS: &[CommandSpec] = &[
@@ -44,20 +40,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     planned!("setup.stock.cylinder", "Cylinder stock", "Round bar stock (Phase 5)", large(Setup, "Stock")),
     planned!("setup.stock.margins", "Margins", "Extra stock around chosen faces (Phase 5)", small(Setup, "Stock")),
     // Toolpaths (Phase 6)
-    planned!("toolpath.pocket", "Pocket", "Island-aware pocket clearing (Phase 6)", gallery(Toolpaths, "Strategies")),
-    planned!("toolpath.drill", "Drill", "Spot, peck and tapping cycles (Phase 6)", gallery(Toolpaths, "Strategies")),
-    planned!(
-        "toolpath.waterline",
-        "Waterline",
-        "Z-level roughing and finishing (Phase 6)",
-        gallery(Toolpaths, "Strategies")
-    ),
-    planned!(
-        "toolpath.raster",
-        "Raster",
-        "Parallel finishing across surfaces (Phase 6)",
-        gallery(Toolpaths, "Strategies")
-    ),
     planned!(
         "toolpath.cl.export",
         "CL data",

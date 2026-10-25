@@ -45,25 +45,25 @@ fn bad(m: impl Into<String>) -> EngineError {
 
 /// The WCS (or world) frame the toolpath is worked out in.
 #[derive(Clone, Copy)]
-struct Frame {
-    origin: DVec3,
-    x: DVec3,
-    y: DVec3,
-    z: DVec3,
+pub(super) struct Frame {
+    pub(super) origin: DVec3,
+    pub(super) x: DVec3,
+    pub(super) y: DVec3,
+    pub(super) z: DVec3,
 }
 
 impl Frame {
-    fn local(&self, p: Vec3) -> DVec3 {
+    pub(super) fn local(&self, p: Vec3) -> DVec3 {
         let d = p.as_dvec3() - self.origin;
         DVec3::new(d.dot(self.x), d.dot(self.y), d.dot(self.z))
     }
 
-    fn world(&self, l: DVec3) -> Vec3 {
+    pub(super) fn world(&self, l: DVec3) -> Vec3 {
         (self.origin + self.x * l.x + self.y * l.y + self.z * l.z).as_vec3()
     }
 
     /// Local Z range of a world box.
-    fn z_range(&self, b: Aabb) -> Option<(f64, f64)> {
+    pub(super) fn z_range(&self, b: Aabb) -> Option<(f64, f64)> {
         if b.is_empty() {
             return None;
         }
@@ -83,10 +83,10 @@ impl Frame {
 
 /// A contour in the WCS plane.
 #[derive(Clone, Debug)]
-struct Chain {
-    pts: Vec<DVec2>,
-    z: f64,
-    closed: bool,
+pub(super) struct Chain {
+    pub(super) pts: Vec<DVec2>,
+    pub(super) z: f64,
+    pub(super) closed: bool,
 }
 
 /// All settings, resolved: millimetres and mm/min, with the tool's data filled in.
@@ -119,7 +119,7 @@ struct Settings {
 
 /// The tool a toolpath uses: `tool` (a number in the active machine's library), else the
 /// first tool there.
-fn pick_tool<'a>(s: &'a Session, p: &Value) -> EngineResult<(&'a Machine, &'a Tool)> {
+pub(super) fn pick_tool<'a>(s: &'a Session, p: &Value) -> EngineResult<(&'a Machine, &'a Tool)> {
     let m = s.library.active_machine().ok_or_else(|| bad("there is no machine; create one on the Machine tab"))?;
     let tool = match p.get("tool").and_then(Value::as_u64) {
         Some(n) => {
@@ -218,7 +218,7 @@ fn settings(s: &Session, p: &Value) -> EngineResult<(Settings, String)> {
 }
 
 /// The frame: the WCS named by `wcs`, else the active WCS, else world.
-fn frame(s: &Session, p: &Value) -> EngineResult<(Frame, Option<String>)> {
+pub(super) fn frame(s: &Session, p: &Value) -> EngineResult<(Frame, Option<String>)> {
     let w = match params::opt_str(p, "wcs")? {
         Some(id) => Some(s.job.wcs_by_id(id).ok_or_else(|| bad(format!("no WCS `{id}`")))?),
         None => s.job.active_wcs(),
@@ -282,7 +282,7 @@ fn circle_rim(rim: &[Vec3], axis: Vec3, radius: f32, tolerance: f64) -> Vec<Vec3
 }
 
 /// The selected geometry as contours in the WCS plane.
-fn chains(
+pub(super) fn chains(
     s: &Session,
     refs: &[String],
     f: &Frame,
@@ -461,14 +461,14 @@ fn rot(v: DVec2, a: f64) -> DVec2 {
     DVec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
 }
 
-struct Builder {
-    frame: Frame,
-    moves: Vec<Move>,
-    at: DVec3,
+pub(super) struct Builder {
+    pub(super) frame: Frame,
+    pub(super) moves: Vec<Move>,
+    pub(super) at: DVec3,
 }
 
 impl Builder {
-    fn push(&mut self, kind: MoveKind, to: DVec3, feed: f64) -> EngineResult<()> {
+    pub(super) fn push(&mut self, kind: MoveKind, to: DVec3, feed: f64) -> EngineResult<()> {
         if to.distance(self.at) < 1.0e-9 {
             return Ok(());
         }
@@ -896,6 +896,7 @@ pub fn generate(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
         start,
         moves: Arc::new(b.moves),
         warnings,
+        drill: None,
     })
 }
 

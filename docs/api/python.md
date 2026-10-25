@@ -229,6 +229,12 @@ cc.setup_activate(id="setup.1")
 print(cc.setup_list())
 ```
 
+## The demo project
+
+`cc.job_demo_open()` opens the built-in demo project (also on the Home tab): a part, WCS, setup,
+stock, tools and toolpaths, ready to change and post. `cosmiccam.launch(demo=True)` starts the app
+with it open; `launch()` starts with an empty job.
+
 ## Job files and tabs
 
 Jobs are saved as `.cosmic` files. Each open job is a document in its own tab; commands work on
@@ -243,6 +249,33 @@ cc.job_tab_activate(index=0)
 cc.job_tab_close(index=1)                   # refused while it has unsaved changes...
 cc.job_tab_close(index=1, discard=True)     # ...unless they are discarded
 ```
+
+## Toolpath strategies
+
+Every strategy is a command that adds a toolpath (or regenerates one when given its `id`). They
+share the tool, feeds, coolant, WCS and the five heights (`clearance`, `retract`, `feed_height`,
+`top`, `bottom`, each `<name>_from` a reference plus `<name>_offset`).
+
+| Command | What it cuts | Picks (`geometry`) |
+| --- | --- | --- |
+| `toolpath_contour` | along edges or a face outline, offset by the tool radius | edges or faces |
+| `toolpath_face` | rows across the stock top, down to a height | none (or faces with `boundary="selection"`) |
+| `toolpath_pocket` | offset rings inside floor faces or closed edges, around islands | floor faces or closed edges |
+| `toolpath_drill` | drill, spot, peck, chip break, tap or bore cycles (canned cycles in the G-code) | hole walls, rims or points |
+| `toolpath_rough` | Z-level clearing of the stock around the whole part | none |
+| `toolpath_waterline` | Z-level passes around the part, for steep walls | none |
+| `toolpath_raster` | parallel rows following the surface, for shallow areas | none (or faces with `boundary="selection"`) |
+
+```python
+cc.toolpath_face(stepover=4, multiple_depths=True, stepdown=1)
+cc.toolpath_pocket(geometry=["model.1/face.8"], stepover=2.5, stepdown=2, bottom_offset=-5)
+cc.toolpath_drill(geometry=["model.1/edge.12"], cycle="peck", peck_depth=3, bottom_offset=-12)
+cc.toolpath_rough(stepdown=3, stock_radial=0.5, stock_axial=0.3)
+cc.toolpath_waterline(stepdown=0.5)
+cc.toolpath_raster(stepover=0.5, angle=45)
+```
+
+The 3D strategies (rough, waterline, raster) use flat end mills for now.
 
 ## G-code
 
@@ -316,9 +349,9 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-129 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+132 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
-- **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
+- **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.demo.open`](#jobdemoopen), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
 - **session**: [`session.state.get`](#sessionstateget)
 - **command**: [`command.list`](#commandlist), [`command.describe`](#commanddescribe)
@@ -328,7 +361,7 @@ with cosmiccam.launch(sample=True) as cc:
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
-- **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.remove`](#toolpathremove), [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
+- **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.remove`](#toolpathremove), [`toolpath.face`](#toolpathface), [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.rough`](#toolpathrough), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
 - **sim**: [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.speed`](#simspeed), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
 - **post**: [`post.processor.select`](#postprocessorselect), [`post.limits.check`](#postlimitscheck), [`post.gcode.export`](#postgcodeexport), [`post.gcode.get`](#postgcodeget)
 - **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.create.spot_drill`](#toolcreatespot_drill), [`tool.create.face_mill`](#toolcreateface_mill), [`tool.create.tap`](#toolcreatetap), [`tool.create.thread_mill`](#toolcreatethread_mill), [`tool.edit`](#tooledit), [`tool.feeds`](#toolfeeds), [`tool.duplicate`](#toolduplicate), [`tool.remove`](#toolremove), [`tool.list`](#toollist), [`tool.get`](#toolget), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
@@ -404,6 +437,19 @@ Save the job to a new file (.cosmic).
 Returns: {"path": file, "bytes": size}
 
 <sub>shortcut `Ctrl+Shift+S` · ribbon: Home › Job</sub>
+
+#### `job.demo.open`
+
+```python
+cc.job_demo_open()
+```
+
+Open the demo project: a part with a WCS, a setup, stock, tools and toolpaths to try things on.
+
+
+Returns: {"job": name, "tab": index}
+
+<sub>ribbon: Home › Job</sub>
 
 #### `job.tab.list`
 
@@ -1720,55 +1766,282 @@ Delete a toolpath from the job.
 
 Returns: {"removed": id}
 
+#### `toolpath.face`
+
+```python
+cc.toolpath_face(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, boundary=None, boundary_offset=None, overrun=None, angle=None, pattern=None, multiple_depths=None)
+```
+
+Rows across the top of the stock to bring it flat and down to height.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Regenerate this toolpath with these settings instead of adding one |
+| `name` | string | no | Name in the job outline (default: the strategy and tool) |
+| `tool` | integer | no | Tool number in the active machine's library (default: the first) (1 to 9999) |
+| `spindle_rpm` | number | no | Spindle speed, rpm (default: the tool's) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
+| `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
+| `wcs` | string | no | WCS to program in (default: the active one) |
+| `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
+| `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
+| `retract_from` | choice | no | Retract height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `retract_offset` | number | no | Retract height above its reference, mm (-1e5 to 1e5 mm) |
+| `feed_height_from` | choice | no | Feed height reference: where rapids stop — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `feed_height_offset` | number | no | Feed height above its reference, mm (-1e5 to 1e5 mm) |
+| `top_from` | choice | no | Top height reference: where cutting starts — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `top_offset` | number | no | Top height offset, mm (-1e5 to 1e5 mm) |
+| `bottom_from` | choice | no | Bottom height reference: the final depth — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `bottom_offset` | number | no | Bottom height offset, mm (negative goes deeper) (-1e5 to 1e5 mm) |
+| `tolerance` | number | no | How far the path may stray from true curves, mm (default 0.01) (0 to 1 mm) |
+| `stepover` | number | no | Distance between passes, mm (default: a share of the tool diameter) (0 to 10000 mm) |
+| `stepdown` | number | no | Depth per level, mm (default: the tool's, else a share of its diameter) (0 to 10000 mm) |
+| `direction` | choice | no | Climb or conventional milling (default climb) — one of climb, conventional |
+| `stock_radial` | number | no | Stock to leave on walls, mm (default 0) (-1000 to 1000 mm) |
+| `stock_axial` | number | no | Stock to leave on floors, mm (default 0) (-1000 to 1000 mm) |
+| `entry` | choice | no | Into the material: a helical ramp or a plunge (default helix) — one of helix, plunge |
+| `ramp_angle` | number | no | Helix ramp angle, degrees (default 2) (0.1 to 90) |
+| `helix_radius` | number | no | Helix radius, mm (default 0.4 × Ø, at most the tool radius) (0 to 10000 mm) |
+| `rapid_links` | bool | no | Link between passes at rapid traverse (default true) |
+| `boundary` | choice | no | Area to face: the stock, the model or the selection (default stock) — one of stock, model, selection |
+| `boundary_offset` | number | no | Grow (or shrink) the area by this, mm (default 0) (-1e5 to 1e5 mm) |
+| `overrun` | number | no | How far rows run past the area, beyond the tool radius, mm (default Ø/4) (0 to 10000 mm) |
+| `angle` | number | no | Row direction, degrees from +X (default 0) (-360 to 360) |
+| `pattern` | choice | no | Back and forth, or all one way (default zigzag) — one of zigzag, one_way |
+| `multiple_depths` | bool | no | Step down in several levels (default false) |
+
+Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
+
+<sub>ribbon: Toolpaths › Strategies</sub>
+
 #### `toolpath.pocket`
 
 ```python
-cc.toolpath_pocket()
+cc.toolpath_pocket(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, multiple_depths=None, finishing_pass=None)
 ```
 
-Island-aware pocket clearing (Phase 6).
- **Planned — not available yet.**
+Clear the inside of selected floor faces or closed edges, around any islands.
 
-Returns: not defined yet
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Regenerate this toolpath with these settings instead of adding one |
+| `name` | string | no | Name in the job outline (default: the strategy and tool) |
+| `tool` | integer | no | Tool number in the active machine's library (default: the first) (1 to 9999) |
+| `spindle_rpm` | number | no | Spindle speed, rpm (default: the tool's) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
+| `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
+| `wcs` | string | no | WCS to program in (default: the active one) |
+| `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
+| `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
+| `retract_from` | choice | no | Retract height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `retract_offset` | number | no | Retract height above its reference, mm (-1e5 to 1e5 mm) |
+| `feed_height_from` | choice | no | Feed height reference: where rapids stop — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `feed_height_offset` | number | no | Feed height above its reference, mm (-1e5 to 1e5 mm) |
+| `top_from` | choice | no | Top height reference: where cutting starts — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `top_offset` | number | no | Top height offset, mm (-1e5 to 1e5 mm) |
+| `bottom_from` | choice | no | Bottom height reference: the final depth — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `bottom_offset` | number | no | Bottom height offset, mm (negative goes deeper) (-1e5 to 1e5 mm) |
+| `tolerance` | number | no | How far the path may stray from true curves, mm (default 0.01) (0 to 1 mm) |
+| `stepover` | number | no | Distance between passes, mm (default: a share of the tool diameter) (0 to 10000 mm) |
+| `stepdown` | number | no | Depth per level, mm (default: the tool's, else a share of its diameter) (0 to 10000 mm) |
+| `direction` | choice | no | Climb or conventional milling (default climb) — one of climb, conventional |
+| `stock_radial` | number | no | Stock to leave on walls, mm (default 0) (-1000 to 1000 mm) |
+| `stock_axial` | number | no | Stock to leave on floors, mm (default 0) (-1000 to 1000 mm) |
+| `entry` | choice | no | Into the material: a helical ramp or a plunge (default helix) — one of helix, plunge |
+| `ramp_angle` | number | no | Helix ramp angle, degrees (default 2) (0.1 to 90) |
+| `helix_radius` | number | no | Helix radius, mm (default 0.4 × Ø, at most the tool radius) (0 to 10000 mm) |
+| `rapid_links` | bool | no | Link between passes at rapid traverse (default true) |
+| `multiple_depths` | bool | no | Step down in several levels (default true) |
+| `finishing_pass` | bool | no | Finish the walls to size after leaving radial stock (default false) |
+
+Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
 
 <sub>ribbon: Toolpaths › Strategies</sub>
 
 #### `toolpath.drill`
 
 ```python
-cc.toolpath_drill()
+cc.toolpath_drill(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, cycle=None, peck_depth=None, dwell=None, pitch=None)
 ```
 
-Spot, peck and tapping cycles (Phase 6).
- **Planned — not available yet.**
+Drill, spot, peck, tap or bore holes picked as cylinders, circular edges or points.
 
-Returns: not defined yet
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Regenerate this toolpath with these settings instead of adding one |
+| `name` | string | no | Name in the job outline (default: the strategy and tool) |
+| `tool` | integer | no | Tool number in the active machine's library (default: the first) (1 to 9999) |
+| `spindle_rpm` | number | no | Spindle speed, rpm (default: the tool's) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
+| `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
+| `wcs` | string | no | WCS to program in (default: the active one) |
+| `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
+| `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
+| `retract_from` | choice | no | Retract height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `retract_offset` | number | no | Retract height above its reference, mm (-1e5 to 1e5 mm) |
+| `feed_height_from` | choice | no | Feed height reference: where rapids stop — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `feed_height_offset` | number | no | Feed height above its reference, mm (-1e5 to 1e5 mm) |
+| `top_from` | choice | no | Top height reference: where cutting starts — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `top_offset` | number | no | Top height offset, mm (-1e5 to 1e5 mm) |
+| `bottom_from` | choice | no | Bottom height reference: the final depth — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `bottom_offset` | number | no | Bottom height offset, mm (negative goes deeper) (-1e5 to 1e5 mm) |
+| `tolerance` | number | no | How far the path may stray from true curves, mm (default 0.01) (0 to 1 mm) |
+| `cycle` | choice | no | Drilling cycle (default drill) — one of drill, spot, peck, chip_break, tap, bore |
+| `peck_depth` | number | no | Depth per peck for peck and chip break, mm (default Ø) (0 to 10000 mm) |
+| `dwell` | number | no | Pause at the bottom, seconds (default 0.5 for spot, else 0) (0 to 60) |
+| `pitch` | number | no | Thread pitch for tapping, mm per turn (0 to 100 mm) |
+
+Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
+
+<sub>ribbon: Toolpaths › Strategies</sub>
+
+#### `toolpath.rough`
+
+```python
+cc.toolpath_rough(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, angle=None)
+```
+
+Clear the stock around the part level by level, leaving stock for finishing.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Regenerate this toolpath with these settings instead of adding one |
+| `name` | string | no | Name in the job outline (default: the strategy and tool) |
+| `tool` | integer | no | Tool number in the active machine's library (default: the first) (1 to 9999) |
+| `spindle_rpm` | number | no | Spindle speed, rpm (default: the tool's) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
+| `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
+| `wcs` | string | no | WCS to program in (default: the active one) |
+| `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
+| `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
+| `retract_from` | choice | no | Retract height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `retract_offset` | number | no | Retract height above its reference, mm (-1e5 to 1e5 mm) |
+| `feed_height_from` | choice | no | Feed height reference: where rapids stop — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `feed_height_offset` | number | no | Feed height above its reference, mm (-1e5 to 1e5 mm) |
+| `top_from` | choice | no | Top height reference: where cutting starts — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `top_offset` | number | no | Top height offset, mm (-1e5 to 1e5 mm) |
+| `bottom_from` | choice | no | Bottom height reference: the final depth — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `bottom_offset` | number | no | Bottom height offset, mm (negative goes deeper) (-1e5 to 1e5 mm) |
+| `tolerance` | number | no | How far the path may stray from true curves, mm (default 0.01) (0 to 1 mm) |
+| `stepover` | number | no | Distance between passes, mm (default: a share of the tool diameter) (0 to 10000 mm) |
+| `stepdown` | number | no | Depth per level, mm (default: the tool's, else a share of its diameter) (0 to 10000 mm) |
+| `direction` | choice | no | Climb or conventional milling (default climb) — one of climb, conventional |
+| `stock_radial` | number | no | Stock to leave on walls, mm (default 0) (-1000 to 1000 mm) |
+| `stock_axial` | number | no | Stock to leave on floors, mm (default 0) (-1000 to 1000 mm) |
+| `entry` | choice | no | Into the material: a helical ramp or a plunge (default helix) — one of helix, plunge |
+| `ramp_angle` | number | no | Helix ramp angle, degrees (default 2) (0.1 to 90) |
+| `helix_radius` | number | no | Helix radius, mm (default 0.4 × Ø, at most the tool radius) (0 to 10000 mm) |
+| `rapid_links` | bool | no | Link between passes at rapid traverse (default true) |
+| `angle` | number | no | Row direction, degrees from +X (default 0) (-360 to 360) |
+
+Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
 
 <sub>ribbon: Toolpaths › Strategies</sub>
 
 #### `toolpath.waterline`
 
 ```python
-cc.toolpath_waterline()
+cc.toolpath_waterline(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None)
 ```
 
-Z-level roughing and finishing (Phase 6).
- **Planned — not available yet.**
+Finish steep walls with passes around the part at constant heights.
 
-Returns: not defined yet
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Regenerate this toolpath with these settings instead of adding one |
+| `name` | string | no | Name in the job outline (default: the strategy and tool) |
+| `tool` | integer | no | Tool number in the active machine's library (default: the first) (1 to 9999) |
+| `spindle_rpm` | number | no | Spindle speed, rpm (default: the tool's) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
+| `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
+| `wcs` | string | no | WCS to program in (default: the active one) |
+| `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
+| `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
+| `retract_from` | choice | no | Retract height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `retract_offset` | number | no | Retract height above its reference, mm (-1e5 to 1e5 mm) |
+| `feed_height_from` | choice | no | Feed height reference: where rapids stop — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `feed_height_offset` | number | no | Feed height above its reference, mm (-1e5 to 1e5 mm) |
+| `top_from` | choice | no | Top height reference: where cutting starts — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `top_offset` | number | no | Top height offset, mm (-1e5 to 1e5 mm) |
+| `bottom_from` | choice | no | Bottom height reference: the final depth — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `bottom_offset` | number | no | Bottom height offset, mm (negative goes deeper) (-1e5 to 1e5 mm) |
+| `tolerance` | number | no | How far the path may stray from true curves, mm (default 0.01) (0 to 1 mm) |
+| `stepover` | number | no | Distance between passes, mm (default: a share of the tool diameter) (0 to 10000 mm) |
+| `stepdown` | number | no | Depth per level, mm (default: the tool's, else a share of its diameter) (0 to 10000 mm) |
+| `direction` | choice | no | Climb or conventional milling (default climb) — one of climb, conventional |
+| `stock_radial` | number | no | Stock to leave on walls, mm (default 0) (-1000 to 1000 mm) |
+| `stock_axial` | number | no | Stock to leave on floors, mm (default 0) (-1000 to 1000 mm) |
+| `entry` | choice | no | Into the material: a helical ramp or a plunge (default helix) — one of helix, plunge |
+| `ramp_angle` | number | no | Helix ramp angle, degrees (default 2) (0.1 to 90) |
+| `helix_radius` | number | no | Helix radius, mm (default 0.4 × Ø, at most the tool radius) (0 to 10000 mm) |
+| `rapid_links` | bool | no | Link between passes at rapid traverse (default true) |
+
+Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
 
 <sub>ribbon: Toolpaths › Strategies</sub>
 
 #### `toolpath.raster`
 
 ```python
-cc.toolpath_raster()
+cc.toolpath_raster(id=None, name=None, tool=None, spindle_rpm=None, feed=None, plunge_feed=None, coolant=None, wcs=None, geometry=None, clearance_from=None, clearance_offset=None, retract_from=None, retract_offset=None, feed_height_from=None, feed_height_offset=None, top_from=None, top_offset=None, bottom_from=None, bottom_offset=None, tolerance=None, stepover=None, stepdown=None, direction=None, stock_radial=None, stock_axial=None, entry=None, ramp_angle=None, helix_radius=None, rapid_links=None, boundary=None, boundary_offset=None, angle=None, pattern=None, sample_step=None)
 ```
 
-Parallel finishing across surfaces (Phase 6).
- **Planned — not available yet.**
+Finish shallow surfaces with parallel rows that follow the part.
 
-Returns: not defined yet
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Regenerate this toolpath with these settings instead of adding one |
+| `name` | string | no | Name in the job outline (default: the strategy and tool) |
+| `tool` | integer | no | Tool number in the active machine's library (default: the first) (1 to 9999) |
+| `spindle_rpm` | number | no | Spindle speed, rpm (default: the tool's) (0 to 5e5) |
+| `feed` | number | no | Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min) |
+| `plunge_feed` | number | no | Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min) |
+| `coolant` | choice | no | Coolant (default flood) — one of off, flood, mist, air, through_tool |
+| `wcs` | string | no | WCS to program in (default: the active one) |
+| `geometry` | list | no | Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N) |
+| `clearance_from` | choice | no | Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `clearance_offset` | number | no | Clearance height above its reference, mm (-1e5 to 1e5 mm) |
+| `retract_from` | choice | no | Retract height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `retract_offset` | number | no | Retract height above its reference, mm (-1e5 to 1e5 mm) |
+| `feed_height_from` | choice | no | Feed height reference: where rapids stop — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `feed_height_offset` | number | no | Feed height above its reference, mm (-1e5 to 1e5 mm) |
+| `top_from` | choice | no | Top height reference: where cutting starts — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `top_offset` | number | no | Top height offset, mm (-1e5 to 1e5 mm) |
+| `bottom_from` | choice | no | Bottom height reference: the final depth — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin |
+| `bottom_offset` | number | no | Bottom height offset, mm (negative goes deeper) (-1e5 to 1e5 mm) |
+| `tolerance` | number | no | How far the path may stray from true curves, mm (default 0.01) (0 to 1 mm) |
+| `stepover` | number | no | Distance between passes, mm (default: a share of the tool diameter) (0 to 10000 mm) |
+| `stepdown` | number | no | Depth per level, mm (default: the tool's, else a share of its diameter) (0 to 10000 mm) |
+| `direction` | choice | no | Climb or conventional milling (default climb) — one of climb, conventional |
+| `stock_radial` | number | no | Stock to leave on walls, mm (default 0) (-1000 to 1000 mm) |
+| `stock_axial` | number | no | Stock to leave on floors, mm (default 0) (-1000 to 1000 mm) |
+| `entry` | choice | no | Into the material: a helical ramp or a plunge (default helix) — one of helix, plunge |
+| `ramp_angle` | number | no | Helix ramp angle, degrees (default 2) (0.1 to 90) |
+| `helix_radius` | number | no | Helix radius, mm (default 0.4 × Ø, at most the tool radius) (0 to 10000 mm) |
+| `rapid_links` | bool | no | Link between passes at rapid traverse (default true) |
+| `boundary` | choice | no | Area to cover: the stock, the model or the selection (default model) — one of stock, model, selection |
+| `boundary_offset` | number | no | Grow (or shrink) the area by this, mm (default 0) (-1e5 to 1e5 mm) |
+| `angle` | number | no | Row direction, degrees from +X (default 0) (-360 to 360) |
+| `pattern` | choice | no | Back and forth, or all one way (default zigzag) — one of zigzag, one_way |
+| `sample_step` | number | no | Spacing of points along a row, mm (default Ø/8, 0.05–1) (0 to 1000 mm) |
+
+Returns: the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
 
 <sub>ribbon: Toolpaths › Strategies</sub>
 

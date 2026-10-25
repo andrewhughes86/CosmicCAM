@@ -72,7 +72,13 @@ pub fn run(session: Session, options: LaunchOptions) -> eframe::Result {
 pub async fn run_web(canvas: eframe::web_sys::HtmlCanvasElement, session: Session) -> Result<(), String> {
     let options = eframe::WebOptions::default();
     eframe::WebRunner::new()
-        .start(canvas, options, Box::new(move |cc| Ok(Box::new(CosmicApp::new(cc, session, LaunchOptions::default())))))
+        .start(
+            canvas,
+            options,
+            Box::new(move |cc| {
+                Ok(Box::new(CosmicApp::new(cc, session, LaunchOptions { demo: true, ..LaunchOptions::default() })))
+            }),
+        )
         .await
         .map_err(|e| format!("{e:?}"))
 }

@@ -7,7 +7,7 @@
 | 3 | Work coordinate system (WCS) creation | **Done** (2026-10-24) |
 | 4 | Tool library & management | **In progress** (flat end mills, machine libraries 2026-10-24) |
 | 5 | Stock setup & material definition | **In progress** (setups, box stock options 2026-10-25) |
-| 6 | Toolpath creation engine | **In progress** (2D contour 2026-10-24) |
+| 6 | Toolpath creation engine | **In progress** (contour, face, pocket, drill, 3D rough, waterline, raster 2026-10-25) |
 | 7 | Material removal simulation & verification | Planned |
 | 8 | Post-processor & G-code export | **Started** (generic G-code 2026-10-24) |
 | 9 | MCP agent integration | Planned |
@@ -32,6 +32,39 @@
 - Engine: `Session::execute` runs commands under `catch_unwind` and restores state on a panic;
   `hostile_params_never_panic` covers every command.
 - `cargo xtask ci`: fmt, clippy `-D warnings`, tests, assets, layers, ui-containers, wasm.
+
+## Version 0.2.0 (2026-10-25)
+
+Toolpath strategies, the demo project and tools in job files (below).
+
+## Demo project (2026-10-25)
+
+- `samples/demo.cosmic` (from `samples/demo-part.obj`) is built in and opens at start-up while
+  CosmicCAM is pre-release; `job.demo.open` (Home → Demo project) reopens it; `--empty` starts
+  blank.
+- Job files save the tools their toolpaths use; opening adds missing ones to the library and moves
+  toolpaths on unknown machines to the active one.
+- Faster screenshots for recordings (`settle: false`, background PNG writing).
+
+## Toolpath strategies (2026-10-25)
+
+Chosen from the strategy families CAM systems commonly offer (public documentation and general
+CAM practice; no product's behaviour, text or names copied):
+
+- `toolpath.face`: rows across the stock (or model, or selected faces) top, overrun past the edges,
+  zigzag or one way, optional depth levels.
+- `toolpath.pocket`: offset rings inside floor faces or closed edges, islands kept, from the
+  middle out; helical entry, links inside the pocket, optional finishing pass.
+- `toolpath.drill`: holes from cylinder walls, circular rims or points; drill, spot (dwell), peck,
+  chip break, tap (pitch) and bore; canned cycles in the G-code.
+- `toolpath.rough`: Z-level 3D roughing: at each level, the stock minus the part's shadow above
+  it grown by the tool radius and stock, cleared in zones of back-and-forth rows plus a pass around
+  the part.
+- `toolpath.waterline`: Z-level finishing around the part (exact for flat end mills).
+- `toolpath.raster`: parallel finishing with a drop cutter (flat end mills).
+- geom: `region` (shapes with holes: offsets, booleans, hatching) and `cutter` (shadow above a
+  height, drop cutter). Still to come: adaptive (constant engagement) clearing, scallop, pencil,
+  rest machining, chamfer, thread milling, ball and bull-nose tools for the 3D strategies.
 
 ## Version 0.1.0 (2026-10-25)
 

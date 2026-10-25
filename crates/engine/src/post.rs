@@ -95,6 +95,35 @@ impl Writer {
     }
 }
 
+/// A drilling toolpath as canned cycles: one line per hole, each naming its cycle, returning
+/// to the retract plane (G99) between holes, then G80 and back to clearance.
+fn drill_cycle(
+    w: &mut Writer,
+    d: &crate::toolpath::DrillCycle,
+    rpm: f64,
+    n: &dyn Fn(f64) -> String,
+    feed: &dyn Fn(f64) -> String,
+) {
+    let dwell_ms = (d.dwell * 1000.0).round() as u64;
+    let (code, extra) = match d.cycle.as_str() {
+        "spot" => ("G82", format!(" P{dwell_ms}")),
+        "drill" if dwell_ms > 0 => ("G82", format!(" P{dwell_ms}")),
+        "peck" => ("G83", format!(" Q{}", n(d.peck))),
+        "chip_break" => ("G73", format!(" Q{}", n(d.peck))),
+        "tap" => ("G84", String::new()),
+        "bore" => ("G85", String::new()),
+        _ => ("G81", String::new()),
+    };
+    // Tapping feeds at the pitch times the speed so the tap follows its thread.
+    let f = if d.cycle == "tap" { feed(d.pitch * rpm) } else { feed(d.feed) };
+    for (i, h) in d.holes.iter().enumerate() {
+        let lead = if i == 0 { "G99 " } else { "" };
+        w.line(&format!("{lead}{code} X{} Y{} Z{} R{}{extra} F{f}", n(h[0]), n(h[1]), n(h[3]), n(d.retract)));
+    }
+    w.line("G80");
+    w.line(&format!("G0 Z{}", n(d.clearance)));
+}
+
 /// Writes the program for `toolpaths` (ids, in order; all when empty).
 pub fn gcode(s: &Session, ids: &[String], opt: &Options) -> EngineResult<String> {
     let toolpaths: Vec<&Toolpath> = if ids.is_empty() {
@@ -203,6 +232,10 @@ pub fn gcode(s: &Session, ids: &[String], opt: &Options) -> EngineResult<String>
         w.line(&format!("G0 G43 Z{} H{}", n(start.z), tool.length_offset));
         if let Some(c) = coolant {
             w.line(c);
+        }
+        if let Some(d) = &tp.drill {
+            drill_cycle(&mut w, d, rpm, &n, &feed);
+            continue;
         }
         let mut at = start;
         let mut last_f: Option<String> = None;

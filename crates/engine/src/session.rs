@@ -1031,6 +1031,34 @@ impl Session {
         Ok(self.active_tab)
     }
 
+    /// Opens a job file's contents in a tab. Tools its toolpaths use that the library lacks
+    /// are added; toolpaths on a machine the library does not have move to the active one.
+    pub(crate) fn open_loaded(&mut self, loaded: crate::jobfile::Loaded) -> EngineResult<usize> {
+        let crate::jobfile::Loaded { mut job, camera, tools } = loaded;
+        let fallback = self.library.active_machine().map(|m| m.id.clone());
+        let mut added = false;
+        for tp in &mut job.toolpaths {
+            let known = self.library.machine(&tp.machine).is_some();
+            let Some(target) = (if known { Some(tp.machine.clone()) } else { fallback.clone() }) else {
+                continue;
+            };
+            let saved = tools.iter().find(|(m, t)| *m == tp.machine && t.number == tp.tool).map(|(_, t)| t.clone());
+            if let (Some(tool), Some(machine)) = (saved, self.library.machines.iter_mut().find(|m| m.id == target))
+                && machine.tool(tool.number).is_none()
+                && machine.tools.len() < crate::library::MAX_TOOLS
+            {
+                machine.tools.push(tool);
+                machine.tools.sort_by_key(|t| t.number);
+                added = true;
+            }
+            tp.machine = target;
+        }
+        if added {
+            self.library.changed();
+        }
+        self.open_tab(job, camera)
+    }
+
     /// Shows the document in tab `index`.
     pub(crate) fn activate_tab(&mut self, index: usize) -> EngineResult<()> {
         self.ensure_tabs();
@@ -1146,7 +1174,7 @@ impl Session {
             .map(|t| {
                 let (cut, rapid_len, time) = t.stats(rapid);
                 let mut properties = vec![
-                    ("Strategy".into(), "2D contour".into()),
+                    ("Strategy".into(), crate::toolpath::strategy_label(&t.strategy).into()),
                     ("Tool".into(), format!("T{}", t.tool)),
                     ("WCS".into(), t.wcs.clone().unwrap_or_else(|| "world".into())),
                     ("Moves".into(), t.moves.len().to_string()),

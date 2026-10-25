@@ -26,6 +26,8 @@ pub struct LaunchOptions {
     pub automation: Automation,
     /// Open the control channel on this port (0 picks a free one).
     pub control_port: Option<u16>,
+    /// Start with the demo project open.
+    pub demo: bool,
 }
 
 /// A window capture waiting for the next frame.
@@ -33,6 +35,8 @@ struct Capture {
     path: PathBuf,
     reply: Option<Incoming>,
     then_quit: bool,
+    /// Wait for camera moves to finish first; recordings capture straight away.
+    settle: bool,
 }
 
 /// A click injected over the control channel, played out over three frames
@@ -99,7 +103,7 @@ const SETTINGS_KEY: &str = "cosmiccam.settings";
 
 impl CosmicApp {
     pub fn new(cc: &eframe::CreationContext<'_>, mut session: Session, options: LaunchOptions) -> Self {
-        let LaunchOptions { automation, control_port } = options;
+        let LaunchOptions { automation, control_port, demo } = options;
         let layout_generation = session.view.layout_generation;
         let mut startup_status = None;
         if let Some(text) = cc.storage.and_then(|s| s.get_string(LIBRARY_KEY)) {
@@ -121,6 +125,10 @@ impl CosmicApp {
             }
         }
         let saved_library = session.library.revision;
+        // The demo project opens once the library is loaded, so its tools join the right one.
+        if demo && let Err(e) = session.open_demo() {
+            startup_status = Some(format!("The demo project could not be opened: {e}"));
+        }
         // Saved preferences: the display units and the theme.
         if let Some(saved) =
             cc.storage.and_then(|s| s.get_string(SETTINGS_KEY)).and_then(|t| serde_json::from_str::<Value>(&t).ok())
@@ -188,14 +196,16 @@ impl CosmicApp {
     /// with an interactive tool, run without parameters (a toolbar click or shortcut),
     /// starts that tool instead.
     pub fn run(&mut self, id: &str, params: &Value) {
-        // The 2D contour tile opens the toolpath panel; double-clicking a toolpath edits it.
-        if (params.is_null() && id == "toolpath.contour") || id == "toolpath.edit" {
+        // A strategy tile opens the toolpath panel; double-clicking a toolpath edits it.
+        let strategy = crate::toolpath_panel::Strategy::from_command(id).filter(|_| params.is_null());
+        if strategy.is_some() || id == "toolpath.edit" {
             let editing = params.get("id").and_then(Value::as_str);
             if editing.is_some_and(|e| self.session.job.toolpaths.iter().all(|t| t.id != e)) {
                 self.status = Some("that toolpath no longer exists".into());
                 return;
             }
-            self.toolpath_panel = Some(crate::toolpath_panel::ToolpathPanel::new(&self.session, editing));
+            let strategy = strategy.unwrap_or(crate::toolpath_panel::Strategy::Contour);
+            self.toolpath_panel = Some(crate::toolpath_panel::ToolpathPanel::new(&self.session, editing, strategy));
             self.setup_panel = None;
             self.status = None;
             return;
@@ -296,7 +306,13 @@ impl CosmicApp {
             "engine.state" => incoming.ok(self.session.state_json()),
             "ui.screenshot" => match p.get("path").and_then(Value::as_str) {
                 Some(path) if path.to_ascii_lowercase().ends_with(".png") => {
-                    self.captures.push(Capture { path: PathBuf::from(path), reply: Some(incoming), then_quit: false });
+                    let settle = p.get("settle").and_then(Value::as_bool).unwrap_or(true);
+                    self.captures.push(Capture {
+                        path: PathBuf::from(path),
+                        reply: Some(incoming),
+                        then_quit: false,
+                        settle,
+                    });
                     ctx.request_repaint();
                 }
                 _ => incoming.err("invalid_params", "`path` must be a file path ending in .png"),
@@ -329,9 +345,15 @@ impl CosmicApp {
                 self.run(&command, &Value::Null);
                 incoming.ok(json!({ "started": command }));
             }
-            "ui.start" if p.get("command").and_then(Value::as_str) == Some("toolpath.contour") => {
-                self.toolpath_panel = Some(crate::toolpath_panel::ToolpathPanel::new(&self.session, None));
-                incoming.ok(json!({ "started": "toolpath.contour" }));
+            "ui.start"
+                if p.get("command")
+                    .and_then(Value::as_str)
+                    .and_then(crate::toolpath_panel::Strategy::from_command)
+                    .is_some() =>
+            {
+                let command = p.get("command").and_then(Value::as_str).unwrap_or_default().to_owned();
+                self.run(&command, &Value::Null);
+                incoming.ok(json!({ "started": command }));
             }
             "ui.start" => match p.get("command").and_then(Value::as_str) {
                 Some(command) if tools::has_start(command) => match self.tools.start(command, &self.session) {
@@ -383,7 +405,9 @@ impl CosmicApp {
             // Let camera moves and window changes finish first (at most ~2 s).
             const MAX_WAIT_FRAMES: u32 = 120;
             self.capture_wait += 1;
-            if (self.viewport.is_animating() || self.capture_wait < 3) && self.capture_wait < MAX_WAIT_FRAMES {
+            let settle = self.captures.iter().any(|c| c.settle);
+            if settle && (self.viewport.is_animating() || self.capture_wait < 3) && self.capture_wait < MAX_WAIT_FRAMES
+            {
                 return;
             }
             self.capture_wait = 0;
@@ -403,18 +427,30 @@ impl CosmicApp {
         self.capture_requested = false;
         let mut quit = false;
         for capture in std::mem::take(&mut self.captures) {
-            let result = automation::save_png(&image, &capture.path);
-            match (&result, capture.reply) {
-                (Ok(()), Some(reply)) => reply.ok(json!({
-                    "path": capture.path.display().to_string(),
-                    "width": image.size[0],
-                    "height": image.size[1],
-                })),
-                (Err(e), Some(reply)) => reply.err("io", format!("could not save {}: {e}", capture.path.display())),
-                (Ok(()), None) => println!("screenshot saved to {}", capture.path.display()),
-                (Err(e), None) => eprintln!("could not save screenshot {}: {e}", capture.path.display()),
-            }
             quit |= capture.then_quit;
+            // On the desktop, control-channel captures are written on their own thread so a
+            // recording does not hold up the frames it records.
+            #[cfg(not(target_arch = "wasm32"))]
+            if capture.reply.is_some() && !capture.then_quit {
+                let shared = Arc::clone(&image);
+                let (tx, rx) = std::sync::mpsc::channel::<Capture>();
+                let spawned = std::thread::Builder::new().name("screenshot".into()).spawn(move || {
+                    if let Ok(capture) = rx.recv() {
+                        finish_capture(&shared, capture);
+                    }
+                });
+                match spawned {
+                    Ok(_) => {
+                        let _ = tx.send(capture);
+                        continue;
+                    }
+                    Err(_) => {
+                        finish_capture(&image, capture);
+                        continue;
+                    }
+                }
+            }
+            finish_capture(&image, capture);
         }
         if quit {
             ctx.send_viewport_cmd(ViewportCommand::Close);
@@ -524,7 +560,7 @@ impl eframe::App for CosmicApp {
         let step = self.automation.tick(&ctx);
         requests.extend(step.requests);
         if let Some(path) = step.capture {
-            self.captures.push(Capture { path, reply: None, then_quit: true });
+            self.captures.push(Capture { path, reply: None, then_quit: true, settle: true });
         }
         self.service_captures(&ctx);
         #[cfg(not(target_arch = "wasm32"))]
@@ -739,6 +775,21 @@ fn parse_shortcut(text: &str) -> Option<KeyboardShortcut> {
         }
     }
     Some(KeyboardShortcut::new(modifiers, key?))
+}
+
+/// Writes a capture and answers whoever asked for it.
+fn finish_capture(image: &egui::ColorImage, capture: Capture) {
+    let result = automation::save_png(image, &capture.path);
+    match (&result, capture.reply) {
+        (Ok(()), Some(reply)) => reply.ok(json!({
+            "path": capture.path.display().to_string(),
+            "width": image.size[0],
+            "height": image.size[1],
+        })),
+        (Err(e), Some(reply)) => reply.err("io", format!("could not save {}: {e}", capture.path.display())),
+        (Ok(()), None) => println!("screenshot saved to {}", capture.path.display()),
+        (Err(e), None) => eprintln!("could not save screenshot {}: {e}", capture.path.display()),
+    }
 }
 
 #[cfg(test)]

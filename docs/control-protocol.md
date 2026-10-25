@@ -6,7 +6,7 @@ running CosmicCAM. It is JSON lines over TCP on `127.0.0.1` only.
 ## Opening it
 
 ```bash
-CosmicCAM --sample --control 5800     # 0 picks a free port
+CosmicCAM --control 5800              # 0 picks a free port; opens the demo project
 ```
 
 On start the app prints `CosmicCAM control channel listening on 127.0.0.1:PORT` to stdout.
@@ -38,7 +38,7 @@ One JSON object per line in each direction. Requests are answered in order.
 | `engine.execute` | `{command, params?}` | The command's result; see [api/python.md](api/python.md) for every command |
 | `engine.commands` | — | Every command: `{id, label, tooltip, shortcut, enabled, params, returns, ribbon}` |
 | `engine.state` | — | Same as the `session.state.get` command |
-| `ui.screenshot` | `{path}` (ends in `.png`) | `{path, width, height}` once the next settled frame is saved; the window must be visible |
+| `ui.screenshot` | `{path, settle?}` (ends in `.png`) | `{path, width, height}` once the next settled frame is saved (`settle: false`: the next frame, even mid camera move, for recordings); the window must be visible |
 | `ui.click` | `{x, y}` (window points) | `{x, y}` once a left click there has been played out (move, press, release over three frames) |
 | `ui.type` | `{text, replace?}` | `{typed}` once `text` has been typed into the focused field (after any queued clicks, which usually focus it); `replace: true` selects the field's contents first |
 | `ui.start` | `{command}` | `{started}`: starts a command's interactive tool as a toolbar click would. `model.import` opens the file dialog and imports the chosen file; `setup.wcs.create` and `setup.wcs.align` open the WCS panel, which takes selections from clicks in the viewport; `setup.wcs.offset`, `setup.wcs.rotate` and `setup.wcs.rename` open a dialog for their parameters. Other commands: `not_supported`; a dialog already open: `busy` |

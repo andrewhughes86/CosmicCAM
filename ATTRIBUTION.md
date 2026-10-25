@@ -52,8 +52,10 @@ another project (MIT OR Apache-2.0 compatible only) and every asset file in the 
 | `assets/icons/ui/design/svg/toolpath_height_feed.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_height_retract.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_height_top.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/toolpath_face.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_pocket.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_profile.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/toolpath_rough.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_raster.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_waterline.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/view_camera_front.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
@@ -65,6 +67,8 @@ another project (MIT OR Apache-2.0 compatible only) and every asset file in the 
 | `assets/icons/ui/design/svg/view_layout_reset.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/view_projection_toggle.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/view_theme_toggle.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `samples/demo-part.obj` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `samples/demo.cosmic` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `docs/images/cosmiccam-workflow.gif` | CosmicCAM contributors (recording of CosmicCAM itself) | MIT OR Apache-2.0 |
 
 The UI uses egui's bundled default fonts, which ship inside the `epaint_default_fonts` dependency (OFL / Apache-2.0 / Ubuntu Font Licence) and are listed in THIRD-PARTY-LICENSES.txt.

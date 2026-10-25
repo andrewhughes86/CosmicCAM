@@ -193,7 +193,8 @@ version bumps solely from commit prefixes, overwrite published versions, or push
 before the draft is verified.
 
 ## Running and looking at the app
-- `cargo run --release -p CosmicCAM -- --sample --control PORT` (sample CAM setup + control channel).
+- `cargo run --release -p CosmicCAM -- --control PORT` (opens the demo project, `samples/demo.cosmic`,
+  plus the control channel; `--empty` for a blank job, `--sample` for the simple sample part).
   Pick a free port. Without a display, run it under `Xvfb :99` with `DISPLAY=:99`.
 - Drive it with JSON lines on `127.0.0.1:PORT` (see `docs/control-protocol.md`). The first
   request on a connection carries the launch's token as `"token"`: read it from

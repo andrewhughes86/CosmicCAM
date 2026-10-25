@@ -6,6 +6,26 @@ and versions follow [Semantic Versioning](https://semver.org/) as described in
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-25
+
+Toolpath strategies beyond the 2D contour, a built-in demo project, and job files that carry
+their tools. Still pre-production: check the G-code before running it.
+
+### Added
+
+- **Toolpath strategies:** Face (rows across the stock top), Pocket (offset rings around
+  islands, helical entry), Drill (drill, spot, peck, chip break, tap and bore, written as canned
+  cycles G81/G82/G83/G73/G84/G85), 3D rough (Z-level clearing by zones around the part), Waterline
+  (Z-level finishing of steep walls) and Raster (parallel finishing that follows the surface).
+  The toolpath panel adapts its tabs to each strategy.
+- **Demo project:** the app opens with `samples/demo.cosmic` (a part with a pocket and a boss, a
+  WCS, a setup with stock, two tools and five toolpaths); Home → Demo project reopens it;
+  `--empty` starts blank.
+- **Job files carry their tools:** tools a job's toolpaths use are saved with it and added to the
+  library on open where missing, so a shared job posts anywhere.
+- **Recording:** `ui.screenshot` takes `settle: false` to capture mid camera move; captures are
+  written off the UI thread. The README recording now runs at about 13 frames a second.
+
 ## [0.1.0] - 2026-10-25
 
 The first versioned CosmicCAM: it plans 2D contour toolpaths and writes generic G-code, but has no
@@ -38,5 +58,6 @@ machine-specific post-processors or simulation yet, so its output must be checke
   the console and the control channel (`--control PORT`), including `ui.click` and `ui.type`.
 - **Web:** the same app built for the browser (WASM).
 
-[Unreleased]: https://github.com/andrewhughes86/CosmicCAM/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/andrewhughes86/CosmicCAM/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/andrewhughes86/CosmicCAM/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/andrewhughes86/CosmicCAM/releases/tag/v0.1.0

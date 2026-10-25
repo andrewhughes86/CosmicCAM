@@ -2,12 +2,28 @@
 //! settings. Moves are kept in world millimetres with the feed each uses; the WCS they were
 //! programmed in travels with them for posting later.
 
+mod common;
 pub mod contour;
+pub mod drill;
+pub mod strategies;
 
 use std::sync::Arc;
 
 use CosmicCAM_geom::{Aabb, Vec3};
 use serde_json::{Value, json};
+
+/// A strategy id as people read it.
+pub fn strategy_label(strategy: &str) -> &'static str {
+    match strategy {
+        "face" => "Face",
+        "pocket2d" => "Pocket",
+        "drill" => "Drill",
+        "rough3d" => "3D rough",
+        "waterline" => "Waterline",
+        "raster" => "Raster",
+        _ => "2D contour",
+    }
+}
 
 /// Most toolpaths one job holds.
 pub const MAX_TOOLPATHS: usize = 512;
@@ -66,6 +82,28 @@ pub struct Toolpath {
     pub start: Vec3,
     pub moves: Arc<Vec<Move>>,
     pub warnings: Vec<String>,
+    /// A drilling toolpath's cycle, for the G-code's canned cycles.
+    pub drill: Option<DrillCycle>,
+}
+
+/// A drilling cycle and its holes, in the toolpath's WCS (millimetres).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DrillCycle {
+    /// One of [`drill::CYCLES`].
+    pub cycle: String,
+    /// Each hole: X, Y, top Z, bottom Z, in drilling order.
+    pub holes: Vec<[f64; 4]>,
+    /// The plane the tool returns to between pecks and holes (R).
+    pub retract: f64,
+    pub clearance: f64,
+    /// Depth per peck.
+    pub peck: f64,
+    /// Seconds at the bottom.
+    pub dwell: f64,
+    /// Feed, mm/min.
+    pub feed: f64,
+    /// Thread pitch for tapping, mm per turn.
+    pub pitch: f64,
 }
 
 impl Toolpath {

@@ -61,6 +61,8 @@ pub fn save_png(image: &ColorImage, path: &Path) -> Result<(), String> {
     let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), w as u32, h as u32);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
+    // Fast compression keeps screenshots and recordings from stalling the frame.
+    encoder.set_compression(png::Compression::Fast);
     let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
     let bytes: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_srgba_unmultiplied()).collect();
     writer.write_image_data(&bytes).map_err(|e| e.to_string())

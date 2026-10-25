@@ -13,6 +13,7 @@ use CosmicCAM_render::{OrbitCamera, Projection};
 use serde_json::{Value, json};
 
 use crate::error::{EngineError, EngineResult};
+use crate::library::{MachineLibrary, Tool};
 use crate::session::{JobState, MAX_MODELS, MAX_SETUPS, Model, Setup, Wcs};
 use crate::toolpath::{MAX_MOVES, MAX_TOOLPATHS, Move, MoveKind, Toolpath};
 
@@ -31,8 +32,27 @@ const MAX_TEXT: usize = 4096;
 
 const KINDS: [MoveKind; 5] = [MoveKind::Rapid, MoveKind::Link, MoveKind::Plunge, MoveKind::Lead, MoveKind::Cut];
 
-/// The job and camera as the text of a job file.
-pub fn to_string(job: &JobState, camera: &OrbitCamera) -> String {
+/// A job file's contents: the job, the camera it was saved with, and the tools its toolpaths
+/// use (machine id, tool), so it can be posted on a machine whose library lacks them.
+pub struct Loaded {
+    pub job: JobState,
+    pub camera: Option<OrbitCamera>,
+    pub tools: Vec<(String, Tool)>,
+}
+
+/// The job and camera as the text of a job file, with the tools its toolpaths use from
+/// `library`.
+pub fn to_string(job: &JobState, camera: &OrbitCamera, library: &MachineLibrary) -> String {
+    let mut used: Vec<(String, u32)> = Vec::new();
+    for t in &job.toolpaths {
+        if !used.iter().any(|(m, n)| *m == t.machine && *n == t.tool) {
+            used.push((t.machine.clone(), t.tool));
+        }
+    }
+    let tools: Vec<Value> = used
+        .iter()
+        .filter_map(|(m, n)| library.machine(m).and_then(|mc| mc.tool(*n)).map(|tool| tool.to_json(m)))
+        .collect();
     let models: Vec<Value> = job
         .models
         .iter()
@@ -83,6 +103,16 @@ pub fn to_string(job: &JobState, camera: &OrbitCamera) -> String {
                 "start": t.start.to_array(),
                 "warnings": t.warnings,
                 "moves": base64::encode(&moves),
+                "drill": t.drill.as_ref().map(|d| json!({
+                    "cycle": d.cycle,
+                    "holes": d.holes,
+                    "retract": d.retract,
+                    "clearance": d.clearance,
+                    "peck": d.peck,
+                    "dwell": d.dwell,
+                    "feed": d.feed,
+                    "pitch": d.pitch,
+                })),
             })
         })
         .collect();
@@ -105,6 +135,7 @@ pub fn to_string(job: &JobState, camera: &OrbitCamera) -> String {
             "stock": job.stock.map(|b| json!({ "min": b.min.to_array(), "max": b.max.to_array() })),
             "toolpaths": toolpaths,
             "next_toolpath": job.next_toolpath,
+            "tools": tools,
             "setups": job.setups.iter().map(|st| json!({
                 "id": st.id,
                 "name": st.name,
@@ -245,6 +276,47 @@ fn toolpath(v: &Value) -> EngineResult<Toolpath> {
         start: vec3(v, "start")?,
         moves: Arc::new(moves),
         warnings: list(v, "warnings", 256)?.iter().filter_map(|w| w.as_str().map(str::to_owned)).collect(),
+        drill: match v.get("drill") {
+            None | Some(Value::Null) => None,
+            Some(d) => Some(drill_cycle(d)?),
+        },
+    })
+}
+
+fn drill_cycle(d: &Value) -> EngineResult<crate::toolpath::DrillCycle> {
+    let num = |key: &str| -> EngineResult<f64> {
+        let v = d.get(key).and_then(Value::as_f64).ok_or_else(|| bad(format!("a drill cycle has no `{key}`")))?;
+        if v.is_finite() && v.abs() < 1.0e9 {
+            Ok(v)
+        } else {
+            Err(bad(format!("a drill cycle's `{key}` is out of range")))
+        }
+    };
+    let cycle = text(d, "cycle")?;
+    if !crate::toolpath::drill::CYCLES.contains(&cycle.as_str()) {
+        return Err(bad(format!("unknown drill cycle `{cycle}`")));
+    }
+    let holes = list(d, "holes", crate::toolpath::drill::MAX_HOLES)?
+        .iter()
+        .map(|h| {
+            let c: Vec<f64> = h.as_array().into_iter().flatten().filter_map(Value::as_f64).collect();
+            match c.as_slice() {
+                [x, y, top, bottom] if c.iter().all(|v| v.is_finite() && v.abs() < 1.0e9) => {
+                    Ok([*x, *y, *top, *bottom])
+                }
+                _ => Err(bad("a drilled hole is not [x, y, top, bottom]")),
+            }
+        })
+        .collect::<EngineResult<_>>()?;
+    Ok(crate::toolpath::DrillCycle {
+        cycle,
+        holes,
+        retract: num("retract")?,
+        clearance: num("clearance")?,
+        peck: num("peck")?,
+        dwell: num("dwell")?,
+        feed: num("feed")?,
+        pitch: num("pitch")?,
     })
 }
 
@@ -256,8 +328,8 @@ fn stock_box(b: &Value) -> EngineResult<Aabb> {
     Ok(Aabb { min, max })
 }
 
-/// Reads a job file. The camera is the one it was saved with, if it has one.
-pub fn from_str(source: &str) -> EngineResult<(JobState, Option<OrbitCamera>)> {
+/// Reads a job file.
+pub fn from_str(source: &str) -> EngineResult<Loaded> {
     let root: Value = serde_json::from_str(source).map_err(bad)?;
     let format = root.get("format").and_then(Value::as_str).unwrap_or_default();
     if format != FORMAT {
@@ -329,7 +401,18 @@ pub fn from_str(source: &str) -> EngineResult<(JobState, Option<OrbitCamera>)> {
             .sanitized(),
         )
     });
-    Ok((job, camera))
+    let tools = list(j, "tools", crate::library::MAX_TOOLS)?
+        .iter()
+        .filter_map(|t| {
+            let machine = opt_text(t, "machine")?;
+            let mut tool = serde_json::from_value::<Tool>(t.clone()).ok()?;
+            tool.name = crate::library::clip(&tool.name);
+            tool.coating = crate::library::clip(&tool.coating);
+            tool.notes = crate::library::clip(&tool.notes);
+            tool.validate().ok().map(|()| (machine, tool))
+        })
+        .collect();
+    Ok(Loaded { job, camera, tools })
 }
 
 /// Standard base64 (RFC 4648, with padding).
