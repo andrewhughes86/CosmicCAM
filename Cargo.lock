@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "CosmicCAM"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "CosmicCAM-ui-egui",
  "eframe",
@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "CosmicCAM-engine"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "CosmicCAM-geom",
  "CosmicCAM-io",
@@ -27,7 +27,7 @@ dependencies = [
 
 [[package]]
 name = "CosmicCAM-geom"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "glam",
  "i_overlay",
@@ -35,7 +35,7 @@ dependencies = [
 
 [[package]]
 name = "CosmicCAM-io"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "CosmicCAM-geom",
  "thiserror 2.0.21",
@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "CosmicCAM-render"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "CosmicCAM-geom",
  "bytemuck",
@@ -51,7 +51,7 @@ dependencies = [
 
 [[package]]
 name = "CosmicCAM-ui-egui"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "CosmicCAM-engine",
  "CosmicCAM-geom",
@@ -76,7 +76,7 @@ dependencies = [
 
 [[package]]
 name = "CosmicCAM-web"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "CosmicCAM-ui-egui",
  "eframe",
@@ -4320,7 +4320,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "CosmicCAM-engine",
  "serde_json",

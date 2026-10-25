@@ -6,7 +6,7 @@ use super::{CommandSpec, Param, ParamKind, Placement, RibbonTab, all, always, fi
 use crate::error::{EngineError, EngineResult};
 use crate::jobfile;
 use crate::params;
-use crate::session::{OutlineNode, Session};
+use crate::session::{Clip, OutlineNode, Session};
 
 const SINCE: ParamKind = ParamKind::Integer { min: 0, max: i64::MAX };
 const TAB: ParamKind = ParamKind::Integer { min: 0, max: crate::session::MAX_TABS as i64 - 1 };
@@ -88,6 +88,34 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             let tab = s.open_demo()?;
             Ok(json!({ "job": s.job.name, "tab": tab }))
         },
+    },
+    CommandSpec {
+        id: "job.clipboard.copy",
+        label: "Copy",
+        tooltip: "Copy a toolpath, model or WCS, to paste into this job or another open one",
+        placement: None,
+        icon: None,
+        shortcut: Some("Ctrl+C"),
+        params: &[Param::optional(
+            "id",
+            ParamKind::Str,
+            "What to copy: a toolpath, model or WCS id (default: the selection)",
+        )],
+        returns: "{\"copied\": id, \"kind\": toolpath|model|wcs}",
+        enabled: always,
+        run: copy,
+    },
+    CommandSpec {
+        id: "job.clipboard.paste",
+        label: "Paste",
+        tooltip: "Add a copy of what was copied to the job",
+        placement: None,
+        icon: None,
+        shortcut: Some("Ctrl+V"),
+        params: &[],
+        returns: "{\"pasted\": new id, \"kind\": toolpath|model|wcs}",
+        enabled: always,
+        run: paste,
     },
     CommandSpec {
         id: "job.tab.list",
@@ -371,4 +399,88 @@ fn save(s: &mut Session, p: &Value) -> EngineResult<Value> {
     s.job.path = Some(path.clone());
     s.job.saved_edits = s.job.edits;
     Ok(json!({ "path": path, "bytes": text.len() }))
+}
+
+fn copy(s: &mut Session, p: &Value) -> EngineResult<Value> {
+    let id = match params::opt_str(p, "id")? {
+        Some(id) => id.to_owned(),
+        None => {
+            s.view.selection.clone().ok_or_else(|| EngineError::InvalidParams("select something to copy".into()))?
+        }
+    };
+    let clip = if let Some(t) = s.job.toolpaths.iter().find(|t| t.id == id) {
+        Clip::Toolpath(Box::new(t.clone()))
+    } else if let Some(m) = s.job.models.iter().find(|m| m.id == id) {
+        Clip::Model(Box::new(m.clone()))
+    } else if let Some(w) = s.job.wcs_by_id(&id) {
+        Clip::Wcs(w.clone())
+    } else {
+        return Err(EngineError::InvalidParams(format!("`{id}` cannot be copied; copy a toolpath, model or WCS")));
+    };
+    let kind = clip.kind();
+    s.clipboard = Some(clip);
+    Ok(json!({ "copied": id, "kind": kind }))
+}
+
+/// A copy's name: "<name> (copy)".
+fn copy_name(name: &str) -> String {
+    crate::library::clip(&format!("{name} (copy)"))
+}
+
+fn paste(s: &mut Session, _: &Value) -> EngineResult<Value> {
+    let clip = s
+        .clipboard
+        .clone()
+        .ok_or_else(|| EngineError::InvalidParams("there is nothing to paste; copy something first".into()))?;
+    let kind = clip.kind();
+    let id = match clip {
+        Clip::Toolpath(t) => {
+            if s.job.toolpaths.len() >= crate::toolpath::MAX_TOOLPATHS {
+                return Err(EngineError::InvalidParams("this job holds as many toolpaths as it can".into()));
+            }
+            let mut t = *t;
+            t.id = format!("toolpath.{}", s.job.next_toolpath);
+            t.name = copy_name(&t.name);
+            if let Some(obj) = t.params.as_object_mut() {
+                obj.insert("name".into(), json!(t.name));
+            }
+            // A toolpath pasted into a job without its WCS keeps its moves; regenerate it there.
+            if t.wcs.as_deref().is_some_and(|w| s.job.wcs_by_id(w).is_none()) {
+                t.warnings.push("pasted from a job whose WCS this one does not have; regenerate it".into());
+            }
+            s.job.next_toolpath = s.job.next_toolpath.saturating_add(1);
+            let id = t.id.clone();
+            s.job.toolpaths.push(t);
+            s.job.setup_changed();
+            id
+        }
+        Clip::Model(m) => {
+            if s.job.models.len() >= crate::session::MAX_MODELS {
+                return Err(EngineError::InvalidParams("this job holds as many models as it can".into()));
+            }
+            let mut m = *m;
+            m.id = format!("model.{}", s.job.next_model);
+            m.name = copy_name(&m.name);
+            s.job.next_model = s.job.next_model.saturating_add(1);
+            let id = m.id.clone();
+            s.job.models.push(m);
+            s.job.geometry_changed();
+            id
+        }
+        Clip::Wcs(mut w) => {
+            if s.job.wcs.len() >= crate::session::MAX_WCS {
+                return Err(EngineError::InvalidParams("this job holds as many WCS as it can".into()));
+            }
+            w.id = format!("wcs.{}", s.job.next_wcs);
+            w.name = copy_name(&w.name);
+            s.job.next_wcs = s.job.next_wcs.saturating_add(1);
+            let id = w.id.clone();
+            s.job.wcs.push(w);
+            s.job.setup_changed();
+            id
+        }
+    };
+    s.job.edits = s.job.edits.wrapping_add(1);
+    s.view.selection = Some(id.clone());
+    Ok(json!({ "pasted": id, "kind": kind }))
 }

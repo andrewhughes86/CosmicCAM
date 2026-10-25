@@ -277,6 +277,22 @@ cc.toolpath_raster(stepover=0.5, angle=45)
 
 The 3D strategies (rough, waterline, raster) use flat end mills for now.
 
+## Showing, renaming, copying
+
+Only the selected toolpath is drawn, plus any switched on. Models can be hidden too (hidden
+models are still machined, but cannot be picked). Copy and paste work within a job and between
+open jobs.
+
+```python
+cc.toolpath_visibility_set(id="toolpath.2", visible=True)   # omit visible to toggle
+cc.model_visibility_set(id="model.1", visible=False)
+cc.toolpath_rename(id="toolpath.2", name="Rough the pocket")
+cc.toolpath_duplicate(id="toolpath.2")
+cc.job_clipboard_copy(id="toolpath.2")    # a toolpath, model or WCS; default: the selection
+cc.job_tab_activate(index=1)
+cc.job_clipboard_paste()
+```
+
 ## G-code
 
 Until the Python post-processors of Phase 8 exist, CosmicCAM writes plain, generic G-code:
@@ -349,19 +365,19 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-132 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+139 commands in 16 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
-- **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.demo.open`](#jobdemoopen), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
+- **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.demo.open`](#jobdemoopen), [`job.clipboard.copy`](#jobclipboardcopy), [`job.clipboard.paste`](#jobclipboardpaste), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
 - **session**: [`session.state.get`](#sessionstateget)
 - **command**: [`command.list`](#commandlist), [`command.describe`](#commanddescribe)
 - **console**: [`console.clear`](#consoleclear), [`console.log.get`](#consolelogget)
-- **model**: [`model.import`](#modelimport), [`model.list`](#modellist), [`model.remove`](#modelremove), [`model.faces.list`](#modelfaceslist), [`model.face.get`](#modelfaceget), [`model.pick`](#modelpick), [`model.edges.list`](#modeledgeslist), [`model.edge.get`](#modeledgeget), [`model.edge.pick`](#modeledgepick), [`model.vertices.list`](#modelverticeslist), [`model.vertex.pick`](#modelvertexpick)
+- **model**: [`model.import`](#modelimport), [`model.list`](#modellist), [`model.visibility.set`](#modelvisibilityset), [`model.rename`](#modelrename), [`model.remove`](#modelremove), [`model.faces.list`](#modelfaceslist), [`model.face.get`](#modelfaceget), [`model.pick`](#modelpick), [`model.edges.list`](#modeledgeslist), [`model.edge.get`](#modeledgeget), [`model.edge.pick`](#modeledgepick), [`model.vertices.list`](#modelverticeslist), [`model.vertex.pick`](#modelvertexpick)
 - **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.wcs.rotate`](#setupwcsrotate), [`setup.wcs.rename`](#setupwcsrename), [`setup.wcs.activate`](#setupwcsactivate), [`setup.wcs.remove`](#setupwcsremove), [`setup.wcs.list`](#setupwcslist), [`setup.wcs.get`](#setupwcsget), [`setup.create`](#setupcreate), [`setup.edit`](#setupedit), [`setup.activate`](#setupactivate), [`setup.remove`](#setupremove), [`setup.list`](#setuplist), [`setup.get`](#setupget), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.margins`](#setupstockmargins), [`setup.stock.fit`](#setupstockfit), [`setup.stock.get`](#setupstockget)
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
-- **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.remove`](#toolpathremove), [`toolpath.face`](#toolpathface), [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.rough`](#toolpathrough), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
+- **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.visibility.set`](#toolpathvisibilityset), [`toolpath.rename`](#toolpathrename), [`toolpath.duplicate`](#toolpathduplicate), [`toolpath.remove`](#toolpathremove), [`toolpath.face`](#toolpathface), [`toolpath.pocket`](#toolpathpocket), [`toolpath.drill`](#toolpathdrill), [`toolpath.rough`](#toolpathrough), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.cl.export`](#toolpathclexport)
 - **sim**: [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.speed`](#simspeed), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
 - **post**: [`post.processor.select`](#postprocessorselect), [`post.limits.check`](#postlimitscheck), [`post.gcode.export`](#postgcodeexport), [`post.gcode.get`](#postgcodeget)
 - **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.drill`](#toolcreatedrill), [`tool.create.spot_drill`](#toolcreatespot_drill), [`tool.create.face_mill`](#toolcreateface_mill), [`tool.create.tap`](#toolcreatetap), [`tool.create.thread_mill`](#toolcreatethread_mill), [`tool.edit`](#tooledit), [`tool.feeds`](#toolfeeds), [`tool.duplicate`](#toolduplicate), [`tool.remove`](#toolremove), [`tool.list`](#toollist), [`tool.get`](#toolget), [`tool.library.open`](#toollibraryopen), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
@@ -450,6 +466,36 @@ Open the demo project: a part with a WCS, a setup, stock, tools and toolpaths to
 Returns: {"job": name, "tab": index}
 
 <sub>ribbon: Home › Job</sub>
+
+#### `job.clipboard.copy`
+
+```python
+cc.job_clipboard_copy(id=None)
+```
+
+Copy a toolpath, model or WCS, to paste into this job or another open one.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | What to copy: a toolpath, model or WCS id (default: the selection) |
+
+Returns: {"copied": id, "kind": toolpath\|model\|wcs}
+
+<sub>shortcut `Ctrl+C`</sub>
+
+#### `job.clipboard.paste`
+
+```python
+cc.job_clipboard_paste()
+```
+
+Add a copy of what was copied to the job.
+
+
+Returns: {"pasted": new id, "kind": toolpath\|model\|wcs}
+
+<sub>shortcut `Ctrl+V`</sub>
 
 #### `job.tab.list`
 
@@ -644,6 +690,38 @@ The job's imported models.
 
 
 Returns: list of {id, name, source, format, units, triangles, vertices, faces, bounds}
+
+#### `model.visibility.set`
+
+```python
+cc.model_visibility_set(id=…, visible=None)
+```
+
+Show or hide a model in the viewport; hidden models still count for toolpaths.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Model id, e.g. model.1 |
+| `visible` | bool | no | Show it (true) or hide it (false); omit to toggle |
+
+Returns: {"id": id, "visible": bool}
+
+#### `model.rename`
+
+```python
+cc.model_rename(id=…, name=…)
+```
+
+Change a model's name.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Model id, e.g. model.1 |
+| `name` | string | yes | New name |
+
+Returns: {"id": id, "name": name}
 
 #### `model.remove`
 
@@ -1750,6 +1828,53 @@ The settings a toolpath was made with; in the app this opens it in the toolpath 
 | `id` | string | yes | Toolpath id, e.g. toolpath.1 |
 
 Returns: the settings, as toolpath.contour takes them (pass them back with `id` to regenerate)
+
+#### `toolpath.visibility.set`
+
+```python
+cc.toolpath_visibility_set(id=…, visible=None)
+```
+
+Draw a toolpath in the viewport even when it is not selected, or stop drawing it.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Toolpath id, e.g. toolpath.1 |
+| `visible` | bool | no | Show it (true) or hide it (false); omit to toggle |
+
+Returns: {"id": id, "visible": bool}
+
+#### `toolpath.rename`
+
+```python
+cc.toolpath_rename(id=…, name=…)
+```
+
+Change a toolpath's name.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Toolpath id, e.g. toolpath.1 |
+| `name` | string | yes | New name |
+
+Returns: {"id": id, "name": name}
+
+#### `toolpath.duplicate`
+
+```python
+cc.toolpath_duplicate(id=…)
+```
+
+Copy a toolpath with its settings, to change one of them.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Toolpath id, e.g. toolpath.1 |
+
+Returns: the copy, as toolpath.get returns it
 
 #### `toolpath.remove`
 

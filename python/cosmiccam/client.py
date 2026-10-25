@@ -118,9 +118,13 @@ class CosmicCAM(Commands):
             params["settle"] = False
         return self.request("ui.screenshot", params)
 
-    def click(self, x: float, y: float) -> Any:
-        """Clicks the left mouse button at window point (x, y), as a user would."""
-        return self.request("ui.click", {"x": x, "y": y})
+    def click(self, x: float, y: float, button: str = "left") -> Any:
+        """Clicks a mouse button (``"left"``, ``"right"`` or ``"middle"``) at window point (x, y),
+        as a user would."""
+        params: Dict[str, Any] = {"x": x, "y": y}
+        if button != "left":
+            params["button"] = button
+        return self.request("ui.click", params)
 
     def type_text(self, text: str, replace: bool = False) -> Any:
         """Types text into the focused field, as a user would; replace=True selects what it holds first."""

@@ -1655,3 +1655,72 @@ fn job_files_bring_their_tools() {
     assert!(third.execute("job.open", &json!({"path": file.path()})).is_ok());
     assert_eq!(third.library.active_machine().and_then(|m| m.tool(1)).map(|t| t.diameter), Some(12.0));
 }
+
+#[test]
+fn toolpaths_and_models_show_hide_rename_and_duplicate() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    let tp = s.execute("toolpath.contour", &json!({"geometry": [bottom]})).unwrap_or_default();
+    let id = tp["id"].as_str().unwrap_or_default().to_owned();
+    assert_eq!(tp["visible"], false, "only the selected toolpath is drawn by default");
+    let node = |s: &Session, id: &str| s.outline_node(id).and_then(|n| n.visible);
+    assert_eq!(node(&s, &id), Some(false));
+    assert_eq!(s.execute("toolpath.visibility.set", &json!({"id": id})).unwrap_or_default()["visible"], true);
+    assert_eq!(node(&s, &id), Some(true));
+    assert!(s.execute("toolpath.visibility.set", &json!({"id": id, "visible": false})).is_ok());
+    assert_eq!(node(&s, &id), Some(false));
+    assert!(s.execute("toolpath.rename", &json!({"id": id, "name": "Outside profile"})).is_ok());
+    assert_eq!(s.job.toolpaths[0].name, "Outside profile");
+    assert!(s.execute("toolpath.rename", &json!({"id": id, "name": "  "})).is_err());
+    let copy = s.execute("toolpath.duplicate", &json!({"id": id})).unwrap_or_default();
+    assert_eq!(copy["name"], "Outside profile (copy)");
+    assert_ne!(copy["id"], json!(id));
+    assert_eq!(s.job.toolpaths.len(), 2);
+
+    // Models hide from the view and from picking, and stay in the job.
+    assert_eq!(node(&s, "model.sample"), Some(true));
+    assert!(s.execute("model.visibility.set", &json!({"id": "model.sample", "visible": false})).is_ok());
+    assert_eq!(node(&s, "model.sample"), Some(false));
+    assert!(s.job.pick(glam::Vec3::new(0.0, 0.0, 100.0), glam::Vec3::NEG_Z).is_none());
+    assert!(s.execute("model.rename", &json!({"id": "model.sample", "name": "Bracket"})).is_ok());
+    assert_eq!(s.job.models[0].name, "Bracket");
+    assert!(s.job.is_modified());
+
+    // Visibility is saved with the job.
+    let file = TempFile::new("visible.cosmic", b"");
+    assert!(s.execute("toolpath.visibility.set", &json!({"id": id, "visible": true})).is_ok());
+    assert!(s.execute("job.save", &json!({"path": file.path()})).is_ok());
+    assert!(s.execute("job.tab.close", &json!({})).is_ok());
+    assert!(s.execute("job.open", &json!({"path": file.path()})).is_ok());
+    assert!(s.job.toolpaths.iter().any(|t| t.visible));
+    assert!(s.job.models.iter().all(|m| !m.visible));
+}
+
+#[test]
+fn copy_and_paste_within_and_between_jobs() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("job.clipboard.paste", &Value::Null).is_err(), "nothing copied yet");
+    let tp = s.execute("toolpath.contour", &json!({"geometry": [bottom]})).unwrap_or_default();
+    // Copy takes the selection (the new toolpath) when no id is given.
+    let copied = s.execute("job.clipboard.copy", &Value::Null).unwrap_or_default();
+    assert_eq!(copied["copied"], tp["id"]);
+    assert_eq!(copied["kind"], "toolpath");
+    let pasted = s.execute("job.clipboard.paste", &Value::Null).unwrap_or_default();
+    assert_eq!(pasted["kind"], "toolpath");
+    assert_eq!(s.job.toolpaths.len(), 2);
+    assert!(s.job.toolpaths[1].name.ends_with("(copy)"));
+    // Models and WCS copy too; selections that are not items do not.
+    assert!(s.execute("setup.wcs.create", &json!({"name": "Vice"})).is_ok());
+    assert!(s.execute("job.clipboard.copy", &json!({"id": "wcs.1"})).is_ok());
+    assert_eq!(s.execute("job.clipboard.paste", &Value::Null).unwrap_or_default()["pasted"], "wcs.2");
+    assert!(s.execute("job.clipboard.copy", &json!({"id": "setups"})).is_err());
+    // Into another tab: the model arrives as a new model there.
+    assert!(s.execute("job.clipboard.copy", &json!({"id": "model.sample"})).is_ok());
+    assert!(s.execute("job.new", &Value::Null).is_ok());
+    assert!(s.job.models.is_empty());
+    let r = s.execute("job.clipboard.paste", &Value::Null).unwrap_or_default();
+    assert_eq!(r["pasted"], "model.1");
+    assert_eq!(s.job.models.len(), 1);
+    assert!(s.job.is_modified());
+}

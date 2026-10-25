@@ -9,14 +9,54 @@ use serde_json::{Value, json};
 use crate::Request;
 use crate::theme::Tokens;
 
-pub fn explorer(ui: &mut Ui, session: &Session, requests: &mut Vec<Request>) {
+pub fn explorer(ui: &mut Ui, session: &Session, tokens: &Tokens, requests: &mut Vec<Request>) {
     let selection = session.view.selection.as_deref();
     for node in session.outline() {
-        outline_node(ui, &node, selection, requests);
+        outline_node(ui, &node, session, tokens, selection, requests);
     }
 }
 
-fn outline_node(ui: &mut Ui, node: &OutlineNode, selection: Option<&str>, requests: &mut Vec<Request>) {
+/// An eye button: open when the item is drawn, closed (struck through) when hidden.
+fn eye(ui: &mut Ui, visible: bool, tokens: &Tokens) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 16.0), egui::Sense::click());
+    let painter = ui.painter_at(rect);
+    let c = rect.center();
+    let colour = if response.hovered() {
+        tokens.accent
+    } else if visible {
+        tokens.text
+    } else {
+        tokens.text_muted.gamma_multiply(0.7)
+    };
+    let stroke = egui::Stroke::new(1.3, colour);
+    // The eye: two arcs meeting at the corners, and the pupil.
+    let arc = |up: f32| -> Vec<egui::Pos2> {
+        (0..=12)
+            .map(|k| {
+                let t = k as f32 / 12.0;
+                let x = -6.5 + 13.0 * t;
+                c + egui::vec2(x, up * 4.2 * (1.0 - (2.0 * t - 1.0).powi(2)))
+            })
+            .collect()
+    };
+    painter.add(egui::Shape::line(arc(-1.0), stroke));
+    painter.add(egui::Shape::line(arc(1.0), stroke));
+    if visible {
+        painter.circle_filled(c, 2.2, colour);
+    } else {
+        painter.line_segment([c + egui::vec2(-6.0, 5.0), c + egui::vec2(6.0, -5.0)], stroke);
+    }
+    response.on_hover_text(if visible { "Shown: click to hide" } else { "Hidden: click to show" })
+}
+
+fn outline_node(
+    ui: &mut Ui,
+    node: &OutlineNode,
+    session: &Session,
+    tokens: &Tokens,
+    selection: Option<&str>,
+    requests: &mut Vec<Request>,
+) {
     let selected = selection == Some(node.id.as_str());
     let select = |requests: &mut Vec<Request>| {
         requests.push(("selection.set".into(), json!({ "id": node.id })));
@@ -33,14 +73,26 @@ fn outline_node(ui: &mut Ui, node: &OutlineNode, selection: Option<&str>, reques
             requests.push(("setup.edit".into(), json!({ "id": node.id })));
         }
     };
+    let toggle = |requests: &mut Vec<Request>| {
+        let command = if node.id.starts_with("model.") { "model.visibility.set" } else { "toolpath.visibility.set" };
+        requests.push((command.into(), json!({ "id": node.id })));
+    };
     if node.children.is_empty() {
         ui.horizontal(|ui| {
-            ui.add_space(18.0);
+            match node.visible {
+                Some(visible) => {
+                    if eye(ui, visible, tokens).clicked() {
+                        toggle(requests);
+                    }
+                }
+                None => ui.add_space(18.0),
+            }
             let row = ui.selectable_label(selected, &node.label);
             if row.clicked() {
                 select(requests);
             }
             open(&row, requests);
+            context_menu(&row, node, session, tokens, requests);
         });
         return;
     }
@@ -52,12 +104,175 @@ fn outline_node(ui: &mut Ui, node: &OutlineNode, selection: Option<&str>, reques
                 select(requests);
             }
             open(&row, requests);
+            context_menu(&row, node, session, tokens, requests);
         })
         .body(|ui| {
             for child in &node.children {
-                outline_node(ui, child, selection, requests);
+                outline_node(ui, child, session, tokens, selection, requests);
             }
         });
+}
+
+/// The right-click menu of an explorer row: what can be done with that item.
+fn context_menu(
+    row: &egui::Response,
+    node: &OutlineNode,
+    session: &Session,
+    tokens: &Tokens,
+    requests: &mut Vec<Request>,
+) {
+    let id = node.id.as_str();
+    let name = node.label.trim_end_matches(" (active)").to_owned();
+    let clip = session.clipboard.as_ref().map(CosmicCAM_engine::session::Clip::kind);
+    crate::ui_kit::Menu::below(row).context(tokens, |ui| {
+        let run = |command: &str, params: Value| vec![(command.to_owned(), params)];
+        let rename = |command: &str| run("ui.rename", json!({ "command": command, "id": id, "name": name }));
+        let delete = |command: &str| run("ui.delete", json!({ "command": command, "id": id, "label": name }));
+        let paste = || run("job.clipboard.paste", json!({}));
+        let show_label = |visible: Option<bool>| if visible == Some(false) { "Show" } else { "Hide" };
+        match id {
+            "job" => {
+                item(ui, requests, "Save", run("job.save", Value::Null));
+                item(ui, requests, "Save as…", run("job.save.as", Value::Null));
+                if clip.is_some() {
+                    item(ui, requests, "Paste", paste());
+                }
+            }
+            "models" => {
+                item(ui, requests, "Import model…", run("model.import", Value::Null));
+                if clip == Some("model") {
+                    item(ui, requests, "Paste model", paste());
+                }
+            }
+            "setups" => {
+                item(ui, requests, "Create setup…", run("setup.create", Value::Null));
+                item(ui, requests, "Create WCS…", run("setup.wcs.create", Value::Null));
+                if clip == Some("wcs") {
+                    item(ui, requests, "Paste WCS", paste());
+                }
+            }
+            "tools" => {
+                item(ui, requests, "Tool library…", run("tool.library.open", Value::Null));
+                item(ui, requests, "New flat end mill…", run("tool.create.flat", Value::Null));
+            }
+            "toolpaths" => {
+                let all = |visible: bool| -> Vec<Request> {
+                    session
+                        .job
+                        .toolpaths
+                        .iter()
+                        .map(|t| ("toolpath.visibility.set".to_owned(), json!({ "id": t.id, "visible": visible })))
+                        .collect()
+                };
+                item(ui, requests, "Show all", all(true));
+                item(ui, requests, "Hide all", all(false));
+                if clip == Some("toolpath") {
+                    item(ui, requests, "Paste toolpath", paste());
+                }
+            }
+            "stock" => {
+                item(ui, requests, "Edit stock…", run("setup.stock.box", Value::Null));
+                item(
+                    ui,
+                    requests,
+                    if session.prefs.display.stock { "Hide stock" } else { "Show stock" },
+                    run("view.display.set", json!({ "stock": !session.prefs.display.stock })),
+                );
+            }
+            t if t.starts_with("toolpath.") => {
+                item(ui, requests, "Edit…", run("toolpath.edit", json!({ "id": id })));
+                item(ui, requests, show_label(node.visible), run("toolpath.visibility.set", json!({ "id": id })));
+                item(ui, requests, "Rename…", rename("toolpath.rename"));
+                ui.separator();
+                item(ui, requests, "Copy", run("job.clipboard.copy", json!({ "id": id })));
+                if clip.is_some() {
+                    item(ui, requests, "Paste", paste());
+                }
+                item(ui, requests, "Duplicate", run("toolpath.duplicate", json!({ "id": id })));
+                ui.separator();
+                item(ui, requests, "Delete", delete("toolpath.remove"));
+            }
+            m if m.starts_with("model.") => {
+                item(ui, requests, show_label(node.visible), run("model.visibility.set", json!({ "id": id })));
+                item(ui, requests, "Rename…", rename("model.rename"));
+                ui.separator();
+                item(ui, requests, "Copy", run("job.clipboard.copy", json!({ "id": id })));
+                if clip.is_some() {
+                    item(ui, requests, "Paste", paste());
+                }
+                ui.separator();
+                item(ui, requests, "Delete", delete("model.remove"));
+            }
+            st if st.starts_with("setup.") && st.ends_with("/stock") => {
+                let setup = st.trim_end_matches("/stock");
+                let edit = vec![
+                    ("setup.activate".to_owned(), json!({ "id": setup })),
+                    ("setup.stock.box".to_owned(), Value::Null),
+                ];
+                item(ui, requests, "Edit stock…", edit);
+                item(
+                    ui,
+                    requests,
+                    if session.prefs.display.stock { "Hide stock" } else { "Show stock" },
+                    run("view.display.set", json!({ "stock": !session.prefs.display.stock })),
+                );
+            }
+            st if st.starts_with("setup.") => {
+                let edit = vec![
+                    ("setup.activate".to_owned(), json!({ "id": id })),
+                    ("setup.edit".to_owned(), json!({ "id": id })),
+                ];
+                item(ui, requests, "Edit…", edit);
+                item(ui, requests, "Activate", run("setup.activate", json!({ "id": id })));
+                item(ui, requests, "Rename…", rename("setup.edit"));
+                ui.separator();
+                item(ui, requests, "Delete", delete("setup.remove"));
+            }
+            w if w.starts_with("wcs.") => {
+                item(ui, requests, "Activate", run("setup.wcs.activate", json!({ "id": id })));
+                let then = vec![
+                    ("setup.wcs.activate".to_owned(), json!({ "id": id })),
+                    ("setup.wcs.align".to_owned(), Value::Null),
+                ];
+                item(ui, requests, "Align…", then);
+                let then = vec![
+                    ("setup.wcs.activate".to_owned(), json!({ "id": id })),
+                    ("setup.wcs.offset".to_owned(), Value::Null),
+                ];
+                item(ui, requests, "Offset…", then);
+                let then = vec![
+                    ("setup.wcs.activate".to_owned(), json!({ "id": id })),
+                    ("setup.wcs.rotate".to_owned(), Value::Null),
+                ];
+                item(ui, requests, "Rotate…", then);
+                item(ui, requests, "Rename…", rename("setup.wcs.rename"));
+                item(
+                    ui,
+                    requests,
+                    if session.prefs.display.wcs { "Hide WCS markers" } else { "Show WCS markers" },
+                    run("view.display.set", json!({ "wcs": !session.prefs.display.wcs })),
+                );
+                ui.separator();
+                item(ui, requests, "Copy", run("job.clipboard.copy", json!({ "id": id })));
+                if clip.is_some() {
+                    item(ui, requests, "Paste", paste());
+                }
+                ui.separator();
+                item(ui, requests, "Delete", delete("setup.wcs.remove"));
+            }
+            _ => {
+                ui.label(RichText::new("Nothing to do here").color(tokens.text_muted));
+            }
+        }
+    });
+}
+
+/// One menu item: runs `run` when clicked and closes the menu.
+fn item(ui: &mut Ui, requests: &mut Vec<Request>, label: &str, run: Vec<Request>) {
+    if ui.button(label).clicked() {
+        requests.extend(run);
+        ui.close();
+    }
 }
 
 pub fn inspector(ui: &mut Ui, session: &Session, tokens: &Tokens) {

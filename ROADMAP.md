@@ -33,10 +33,6 @@
   `hostile_params_never_panic` covers every command.
 - `cargo xtask ci`: fmt, clippy `-D warnings`, tests, assets, layers, ui-containers, wasm.
 
-## Version 0.2.0 (2026-10-25)
-
-Toolpath strategies, the demo project and tools in job files (below).
-
 ## Demo project (2026-10-25)
 
 - `samples/demo.cosmic` (from `samples/demo-part.obj`) is built in and opens at start-up while
@@ -66,10 +62,8 @@ CAM practice; no product's behaviour, text or names copied):
   height, drop cutter). Still to come: adaptive (constant engagement) clearing, scallop, pencil,
   rest machining, chamfer, thread milling, ball and bull-nose tools for the 3D strategies.
 
-## Version 0.1.0 (2026-10-25)
+## Workflow recording (2026-10-25)
 
-- Versioning begins: Semantic Versioning, 0.x until machine-ready G-code (docs/versioning.md);
-  CHANGELOG.md; `CosmicCAM --version`; the version in the status bar.
 - README shows a recording of the whole workflow (new job → import → WCS → setup and stock →
   2D contour). The control channel gained `ui.type` for scripted typing.
 

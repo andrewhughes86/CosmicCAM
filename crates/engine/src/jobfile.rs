@@ -75,6 +75,7 @@ pub fn to_string(job: &JobState, camera: &OrbitCamera, library: &MachineLibrary)
                 "source": m.source,
                 "format": m.format.map(ModelFormat::id),
                 "units": m.units.id(),
+                "visible": m.visible,
                 "positions": base64::encode(&positions),
                 "triangles": base64::encode(&triangles),
             })
@@ -102,6 +103,7 @@ pub fn to_string(job: &JobState, camera: &OrbitCamera, library: &MachineLibrary)
                 "params": t.params,
                 "start": t.start.to_array(),
                 "warnings": t.warnings,
+                "visible": t.visible,
                 "moves": base64::encode(&moves),
                 "drill": t.drill.as_ref().map(|d| json!({
                     "cycle": d.cycle,
@@ -241,6 +243,7 @@ fn model(v: &Value) -> EngineResult<Model> {
         mesh: Arc::new(mesh),
         faces,
         edges,
+        visible: v.get("visible").and_then(Value::as_bool).unwrap_or(true),
     })
 }
 
@@ -276,6 +279,7 @@ fn toolpath(v: &Value) -> EngineResult<Toolpath> {
         start: vec3(v, "start")?,
         moves: Arc::new(moves),
         warnings: list(v, "warnings", 256)?.iter().filter_map(|w| w.as_str().map(str::to_owned)).collect(),
+        visible: v.get("visible").and_then(Value::as_bool).unwrap_or(false),
         drill: match v.get("drill") {
             None | Some(Value::Null) => None,
             Some(d) => Some(drill_cycle(d)?),

@@ -84,6 +84,8 @@ pub struct Toolpath {
     pub warnings: Vec<String>,
     /// A drilling toolpath's cycle, for the G-code's canned cycles.
     pub drill: Option<DrillCycle>,
+    /// Drawn in the viewport even when it is not the selected toolpath.
+    pub visible: bool,
 }
 
 /// A drilling cycle and its holes, in the toolpath's WCS (millimetres).
@@ -145,6 +147,7 @@ impl Toolpath {
             "time": time,
             "bounds": crate::session::bounds_json(&self.bounds()),
             "warnings": self.warnings,
+            "visible": self.visible,
             "params": self.params,
         })
     }

@@ -52,6 +52,63 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         run: |s, _| Ok(json!(s.job.models.iter().map(Model::to_json).collect::<Vec<_>>())),
     },
     CommandSpec {
+        id: "model.visibility.set",
+        label: "Show or hide model",
+        tooltip: "Show or hide a model in the viewport; hidden models still count for toolpaths",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[
+            Param::required("id", ParamKind::Str, "Model id, e.g. model.1"),
+            Param::optional("visible", ParamKind::Bool, "Show it (true) or hide it (false); omit to toggle"),
+        ],
+        returns: "{\"id\": id, \"visible\": bool}",
+        enabled: always,
+        run: |s, p| {
+            let id = params::req_str(p, "id")?.to_owned();
+            let want = params::opt_bool(p, "visible")?;
+            let m = s
+                .job
+                .models
+                .iter_mut()
+                .find(|m| m.id == id)
+                .ok_or_else(|| EngineError::InvalidParams(format!("no model `{id}`")))?;
+            m.visible = want.unwrap_or(!m.visible);
+            let visible = m.visible;
+            s.job.geometry_changed();
+            Ok(json!({ "id": id, "visible": visible }))
+        },
+    },
+    CommandSpec {
+        id: "model.rename",
+        label: "Rename model",
+        tooltip: "Change a model's name",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[
+            Param::required("id", ParamKind::Str, "Model id, e.g. model.1"),
+            Param::required("name", ParamKind::Str, "New name"),
+        ],
+        returns: "{\"id\": id, \"name\": name}",
+        enabled: always,
+        run: |s, p| {
+            let id = params::req_str(p, "id")?.to_owned();
+            let name: String = params::req_str(p, "name")?.trim().chars().take(MAX_NAME_CHARS).collect();
+            if name.is_empty() {
+                return Err(EngineError::InvalidParams("give the model a name".into()));
+            }
+            let m = s
+                .job
+                .models
+                .iter_mut()
+                .find(|m| m.id == id)
+                .ok_or_else(|| EngineError::InvalidParams(format!("no model `{id}`")))?;
+            m.name = name.clone();
+            Ok(json!({ "id": id, "name": name }))
+        },
+    },
+    CommandSpec {
         id: "model.remove",
         label: "Remove model",
         tooltip: "Remove an imported model from the job",
@@ -310,6 +367,7 @@ fn import(s: &mut Session, p: &Value) -> EngineResult<Value> {
         mesh: Arc::new(mesh),
         faces,
         edges,
+        visible: true,
     };
     s.job.next_model = s.job.next_model.saturating_add(1);
     // The placeholder part stands in for a real model; the first import replaces it.

@@ -208,5 +208,6 @@ pub fn drill(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
         moves: Arc::new(b.moves),
         warnings,
         drill: Some(DrillCycle { cycle, holes: order, retract, clearance, peck, dwell, feed, pitch }),
+        visible: false,
     })
 }

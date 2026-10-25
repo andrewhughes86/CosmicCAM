@@ -23,7 +23,6 @@ const USAGE: &str =
   --run <line>          run a command after start-up, e.g. --run 'view.theme.set {\"theme\":\"light\"}'
   --tab <name>          open on this ribbon tab (Home, Setup, Tooling, ...)
   --screenshot <file>   save a PNG of the window once the steps have run, then quit
-  --version             print the version and quit
   --control <port>      open the control channel for the Python API on 127.0.0.1:<port> (0 = any free port);
                         the token is read from CosmicCAM_CONTROL_TOKEN or written to
                         <data dir>/CosmicCAM/control/<port>.token";
@@ -60,10 +59,6 @@ fn main() -> ExitCode {
                 Some(path) => screenshot = Some(PathBuf::from(path)),
                 None => return usage_error("--screenshot needs a file path"),
             },
-            "-V" | "--version" => {
-                println!("CosmicCAM {}", env!("CARGO_PKG_VERSION"));
-                return ExitCode::SUCCESS;
-            }
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return ExitCode::SUCCESS;

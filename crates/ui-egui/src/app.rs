@@ -43,6 +43,8 @@ struct Capture {
 /// (move, press, release) so hover and click logic see it as a real one.
 struct SyntheticClick {
     at: egui::Pos2,
+    /// Primary, or secondary for a right-click.
+    button: egui::PointerButton,
     step: u8,
     reply: Option<Incoming>,
 }
@@ -85,6 +87,10 @@ pub struct CosmicApp {
     notice: Option<String>,
     /// A document tab waiting for the user to confirm closing it without saving.
     confirm_close: Option<usize>,
+    /// An item being renamed from the explorer: (command, id, name typed so far).
+    rename: Option<(String, String, String)>,
+    /// An item waiting for the user to confirm deleting it: (command, id, label).
+    confirm_delete: Option<(String, String, String)>,
     shortcuts: Vec<(KeyboardShortcut, &'static str)>,
     automation: Automation,
     control: Option<ControlServer>,
@@ -182,6 +188,8 @@ impl CosmicApp {
             status: startup_status,
             notice: None,
             confirm_close: None,
+            rename: None,
+            confirm_delete: None,
             shortcuts: cmd::all().filter_map(|c| Some((parse_shortcut(c.shortcut?)?, c.id))).collect(),
             automation,
             control,
@@ -233,6 +241,17 @@ impl CosmicApp {
         // The settings button opens the settings window; scripts get the settings back.
         if params.is_null() && id == "settings.open" {
             self.settings_open = true;
+            return;
+        }
+        // The explorer's Rename… and Delete open a small dialog first.
+        if id == "ui.rename" || id == "ui.delete" {
+            let field = |k: &str| params.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
+            let entry = (field("command"), field("id"), field(if id == "ui.rename" { "name" } else { "label" }));
+            if id == "ui.rename" {
+                self.rename = Some(entry);
+            } else {
+                self.confirm_delete = Some(entry);
+            }
             return;
         }
         // Closing a document with unsaved changes asks first.
@@ -322,7 +341,12 @@ impl CosmicApp {
                 match (coord("x"), coord("y")) {
                     (Some(x), Some(y)) if self.clicks.len() < 16 => {
                         let at = egui::pos2(x as f32, y as f32);
-                        self.clicks.push(SyntheticClick { at, step: 0, reply: Some(incoming) });
+                        let button = match p.get("button").and_then(Value::as_str) {
+                            Some("right") => egui::PointerButton::Secondary,
+                            Some("middle") => egui::PointerButton::Middle,
+                            _ => egui::PointerButton::Primary,
+                        };
+                        self.clicks.push(SyntheticClick { at, button, step: 0, reply: Some(incoming) });
                         ctx.request_repaint();
                     }
                     (Some(_), Some(_)) => incoming.err("busy", "too many clicks queued"),
@@ -496,12 +520,8 @@ impl eframe::App for CosmicApp {
             }
             return;
         };
-        let button = |pressed| Event::PointerButton {
-            pos: click.at,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: Modifiers::NONE,
-        };
+        let button =
+            |pressed| Event::PointerButton { pos: click.at, button: click.button, pressed, modifiers: Modifiers::NONE };
         match click.step {
             0 => raw_input.events.push(Event::PointerMoved(click.at)),
             1 => raw_input.events.push(button(true)),
@@ -579,13 +599,12 @@ impl eframe::App for CosmicApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
                         RichText::new(format!(
-                            "{} theme  ·  {}  ·  Z up  ·  {fps:.0} fps  ·  v{}",
+                            "{} theme  ·  {}  ·  Z up  ·  {fps:.0} fps",
                             match self.session.prefs.theme {
                                 Theme::Dark => "Dark",
                                 Theme::Light => "Light",
                             },
-                            self.session.prefs.units.length(),
-                            env!("CARGO_PKG_VERSION")
+                            self.session.prefs.units.length()
                         ))
                         .color(tokens.text_muted),
                     );
@@ -702,6 +721,54 @@ impl eframe::App for CosmicApp {
                 });
             });
             self.settings_open &= open;
+        }
+        if let Some((command, target, mut text)) = self.rename.take() {
+            let mut open = true;
+            let mut done: Option<bool> = None;
+            crate::ui_kit::Window::dialog("Rename").show(&ctx, tokens, &mut open, |ui| {
+                ui.set_min_width(280.0);
+                let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(260.0));
+                if !response.has_focus() && !response.lost_focus() {
+                    response.request_focus();
+                }
+                let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Rename").clicked() || enter {
+                        done = Some(true);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        done = Some(false);
+                    }
+                });
+            });
+            match done {
+                Some(true) if !text.trim().is_empty() => {
+                    requests.push((command, json!({ "id": target, "name": text.trim() })));
+                }
+                Some(_) => {}
+                None if open => self.rename = Some((command, target, text)),
+                None => {}
+            }
+        }
+        if let Some((command, target, label)) = self.confirm_delete.clone() {
+            let mut open = true;
+            crate::ui_kit::Window::dialog("Delete").show(&ctx, tokens, &mut open, |ui| {
+                ui.label(format!("Delete {label}?"));
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Delete").clicked() {
+                        requests.push((command.clone(), json!({ "id": target })));
+                        self.confirm_delete = None;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.confirm_delete = None;
+                    }
+                });
+            });
+            if !open {
+                self.confirm_delete = None;
+            }
         }
         if let Some(index) = self.confirm_close {
             let mut open = true;

@@ -78,6 +78,30 @@ class Commands:
         """
         return self.execute("job.demo.open")
 
+    def job_clipboard_copy(self, *, id: Optional[str] = None) -> Any:
+        """Copy a toolpath, model or WCS, to paste into this job or another open one.
+
+        Args:
+            id: What to copy: a toolpath, model or WCS id (default: the selection).
+
+        Returns:
+            {"copied": id, "kind": toolpath|model|wcs}
+
+        Command: ``job.clipboard.copy``
+        """
+        params = {"id": id}
+        return self.execute("job.clipboard.copy", {k: v for k, v in params.items() if v is not None})
+
+    def job_clipboard_paste(self) -> Any:
+        """Add a copy of what was copied to the job.
+
+        Returns:
+            {"pasted": new id, "kind": toolpath|model|wcs}
+
+        Command: ``job.clipboard.paste``
+        """
+        return self.execute("job.clipboard.paste")
+
     def job_tab_list(self) -> Any:
         """The documents open in tabs.
 
@@ -239,6 +263,36 @@ class Commands:
         Command: ``model.list``
         """
         return self.execute("model.list")
+
+    def model_visibility_set(self, *, id: str, visible: Optional[bool] = None) -> Any:
+        """Show or hide a model in the viewport; hidden models still count for toolpaths.
+
+        Args:
+            id: Model id, e.g. model.1.
+            visible: Show it (true) or hide it (false); omit to toggle.
+
+        Returns:
+            {"id": id, "visible": bool}
+
+        Command: ``model.visibility.set``
+        """
+        params = {"id": id, "visible": visible}
+        return self.execute("model.visibility.set", {k: v for k, v in params.items() if v is not None})
+
+    def model_rename(self, *, id: str, name: str) -> Any:
+        """Change a model's name.
+
+        Args:
+            id: Model id, e.g. model.1.
+            name: New name.
+
+        Returns:
+            {"id": id, "name": name}
+
+        Command: ``model.rename``
+        """
+        params = {"id": id, "name": name}
+        return self.execute("model.rename", {k: v for k, v in params.items() if v is not None})
 
     def model_remove(self, *, id: str) -> Any:
         """Remove an imported model from the job.
@@ -1054,6 +1108,50 @@ class Commands:
         """
         params = {"id": id}
         return self.execute("toolpath.edit", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_visibility_set(self, *, id: str, visible: Optional[bool] = None) -> Any:
+        """Draw a toolpath in the viewport even when it is not selected, or stop drawing it.
+
+        Args:
+            id: Toolpath id, e.g. toolpath.1.
+            visible: Show it (true) or hide it (false); omit to toggle.
+
+        Returns:
+            {"id": id, "visible": bool}
+
+        Command: ``toolpath.visibility.set``
+        """
+        params = {"id": id, "visible": visible}
+        return self.execute("toolpath.visibility.set", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_rename(self, *, id: str, name: str) -> Any:
+        """Change a toolpath's name.
+
+        Args:
+            id: Toolpath id, e.g. toolpath.1.
+            name: New name.
+
+        Returns:
+            {"id": id, "name": name}
+
+        Command: ``toolpath.rename``
+        """
+        params = {"id": id, "name": name}
+        return self.execute("toolpath.rename", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_duplicate(self, *, id: str) -> Any:
+        """Copy a toolpath with its settings, to change one of them.
+
+        Args:
+            id: Toolpath id, e.g. toolpath.1.
+
+        Returns:
+            the copy, as toolpath.get returns it
+
+        Command: ``toolpath.duplicate``
+        """
+        params = {"id": id}
+        return self.execute("toolpath.duplicate", {k: v for k, v in params.items() if v is not None})
 
     def toolpath_remove(self, *, id: str) -> Any:
         """Delete a toolpath from the job.

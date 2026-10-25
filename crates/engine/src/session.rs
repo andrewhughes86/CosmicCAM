@@ -246,6 +246,8 @@ pub struct Model {
     pub faces: Arc<FaceMap>,
     /// The straight and circular edges recognised on the mesh.
     pub edges: Arc<EdgeMap>,
+    /// Drawn in the viewport.
+    pub visible: bool,
 }
 
 impl Model {
@@ -421,6 +423,7 @@ impl Model {
             mesh: Arc::new(mesh),
             faces,
             edges,
+            visible: true,
         }
     }
 }
@@ -605,7 +608,7 @@ impl JobState {
     /// The nearest model face a ray hits.
     pub fn pick(&self, origin: Vec3, direction: Vec3) -> Option<Pick> {
         let mut best: Option<Pick> = None;
-        for (mi, m) in self.models.iter().enumerate() {
+        for (mi, m) in self.models.iter().enumerate().filter(|(_, m)| m.visible) {
             if let Some((distance, triangle)) = m.mesh.raycast(origin, direction)
                 && best.is_none_or(|b| distance < b.distance)
             {
@@ -626,7 +629,7 @@ impl JobState {
     pub fn pick_edge(&self, origin: Vec3, direction: Vec3, radius: f32) -> Option<(usize, usize)> {
         let limit = self.pick(origin, direction).map_or(f32::INFINITY, |hit| hit.distance + radius * 2.0);
         let mut best: Option<(usize, usize, f32)> = None;
-        for (mi, m) in self.models.iter().enumerate() {
+        for (mi, m) in self.models.iter().enumerate().filter(|(_, m)| m.visible) {
             if let Some((edge, along)) = m.edges.nearest_to_ray(origin, direction, radius, limit)
                 && best.is_none_or(|(_, _, d)| along < d)
             {
@@ -641,7 +644,7 @@ impl JobState {
     pub fn pick_vertex(&self, origin: Vec3, direction: Vec3, radius: f32) -> Option<(usize, usize)> {
         let limit = self.pick(origin, direction).map_or(f32::INFINITY, |hit| hit.distance + radius * 2.0);
         let mut best: Option<(usize, usize, f32)> = None;
-        for (mi, m) in self.models.iter().enumerate() {
+        for (mi, m) in self.models.iter().enumerate().filter(|(_, m)| m.visible) {
             if let Some((v, along)) = m.edges.nearest_vertex_to_ray(origin, direction, radius, limit)
                 && best.is_none_or(|(_, _, d)| along < d)
             {
@@ -725,6 +728,8 @@ pub struct OutlineNode {
     pub label: String,
     pub children: Vec<OutlineNode>,
     pub properties: Vec<(String, String)>,
+    /// Whether it is drawn in the viewport, for items that can be shown and hidden.
+    pub visible: Option<bool>,
 }
 
 impl OutlineNode {
@@ -732,6 +737,7 @@ impl OutlineNode {
         json!({
             "id": self.id,
             "label": self.label,
+            "visible": self.visible,
             "properties": self.properties.iter().map(|(k, v)| json!({ "name": k, "value": v })).collect::<Vec<_>>(),
             "children": self.children.iter().map(OutlineNode::to_json).collect::<Vec<_>>(),
         })
@@ -769,11 +775,32 @@ pub struct Session {
     pub view: ViewState,
     pub job: JobState,
     pub ui: UiState,
+    /// What Copy put aside, for Paste into this or another open job.
+    pub clipboard: Option<Clip>,
     /// Open documents (tabs). The active one lives in `job` and `view`; its slot is `None`.
     tabs: Vec<Option<ParkedDoc>>,
     active_tab: usize,
     log: Vec<LogEntry>,
     next_seq: u64,
+}
+
+/// A copied item.
+#[derive(Clone, Debug)]
+pub enum Clip {
+    Toolpath(Box<crate::toolpath::Toolpath>),
+    Model(Box<Model>),
+    Wcs(Wcs),
+}
+
+impl Clip {
+    /// "toolpath", "model" or "wcs".
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Toolpath(_) => "toolpath",
+            Self::Model(_) => "model",
+            Self::Wcs(_) => "wcs",
+        }
+    }
 }
 
 /// Most documents open at once.
@@ -1122,6 +1149,7 @@ impl Session {
     /// Job outline for the explorer. Later phases fill in models, setups, tools and toolpaths.
     pub fn outline(&self) -> Vec<OutlineNode> {
         let leaf = |id: &str, label: &str, properties: Vec<(String, String)>| OutlineNode {
+            visible: None,
             id: id.into(),
             label: label.into(),
             children: Vec::new(),
@@ -1131,7 +1159,7 @@ impl Session {
         let u = self.prefs.units;
         let extents = |b: Aabb| u.fmt_size(b.size().to_array());
         for m in &self.job.models {
-            models.push(leaf(
+            let mut node = leaf(
                 &m.id,
                 &m.name,
                 vec![
@@ -1144,15 +1172,19 @@ impl Session {
                     ("Edges".into(), m.edges.edges.len().to_string()),
                     ("Extents".into(), extents(m.mesh.bounds())),
                 ],
-            ));
+            );
+            node.visible = Some(m.visible);
+            models.push(node);
         }
         let group = |id: &str, label: &str, children: Vec<OutlineNode>| OutlineNode {
+            visible: None,
             id: id.into(),
             label: label.into(),
             properties: vec![("Items".into(), children.len().to_string())],
             children,
         };
         vec![OutlineNode {
+            visible: None,
             id: "job".into(),
             label: format!("Job: {}", self.job.name),
             properties: vec![("Name".into(), self.job.name.clone()), ("Units".into(), u.label().into())],
@@ -1183,7 +1215,13 @@ impl Session {
                     ("Estimated time".into(), format!("{}:{:02}", (time / 60.0).floor(), (time % 60.0).round() as u32)),
                 ];
                 properties.extend(t.warnings.iter().map(|w| ("Warning".into(), w.clone())));
-                OutlineNode { id: t.id.clone(), label: t.name.clone(), children: Vec::new(), properties }
+                OutlineNode {
+                    visible: Some(t.visible),
+                    id: t.id.clone(),
+                    label: t.name.clone(),
+                    children: Vec::new(),
+                    properties,
+                }
             })
             .collect()
     }
@@ -1194,6 +1232,7 @@ impl Session {
         let stock = self.job.stock.map(|b| {
             let size = b.size();
             OutlineNode {
+                visible: None,
                 id: STOCK_ID.into(),
                 label: "Stock".into(),
                 children: Vec::new(),
@@ -1221,6 +1260,7 @@ impl Session {
             .as_deref()
             .map_or_else(|| "Origin".to_owned(), |id| self.job.wcs_by_id(id).map_or(id.to_owned(), |w| w.name.clone()));
         let stock = st.stock.map(|b| OutlineNode {
+            visible: None,
             id: format!("{}/stock", st.id),
             label: "Stock".into(),
             children: Vec::new(),
@@ -1232,6 +1272,7 @@ impl Session {
             ],
         });
         OutlineNode {
+            visible: None,
             id: st.id.clone(),
             label: if active { format!("{} (active)", st.name) } else { st.name.clone() },
             children: stock.into_iter().collect(),
@@ -1254,6 +1295,7 @@ impl Session {
             .map(|w| {
                 let active = self.job.active_wcs.as_deref() == Some(&w.id);
                 OutlineNode {
+                    visible: None,
                     id: w.id.clone(),
                     label: if active { format!("{} (active)", w.name) } else { w.name.clone() },
                     children: Vec::new(),
@@ -1333,7 +1375,7 @@ impl Session {
                 )
             }
         };
-        Some(OutlineNode { id: id.to_owned(), label, children: Vec::new(), properties })
+        Some(OutlineNode { visible: None, id: id.to_owned(), label, children: Vec::new(), properties })
     }
 
     /// The machine and tool a `<machine id>/tool.<n>` reference names.
@@ -1351,6 +1393,7 @@ impl Session {
         let mm = |v: f64| u.fmt_len(v);
         let not_set = |v: f64, shown: String| if v > 0.0 { shown } else { "not set".into() };
         Some(OutlineNode {
+            visible: None,
             id: id.to_owned(),
             label: format!("T{} {}", t.number, t.name),
             children: Vec::new(),

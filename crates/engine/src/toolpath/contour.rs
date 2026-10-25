@@ -897,6 +897,7 @@ pub fn generate(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
         moves: Arc::new(b.moves),
         warnings,
         drill: None,
+        visible: false,
     })
 }
 

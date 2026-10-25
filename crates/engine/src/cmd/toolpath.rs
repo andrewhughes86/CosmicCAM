@@ -246,6 +246,96 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         run: |s, p| Ok(find(s, params::req_str(p, "id")?)?.params.clone()),
     },
     CommandSpec {
+        id: "toolpath.visibility.set",
+        label: "Show or hide toolpath",
+        tooltip: "Draw a toolpath in the viewport even when it is not selected, or stop drawing it",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[
+            Param::required("id", ParamKind::Str, "Toolpath id, e.g. toolpath.1"),
+            Param::optional("visible", ParamKind::Bool, "Show it (true) or hide it (false); omit to toggle"),
+        ],
+        returns: "{\"id\": id, \"visible\": bool}",
+        enabled: always,
+        run: |s, p| {
+            let id = params::req_str(p, "id")?.to_owned();
+            let want = params::opt_bool(p, "visible")?;
+            let tp = s
+                .job
+                .toolpaths
+                .iter_mut()
+                .find(|t| t.id == id)
+                .ok_or_else(|| EngineError::InvalidParams(format!("no toolpath `{id}`")))?;
+            tp.visible = want.unwrap_or(!tp.visible);
+            let visible = tp.visible;
+            s.job.setup_changed();
+            Ok(json!({ "id": id, "visible": visible }))
+        },
+    },
+    CommandSpec {
+        id: "toolpath.rename",
+        label: "Rename toolpath",
+        tooltip: "Change a toolpath's name",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[
+            Param::required("id", ParamKind::Str, "Toolpath id, e.g. toolpath.1"),
+            Param::required("name", ParamKind::Str, "New name"),
+        ],
+        returns: "{\"id\": id, \"name\": name}",
+        enabled: always,
+        run: |s, p| {
+            let id = params::req_str(p, "id")?.to_owned();
+            let name = crate::library::clip(params::req_str(p, "name")?);
+            if name.is_empty() {
+                return Err(EngineError::InvalidParams("give the toolpath a name".into()));
+            }
+            let tp = s
+                .job
+                .toolpaths
+                .iter_mut()
+                .find(|t| t.id == id)
+                .ok_or_else(|| EngineError::InvalidParams(format!("no toolpath `{id}`")))?;
+            tp.name = name.clone();
+            if let Some(obj) = tp.params.as_object_mut() {
+                obj.insert("name".into(), json!(name));
+            }
+            s.job.setup_changed();
+            Ok(json!({ "id": id, "name": name }))
+        },
+    },
+    CommandSpec {
+        id: "toolpath.duplicate",
+        label: "Duplicate toolpath",
+        tooltip: "Copy a toolpath with its settings, to change one of them",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[Param::required("id", ParamKind::Str, "Toolpath id, e.g. toolpath.1")],
+        returns: "the copy, as toolpath.get returns it",
+        enabled: always,
+        run: |s, p| {
+            let id = params::req_str(p, "id")?;
+            if s.job.toolpaths.len() >= MAX_TOOLPATHS {
+                return Err(EngineError::InvalidParams(format!("a job holds at most {MAX_TOOLPATHS} toolpaths")));
+            }
+            let mut copy = find(s, id)?.clone();
+            copy.id = format!("toolpath.{}", s.job.next_toolpath);
+            copy.name = crate::library::clip(&format!("{} (copy)", copy.name));
+            if let Some(obj) = copy.params.as_object_mut() {
+                obj.insert("name".into(), json!(copy.name));
+            }
+            s.job.next_toolpath = s.job.next_toolpath.saturating_add(1);
+            let result = copy.to_json(rapid_rate(s));
+            s.view.selection = Some(copy.id.clone());
+            s.job.toolpaths.push(copy);
+            s.job.setup_changed();
+            Ok(result)
+        },
+    },
+    CommandSpec {
         id: "toolpath.remove",
         label: "Delete toolpath",
         tooltip: "Delete a toolpath from the job",

@@ -12,12 +12,10 @@ setup with fitted stock, then a 2D contour around the part and 3D roughing of th
 
 ## Where the project is
 
-**Version 0.2.0, early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart
-from STEP/IGES import. CosmicCAM imports models, defines WCS, setups, stock, machines and tools,
-makes 2D contour toolpaths and exports them as generic G-code. It has no machine-specific
-post-processors or simulation yet, so **check its G-code before running it on a machine**. See
-[CHANGELOG.md](CHANGELOG.md) for what is in each version and [docs/versioning.md](docs/versioning.md)
-for how versions are numbered (1.0.0 comes with machine-ready G-code).
+**Early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart from STEP/IGES
+import. CosmicCAM imports models, defines WCS, setups, stock, machines and tools, makes 2.5D and
+3D toolpaths and exports them as generic G-code. It has no machine-specific post-processors or
+simulation yet, so **check its G-code before running it on a machine**.
 
 | Phase | Milestone | Status |
 | --- | --- | --- |
@@ -51,6 +49,9 @@ for how versions are numbered (1.0.0 comes with machine-ready G-code).
 - **2D contour:** follow edges or a face outline at depth with radial and axial
   passes, stock to leave, leads, ramps, feed optimization, an entry point and a tolerance that
   follows true circles; set up in a panel with a live preview.
+- **Explorer:** right-click any item to edit, show/hide, rename, copy, paste, duplicate or
+  delete it; an eye beside each toolpath and model shows or hides it (only the selected toolpath
+  is drawn otherwise).
 - **Demo project:** the app opens with a ready-made job to try things on (Home → Demo project).
 - **Job files:** save and open jobs as `.cosmic` files, each open job in its own tab, carrying the
   tools their toolpaths use; on Linux,
@@ -72,7 +73,7 @@ for how versions are numbered (1.0.0 comes with machine-ready G-code).
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 132 commands. Each command has a typed parameter schema that the engine checks before
+  the same 139 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.
@@ -125,7 +126,6 @@ with **Demo project** on the Home tab; its tools are added to your library if th
 | `--control <port>` | Open the control channel for the Python API (`0` picks a free port) |
 | `--run "<command> <json>"` | Run a command after start-up (repeatable) |
 | `--tab <name>` | Open on a ribbon tab |
-| `--version` | Print the version and quit |
 | `job.cosmic` | Open a job file (each in its own tab) |
 | `--screenshot <file.png>` | Save a window capture once start-up steps have run, then quit |
 

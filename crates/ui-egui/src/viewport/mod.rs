@@ -125,7 +125,7 @@ pub struct Viewport {
     shown: OrbitCamera,
     /// Theme, job geometry revision, WCS revision and display flags the uploaded scene
     /// was built for.
-    scene_key: Option<(Theme, u64, u64, Display)>,
+    scene_key: Option<(Theme, u64, u64, Display, u64)>,
     scene_bounds: Aabb,
     fit_pending: bool,
     last_render_time: Option<f64>,
@@ -709,13 +709,26 @@ impl Viewport {
         let display = session.prefs.display;
         // The grid follows the units, so a units change counts as a setup change.
         let units = u64::from(session.prefs.units == CosmicCAM_engine::units::DisplayUnits::Inches);
-        let key = (session.prefs.theme, session.job.revision, session.job.setup_revision ^ (units << 63), display);
+        // Only the selected toolpath and those switched on are drawn.
+        let selected = session.view.selection.as_deref();
+        let shown: Vec<&CosmicCAM_engine::toolpath::Toolpath> =
+            session.job.toolpaths.iter().filter(|t| t.visible || selected == Some(t.id.as_str())).collect();
+        let shown_key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            for t in &shown {
+                t.id.hash(&mut h);
+            }
+            h.finish()
+        };
+        let key =
+            (session.prefs.theme, session.job.revision, session.job.setup_revision ^ (units << 63), display, shown_key);
         if self.scene_key == Some(key) {
             return;
         }
         let palette = tokens.scene_palette();
         let mut content = SceneGeometry::default();
-        for tp in &session.job.toolpaths {
+        for tp in shown {
             content.push_path(tp.start, tp.moves.iter().map(|m| (path_kind(m.kind), m.to)), &palette);
         }
         if let Some(stock) = session.job.stock {
@@ -726,7 +739,7 @@ impl Viewport {
             content.bounds.include(stock.max);
         }
         let edge = display.edges.then_some(palette.part_edge);
-        for model in &session.job.models {
+        for model in session.job.models.iter().filter(|m| m.visible) {
             content.push_mesh(&model.mesh, palette.part, edge);
         }
         let mut world =
@@ -753,7 +766,7 @@ impl Viewport {
         }
 
         // Re-frame the view when the geometry changes, not when a WCS moves.
-        let job_changed = self.scene_key.map(|(_, revision, _, _)| revision) != Some(key.1);
+        let job_changed = self.scene_key.map(|(_, revision, _, _, _)| revision) != Some(key.1);
         session.set_scene_bounds(if content.bounds.is_empty() {
             Aabb::new(Vec3::new(-50.0, -50.0, 0.0), Vec3::new(50.0, 50.0, 20.0))
         } else {

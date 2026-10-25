@@ -423,6 +423,7 @@ impl Emitter {
             moves: Arc::new(self.b.moves),
             warnings,
             drill: None,
+            visible: false,
         })
     }
 }

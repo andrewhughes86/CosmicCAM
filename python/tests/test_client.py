@@ -218,6 +218,13 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(app.requests[0]["params"], {"x": 120, "y": 340.5})
         cc.close()
 
+    def test_right_click(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.click(10, 20, button="right")
+        self.assertEqual(app.requests[0]["params"], {"x": 10, "y": 20, "button": "right"})
+        cc.close()
+
     def test_start_sends_ui_start(self):
         app = FakeApp()
         cc = CosmicCAM(app.port, TOKEN, timeout=5)

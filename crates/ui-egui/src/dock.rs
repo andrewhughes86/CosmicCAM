@@ -123,7 +123,7 @@ impl TabViewer for Viewer<'_> {
     fn ui(&mut self, ui: &mut Ui, tab: &mut Tab) {
         match tab {
             Pane::Viewport => self.viewport.show(ui, self.session, self.tokens, self.render_state, self.requests),
-            Pane::Explorer => panes::explorer(ui, self.session, self.requests),
+            Pane::Explorer => panes::explorer(ui, self.session, self.tokens, self.requests),
             Pane::Inspector => panes::inspector(ui, self.session, self.tokens),
             Pane::Console => panes::console(ui, self.session, self.tokens, self.console, self.requests),
             // Never docked; the app draws the library as a window.

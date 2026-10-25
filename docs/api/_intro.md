@@ -275,6 +275,22 @@ cc.toolpath_raster(stepover=0.5, angle=45)
 
 The 3D strategies (rough, waterline, raster) use flat end mills for now.
 
+## Showing, renaming, copying
+
+Only the selected toolpath is drawn, plus any switched on. Models can be hidden too (hidden
+models are still machined, but cannot be picked). Copy and paste work within a job and between
+open jobs.
+
+```python
+cc.toolpath_visibility_set(id="toolpath.2", visible=True)   # omit visible to toggle
+cc.model_visibility_set(id="model.1", visible=False)
+cc.toolpath_rename(id="toolpath.2", name="Rough the pocket")
+cc.toolpath_duplicate(id="toolpath.2")
+cc.job_clipboard_copy(id="toolpath.2")    # a toolpath, model or WCS; default: the selection
+cc.job_tab_activate(index=1)
+cc.job_clipboard_paste()
+```
+
 ## G-code
 
 Until the Python post-processors of Phase 8 exist, CosmicCAM writes plain, generic G-code:
