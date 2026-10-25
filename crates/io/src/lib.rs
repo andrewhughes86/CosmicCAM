@@ -173,6 +173,15 @@ pub fn import_mesh(path: &Path, units: Units) -> Result<(Mesh, ModelFormat), Imp
     Ok((mesh, format))
 }
 
+/// Parses a model file's bytes, choosing the format by `name`'s extension. For files that
+/// arrive without a path (a browser upload).
+pub fn import_mesh_bytes(name: &str, bytes: &[u8], units: Units) -> Result<(Mesh, ModelFormat), ImportError> {
+    let format = ModelFormat::from_path(Path::new(name))?;
+    let mesh = read_mesh(bytes, format)?;
+    let mesh = if units == Units::Millimetres { mesh } else { mesh.scaled(units.to_mm())? };
+    Ok((mesh, format))
+}
+
 /// Parses an ASCII float, accepting only finite values.
 pub(crate) fn finite(token: &str) -> Option<f32> {
     token.parse::<f32>().ok().filter(|v| v.is_finite())

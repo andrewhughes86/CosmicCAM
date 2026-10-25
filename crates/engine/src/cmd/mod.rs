@@ -8,6 +8,7 @@
 mod job;
 mod model;
 mod planned;
+mod stock;
 mod ui;
 mod view;
 mod wcs;
@@ -307,7 +308,8 @@ pub fn all() -> impl Iterator<Item = &'static CommandSpec> {
         .chain(wcs::COMMANDS.iter())
         .chain(view::COMMANDS.iter())
         .chain(ui::COMMANDS.iter())
-        .chain(planned::COMMANDS.iter());
+        .chain(planned::COMMANDS.iter())
+        .chain(stock::COMMANDS.iter());
     #[cfg(test)]
     let registered = registered.chain(test_only::COMMANDS.iter());
     registered

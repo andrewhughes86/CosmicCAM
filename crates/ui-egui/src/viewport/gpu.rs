@@ -6,6 +6,8 @@
 use CosmicCAM_geom::{Mat4, Vec3};
 use CosmicCAM_render::{SceneGeometry, Vertex};
 use egui_wgpu::RenderState;
+use std::sync::{Arc, Mutex};
+
 use wgpu::util::DeviceExt;
 
 /// Pipelines write through an sRGB view so shading and blending happen in linear space...
@@ -74,6 +76,13 @@ struct Targets {
 
 pub struct ViewportGpu {
     render_state: RenderState,
+    /// The first GPU validation error reported for the device. wgpu would otherwise panic,
+    /// which aborts the whole app in the browser.
+    error: Arc<Mutex<Option<String>>>,
+    /// The format pipelines write: an sRGB view of the storage texture where the device
+    /// allows other view formats, else the storage format itself with sRGB encoded in the
+    /// shader (WebGL).
+    target_format: wgpu::TextureFormat,
     uniforms: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     background: wgpu::RenderPipeline,
@@ -90,6 +99,17 @@ pub struct ViewportGpu {
 impl ViewportGpu {
     pub fn new(render_state: &RenderState) -> Self {
         let device = &render_state.device;
+        let error: Arc<Mutex<Option<String>>> = Arc::default();
+        let sink = Arc::clone(&error);
+        device.on_uncaptured_error(Arc::new(move |e: wgpu::Error| {
+            log::error!("wgpu: {e}");
+            if let Ok(mut slot) = sink.lock() {
+                slot.get_or_insert_with(|| e.to_string().lines().take(3).collect::<Vec<_>>().join(" "));
+            }
+        }));
+        let view_formats =
+            render_state.adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VIEW_FORMATS);
+        let target_format = if view_formats { COLOR_FORMAT } else { STORAGE_FORMAT };
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("viewport shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("scene.wgsl").into()),
@@ -130,7 +150,7 @@ impl ViewportGpu {
             attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4],
         });
         let blend_target = [Some(wgpu::ColorTargetState {
-            format: COLOR_FORMAT,
+            format: target_format,
             blend: Some(wgpu::BlendState::ALPHA_BLENDING),
             write_mask: wgpu::ColorWrites::ALL,
         })];
@@ -209,6 +229,8 @@ impl ViewportGpu {
 
         Self {
             render_state: render_state.clone(),
+            error,
+            target_format,
             uniforms,
             bind_group,
             background,
@@ -221,6 +243,11 @@ impl ViewportGpu {
             targets: None,
             texture_id: None,
         }
+    }
+
+    /// The first GPU error reported, if any; the viewport stops drawing when there is one.
+    pub fn error(&self) -> Option<String> {
+        self.error.lock().ok().and_then(|e| e.clone())
     }
 
     /// Replaces the highlighted faces (triangles only).
@@ -240,6 +267,8 @@ impl ViewportGpu {
 
     fn ensure_targets(&mut self, size: [u32; 2]) -> Option<egui::TextureId> {
         let device = &self.render_state.device;
+        let target_format = self.target_format;
+        let srgb_views = target_format == COLOR_FORMAT;
         let max = device.limits().max_texture_dimension_2d.max(1);
         let size = [size[0].clamp(1, max), size[1].clamp(1, max)];
         if let (Some(t), Some(id)) = (&self.targets, self.texture_id)
@@ -256,11 +285,11 @@ impl ViewportGpu {
                 dimension: wgpu::TextureDimension::D2,
                 format,
                 usage,
-                view_formats: if format == STORAGE_FORMAT { &[COLOR_FORMAT] } else { &[] },
+                view_formats: if format == STORAGE_FORMAT && srgb_views { &[COLOR_FORMAT] } else { &[] },
             })
         };
         let srgb_view = |t: &wgpu::Texture| {
-            t.create_view(&wgpu::TextureViewDescriptor { format: Some(COLOR_FORMAT), ..Default::default() })
+            t.create_view(&wgpu::TextureViewDescriptor { format: Some(target_format), ..Default::default() })
         };
         let msaa = texture("viewport msaa", STORAGE_FORMAT, SAMPLES, wgpu::TextureUsages::RENDER_ATTACHMENT);
         let color = texture(
@@ -297,7 +326,11 @@ impl ViewportGpu {
         let targets = self.targets.as_ref()?;
         let uniforms = Uniforms {
             view_proj: p.view_proj.to_cols_array_2d(),
-            light_dir: p.light_dir.normalize_or(Vec3::Z).extend(0.0).to_array(),
+            light_dir: p
+                .light_dir
+                .normalize_or(Vec3::Z)
+                .extend(if self.target_format == COLOR_FORMAT { 0.0 } else { 1.0 })
+                .to_array(),
             bg_top: p.bg_top,
             bg_bottom: p.bg_bottom,
         };

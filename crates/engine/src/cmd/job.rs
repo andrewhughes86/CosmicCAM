@@ -45,15 +45,22 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         placement: None,
         icon: None,
         shortcut: None,
-        params: &[Param::optional("id", ParamKind::Str, "Outline node id; omit or null to clear the selection")],
+        params: &[Param::optional(
+            "id",
+            ParamKind::Str,
+            "Outline node id, or a face, edge or vertex (model.1/face.3, model.1/edge.4, model.1/vertex.2); omit or \
+             null to clear the selection",
+        )],
         returns: "{\"selection\": id or null}",
         enabled: always,
         run: |s, p| {
             match params::opt_str(p, "id")? {
                 None => s.view.selection = None,
                 Some(id) => {
-                    if s.outline_node(id).is_none() {
-                        return Err(EngineError::InvalidParams(format!("no outline item `{id}`")));
+                    if s.selection_node(id).is_none() {
+                        return Err(EngineError::InvalidParams(format!(
+                            "no outline item, face, edge or vertex `{id}`"
+                        )));
                     }
                     s.view.selection = Some(id.to_owned());
                 }
@@ -64,7 +71,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "selection.get",
         label: "Selection",
-        tooltip: "The selected outline item",
+        tooltip: "The selected outline item, face, edge or vertex",
         placement: None,
         icon: None,
         shortcut: None,
@@ -72,7 +79,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         returns: "the selected node {id, label, properties, children}, or null",
         enabled: always,
         run: |s, _| {
-            Ok(s.view.selection.as_deref().and_then(|id| s.outline_node(id)).map_or(Value::Null, |n| n.to_json()))
+            Ok(s.view.selection.as_deref().and_then(|id| s.selection_node(id)).map_or(Value::Null, |n| n.to_json()))
         },
     },
     CommandSpec {

@@ -45,7 +45,7 @@ fn outline_node(ui: &mut Ui, node: &OutlineNode, selection: Option<&str>, reques
 }
 
 pub fn inspector(ui: &mut Ui, session: &Session, tokens: &Tokens) {
-    let node = session.view.selection.as_deref().and_then(|id| session.outline_node(id));
+    let node = session.view.selection.as_deref().and_then(|id| session.selection_node(id));
     let (title, rows) = match &node {
         Some(n) => (n.label.clone(), n.properties.clone()),
         None => {
@@ -63,7 +63,10 @@ pub fn inspector(ui: &mut Ui, session: &Session, tokens: &Tokens) {
     };
     ui.label(RichText::new(title).strong());
     if node.is_none() {
-        ui.label(RichText::new("Select an item in the explorer to inspect it.").color(tokens.text_muted));
+        ui.label(
+            RichText::new("Select an item in the explorer, or click a face, edge or corner in the viewport.")
+                .color(tokens.text_muted),
+        );
     }
     ui.separator();
     egui::Grid::new("inspector-grid").num_columns(2).striped(true).spacing([12.0, 4.0]).show(ui, |ui| {

@@ -40,7 +40,7 @@ class Commands:
         """Select an item in the job outline.
 
         Args:
-            id: Outline node id; omit or null to clear the selection.
+            id: Outline node id, or a face, edge or vertex (model.1/face.3, model.1/edge.4, model.1/vertex.2); omit or null to clear the selection.
 
         Returns:
             {"selection": id or null}
@@ -51,7 +51,7 @@ class Commands:
         return self.execute("selection.set", {k: v for k, v in params.items() if v is not None})
 
     def selection_get(self) -> Any:
-        """The selected outline item.
+        """The selected outline item, face, edge or vertex.
 
         Returns:
             the selected node {id, label, properties, children}, or null
@@ -127,7 +127,7 @@ class Commands:
         """Import STL or OBJ geometry.
 
         Args:
-            path: Model file (.stl or .obj).
+            path: Model file (.stl or .obj), or upload://<name> for a file staged by the browser app.
             units: Unit the file was authored in (default mm); STL and OBJ store none — one of mm, cm, m, in.
             name: Name in the job outline (default: the file name).
 
@@ -252,7 +252,37 @@ class Commands:
         params = {"origin": origin, "direction": direction, "radius": radius}
         return self.execute("model.edge.pick", {k: v for k, v in params.items() if v is not None})
 
-    def setup_wcs_create(self, *, name: Optional[str] = None, activate: Optional[bool] = None, orientation: Optional[Literal["model", "z_x", "z_y", "x_y", "vectors"]] = None, orientation_z: Optional[str] = None, orientation_x: Optional[str] = None, orientation_y: Optional[str] = None, orientation_z_vector: Optional[Sequence[float]] = None, orientation_x_vector: Optional[Sequence[float]] = None, flip_z: Optional[bool] = None, flip_x: Optional[bool] = None, flip_y: Optional[bool] = None, origin: Optional[Literal["model", "box", "point", "intersection"]] = None, origin_box: Optional[Literal["top_front_left", "top_front", "top_front_right", "top_left", "top_center", "top_right", "top_back_left", "top_back", "top_back_right", "middle_front_left", "middle_front", "middle_front_right", "middle_left", "center", "middle_right", "middle_back_left", "middle_back", "middle_back_right", "bottom_front_left", "bottom_front", "bottom_front_right", "bottom_left", "bottom_center", "bottom_right", "bottom_back_left", "bottom_back", "bottom_back_right"]] = None, origin_point: Optional[Sequence[float]] = None, origin_geometry: Optional[str] = None, origin_a: Optional[str] = None, origin_b: Optional[str] = None, origin_c: Optional[str] = None) -> Any:
+    def model_vertices_list(self, *, id: str) -> Any:
+        """The corners recognised on a model, where straight edges end.
+
+        Args:
+            id: Model id, e.g. model.1.
+
+        Returns:
+            list of {vertex, model, kind, position} (at most 5000)
+
+        Command: ``model.vertices.list``
+        """
+        params = {"id": id}
+        return self.execute("model.vertices.list", {k: v for k, v in params.items() if v is not None})
+
+    def model_vertex_pick(self, *, origin: Sequence[float], direction: Sequence[float], radius: Optional[float] = None) -> Any:
+        """The visible vertex closest to a ray.
+
+        Args:
+            origin: Ray start, world mm — [x, y, z] in mm.
+            direction: Ray direction — [x, y, z] in mm.
+            radius: How far from the ray a vertex may be, mm (default 1) (0.0001 to 1e6).
+
+        Returns:
+            {vertex, model, kind, position} for the vertex found, or null
+
+        Command: ``model.vertex.pick``
+        """
+        params = {"origin": origin, "direction": direction, "radius": radius}
+        return self.execute("model.vertex.pick", {k: v for k, v in params.items() if v is not None})
+
+    def setup_wcs_create(self, *, name: Optional[str] = None, activate: Optional[bool] = None, orientation: Optional[Literal["model", "z_x", "z_y", "x_y", "vectors"]] = None, orientation_z: Optional[str] = None, orientation_x: Optional[str] = None, orientation_y: Optional[str] = None, orientation_z_vector: Optional[Sequence[float]] = None, orientation_x_vector: Optional[Sequence[float]] = None, flip_z: Optional[bool] = None, flip_x: Optional[bool] = None, flip_y: Optional[bool] = None, origin: Optional[Literal["model", "box", "stock", "point", "intersection"]] = None, origin_box: Optional[Literal["top_front_left", "top_front", "top_front_right", "top_left", "top_center", "top_right", "top_back_left", "top_back", "top_back_right", "middle_front_left", "middle_front", "middle_front_right", "middle_left", "center", "middle_right", "middle_back_left", "middle_back", "middle_back_right", "bottom_front_left", "bottom_front", "bottom_front_right", "bottom_left", "bottom_center", "bottom_right", "bottom_back_left", "bottom_back", "bottom_back_right"]] = None, origin_point: Optional[Sequence[float]] = None, origin_geometry: Optional[str] = None, origin_a: Optional[str] = None, origin_b: Optional[str] = None, origin_c: Optional[str] = None) -> Any:
         """Define a work coordinate system: its orientation (axes) and origin.
 
         Args:
@@ -267,8 +297,8 @@ class Commands:
             flip_z: Reverse the Z axis.
             flip_x: Reverse the X axis.
             flip_y: Reverse the Y axis (orientations z_y and x_y).
-            origin: Where the origin goes: model (world zero), box (a point on the model's box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, point, intersection.
-            origin_box: Box point, for origin = box (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right.
+            origin: Where the origin goes: model (world zero), box (a point on the model's box), stock (a point on the stock box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, stock, point, intersection.
+            origin_box: Box point, for origin = box or stock (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right.
             origin_point: Coordinates, for origin = point — [x, y, z] in mm.
             origin_geometry: Selection, for origin = point: a circular edge or cylinder (centre / upper axis end), plane (centre) or straight edge (midpoint).
             origin_a: First selection, for origin = intersection: a plane, cylinder or edge.
@@ -312,7 +342,7 @@ class Commands:
         params = {"id": id, "corner": corner}
         return self.execute("setup.wcs.bottom_corner", {k: v for k, v in params.items() if v is not None})
 
-    def setup_wcs_align(self, *, id: Optional[str] = None, orientation: Optional[Literal["model", "z_x", "z_y", "x_y", "vectors"]] = None, orientation_z: Optional[str] = None, orientation_x: Optional[str] = None, orientation_y: Optional[str] = None, orientation_z_vector: Optional[Sequence[float]] = None, orientation_x_vector: Optional[Sequence[float]] = None, flip_z: Optional[bool] = None, flip_x: Optional[bool] = None, flip_y: Optional[bool] = None, origin: Optional[Literal["model", "box", "point", "intersection"]] = None, origin_box: Optional[Literal["top_front_left", "top_front", "top_front_right", "top_left", "top_center", "top_right", "top_back_left", "top_back", "top_back_right", "middle_front_left", "middle_front", "middle_front_right", "middle_left", "center", "middle_right", "middle_back_left", "middle_back", "middle_back_right", "bottom_front_left", "bottom_front", "bottom_front_right", "bottom_left", "bottom_center", "bottom_right", "bottom_back_left", "bottom_back", "bottom_back_right"]] = None, origin_point: Optional[Sequence[float]] = None, origin_geometry: Optional[str] = None, origin_a: Optional[str] = None, origin_b: Optional[str] = None, origin_c: Optional[str] = None) -> Any:
+    def setup_wcs_align(self, *, id: Optional[str] = None, orientation: Optional[Literal["model", "z_x", "z_y", "x_y", "vectors"]] = None, orientation_z: Optional[str] = None, orientation_x: Optional[str] = None, orientation_y: Optional[str] = None, orientation_z_vector: Optional[Sequence[float]] = None, orientation_x_vector: Optional[Sequence[float]] = None, flip_z: Optional[bool] = None, flip_x: Optional[bool] = None, flip_y: Optional[bool] = None, origin: Optional[Literal["model", "box", "stock", "point", "intersection"]] = None, origin_box: Optional[Literal["top_front_left", "top_front", "top_front_right", "top_left", "top_center", "top_right", "top_back_left", "top_back", "top_back_right", "middle_front_left", "middle_front", "middle_front_right", "middle_left", "center", "middle_right", "middle_back_left", "middle_back", "middle_back_right", "bottom_front_left", "bottom_front", "bottom_front_right", "bottom_left", "bottom_center", "bottom_right", "bottom_back_left", "bottom_back", "bottom_back_right"]] = None, origin_point: Optional[Sequence[float]] = None, origin_geometry: Optional[str] = None, origin_a: Optional[str] = None, origin_b: Optional[str] = None, origin_c: Optional[str] = None) -> Any:
         """Re-define an existing WCS: a new orientation, origin, or both (groups left out are kept).
 
         Args:
@@ -326,8 +356,8 @@ class Commands:
             flip_z: Reverse the Z axis.
             flip_x: Reverse the X axis.
             flip_y: Reverse the Y axis (orientations z_y and x_y).
-            origin: Where the origin goes: model (world zero), box (a point on the model's box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, point, intersection.
-            origin_box: Box point, for origin = box (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right.
+            origin: Where the origin goes: model (world zero), box (a point on the model's box), stock (a point on the stock box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, stock, point, intersection.
+            origin_box: Box point, for origin = box or stock (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right.
             origin_point: Coordinates, for origin = point — [x, y, z] in mm.
             origin_geometry: Selection, for origin = point: a circular edge or cylinder (centre / upper axis end), plane (centre) or straight edge (midpoint).
             origin_a: First selection, for origin = intersection: a plane, cylinder or edge.
@@ -875,18 +905,6 @@ class Commands:
         """
         return self.execute("setup.stock.cylinder")
 
-    def setup_stock_fit(self) -> Any:
-        """Size the stock to the model's bounding box (Phase 3).
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
-
-        Command: ``setup.stock.fit``
-        """
-        return self.execute("setup.stock.fit")
-
     def setup_stock_margins(self) -> Any:
         """Extra stock around chosen faces (Phase 5).
 
@@ -1198,3 +1216,29 @@ class Commands:
         Command: ``post.gcode.export``
         """
         return self.execute("post.gcode.export")
+
+    def setup_stock_fit(self, *, margin_sides: Optional[float] = None, margin_top: Optional[float] = None, margin_bottom: Optional[float] = None) -> Any:
+        """Size the stock box to the models' bounding box, plus margins.
+
+        Args:
+            margin_sides: Extra material on the four sides, mm (default 0) (0 to 10000).
+            margin_top: Extra material on top, mm (default 0) (0 to 10000).
+            margin_bottom: Extra material underneath, mm (default 0) (0 to 10000).
+
+        Returns:
+            the stock {shape, min, max, size}
+
+        Command: ``setup.stock.fit``
+        """
+        params = {"margin_sides": margin_sides, "margin_top": margin_top, "margin_bottom": margin_bottom}
+        return self.execute("setup.stock.fit", {k: v for k, v in params.items() if v is not None})
+
+    def setup_stock_get(self) -> Any:
+        """The job's stock.
+
+        Returns:
+            the stock {shape, min, max, size}, or null when none is defined
+
+        Command: ``setup.stock.get``
+        """
+        return self.execute("setup.stock.get")

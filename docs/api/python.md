@@ -98,9 +98,9 @@ second dowel hole sets X.
 
 | Parameter | Meaning |
 | --- | --- |
-| `origin` | `model` (world zero, the default), `box`, `point` or `intersection` |
-| `origin_box` | For `box`: a point on the models' bounding box, `<level>_<position>` with level `top`, `middle`, `bottom` and position `front_left`, `front`, `front_right`, `left`, `center`, `right`, `back_left`, `back`, `back_right` (`center` alone is the box centre; default `top_center`) |
-| `origin_point` / `origin_geometry` | For `point`: coordinates, or a selection (a circle's centre, a cylinder's upper axis end, a plane's centre, an edge's midpoint) |
+| `origin` | `model` (world zero, the default), `box`, `stock`, `point` or `intersection` |
+| `origin_box` | For `box` or `stock`: a point on the models' (or the stock's) bounding box, `<level>_<position>` with level `top`, `middle`, `bottom` and position `front_left`, `front`, `front_right`, `left`, `center`, `right`, `back_left`, `back`, `back_right` (`center` alone is the box centre; default `top_center`) |
+| `origin_point` / `origin_geometry` | For `point`: coordinates, or a selection (a vertex, a circle's centre, a cylinder's upper axis end, a plane's centre, an edge's midpoint) |
 | `origin_a`, `origin_b`, `origin_c` | For `intersection`: three planes (a corner), a line and a plane (an edge or a cylinder axis meeting a face), or two lines |
 
 Parameters the chosen modes do not use are refused, so a script always gets what it asked for.
@@ -133,6 +133,30 @@ each selection row and then the geometry in the viewport (picked faces and edges
 accent colour; things that cannot be used turn red under the pointer), tick Flip where needed,
 check the preview triad and press OK. Offset, Rotate and Rename open a small dialog. Scripts
 never get dialogs.
+
+## Stock
+
+```python
+cc.setup_stock_fit(margin_sides=5, margin_top=2, margin_bottom=0)   # box around the models
+print(cc.setup_stock_get())        # {'shape': 'box', 'min': [...], 'max': [...], 'size': [...]}
+cc.setup_wcs_create(origin="stock", origin_box="top_front_left")
+```
+
+The sample part comes with stock; importing a model replaces the sample and its stock.
+
+## Selecting geometry
+
+Clicking in the viewport selects what is under the pointer: a vertex (corner) if one is close,
+else an edge, else the face. The inspector shows its geometry (a face's kind, area, normal or
+diameter and axis; an edge's length and ends or centre; a vertex's position). Clicking empty
+space clears the selection. From a script:
+
+```python
+cc.selection_set(id="model.1/face.3")       # or model.1/edge.4, model.1/vertex.2, or an outline id
+print(cc.selection_get())                   # {id, label, properties: [{name, value}], children}
+cc.model_vertices_list(id="model.1")        # corners: {vertex, model, kind, position}
+cc.model_vertex_pick(origin=[0, 0, 100], direction=[0, 0, -1], radius=1)
+```
 
 ## State, screenshots and the log
 
@@ -174,15 +198,15 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-91 commands in 14 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+94 commands in 14 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.outline.get`](#joboutlineget), [`job.open`](#jobopen), [`job.save`](#jobsave)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
 - **session**: [`session.state.get`](#sessionstateget)
 - **command**: [`command.list`](#commandlist), [`command.describe`](#commanddescribe)
 - **console**: [`console.clear`](#consoleclear), [`console.log.get`](#consolelogget)
-- **model**: [`model.import`](#modelimport), [`model.list`](#modellist), [`model.remove`](#modelremove), [`model.faces.list`](#modelfaceslist), [`model.face.get`](#modelfaceget), [`model.pick`](#modelpick), [`model.edges.list`](#modeledgeslist), [`model.edge.get`](#modeledgeget), [`model.edge.pick`](#modeledgepick)
-- **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.wcs.rotate`](#setupwcsrotate), [`setup.wcs.rename`](#setupwcsrename), [`setup.wcs.activate`](#setupwcsactivate), [`setup.wcs.remove`](#setupwcsremove), [`setup.wcs.list`](#setupwcslist), [`setup.wcs.get`](#setupwcsget), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.fit`](#setupstockfit), [`setup.stock.margins`](#setupstockmargins)
+- **model**: [`model.import`](#modelimport), [`model.list`](#modellist), [`model.remove`](#modelremove), [`model.faces.list`](#modelfaceslist), [`model.face.get`](#modelfaceget), [`model.pick`](#modelpick), [`model.edges.list`](#modeledgeslist), [`model.edge.get`](#modeledgeget), [`model.edge.pick`](#modeledgepick), [`model.vertices.list`](#modelverticeslist), [`model.vertex.pick`](#modelvertexpick)
+- **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.wcs.rotate`](#setupwcsrotate), [`setup.wcs.rename`](#setupwcsrename), [`setup.wcs.activate`](#setupwcsactivate), [`setup.wcs.remove`](#setupwcsremove), [`setup.wcs.list`](#setupwcslist), [`setup.wcs.get`](#setupwcsget), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.margins`](#setupstockmargins), [`setup.stock.fit`](#setupstockfit), [`setup.stock.get`](#setupstockget)
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
@@ -261,7 +285,7 @@ Select an item in the job outline.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `id` | string | no | Outline node id; omit or null to clear the selection |
+| `id` | string | no | Outline node id, or a face, edge or vertex (model.1/face.3, model.1/edge.4, model.1/vertex.2); omit or null to clear the selection |
 
 Returns: {"selection": id or null}
 
@@ -271,7 +295,7 @@ Returns: {"selection": id or null}
 cc.selection_get()
 ```
 
-The selected outline item.
+The selected outline item, face, edge or vertex.
 
 
 Returns: the selected node {id, label, properties, children}, or null
@@ -367,7 +391,7 @@ Import STL or OBJ geometry.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string | yes | Model file (.stl or .obj) |
+| `path` | string | yes | Model file (.stl or .obj), or upload://<name> for a file staged by the browser app |
 | `units` | choice | no | Unit the file was authored in (default mm); STL and OBJ store none — one of mm, cm, m, in |
 | `name` | string | no | Name in the job outline (default: the file name) |
 
@@ -496,6 +520,38 @@ The visible edge passing closest to a ray, as a click in the viewport picks it.
 
 Returns: {edge, model, kind, length, direction, ...} for the edge found, or null
 
+#### `model.vertices.list`
+
+```python
+cc.model_vertices_list(id=…)
+```
+
+The corners recognised on a model, where straight edges end.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Model id, e.g. model.1 |
+
+Returns: list of {vertex, model, kind, position} (at most 5000)
+
+#### `model.vertex.pick`
+
+```python
+cc.model_vertex_pick(origin=…, direction=…, radius=None)
+```
+
+The visible vertex closest to a ray.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `origin` | vec3 | yes | Ray start, world mm — [x, y, z] in mm |
+| `direction` | vec3 | yes | Ray direction — [x, y, z] in mm |
+| `radius` | number | no | How far from the ray a vertex may be, mm (default 1) (0.0001 to 1e6) |
+
+Returns: {vertex, model, kind, position} for the vertex found, or null
+
 
 ### setup
 
@@ -521,8 +577,8 @@ Define a work coordinate system: its orientation (axes) and origin.
 | `flip_z` | bool | no | Reverse the Z axis |
 | `flip_x` | bool | no | Reverse the X axis |
 | `flip_y` | bool | no | Reverse the Y axis (orientations z_y and x_y) |
-| `origin` | choice | no | Where the origin goes: model (world zero), box (a point on the model's box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, point, intersection |
-| `origin_box` | choice | no | Box point, for origin = box (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right |
+| `origin` | choice | no | Where the origin goes: model (world zero), box (a point on the model's box), stock (a point on the stock box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, stock, point, intersection |
+| `origin_box` | choice | no | Box point, for origin = box or stock (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right |
 | `origin_point` | vec3 | no | Coordinates, for origin = point — [x, y, z] in mm |
 | `origin_geometry` | string | no | Selection, for origin = point: a circular edge or cylinder (centre / upper axis end), plane (centre) or straight edge (midpoint) |
 | `origin_a` | string | no | First selection, for origin = intersection: a plane, cylinder or edge |
@@ -585,8 +641,8 @@ Re-define an existing WCS: a new orientation, origin, or both (groups left out a
 | `flip_z` | bool | no | Reverse the Z axis |
 | `flip_x` | bool | no | Reverse the X axis |
 | `flip_y` | bool | no | Reverse the Y axis (orientations z_y and x_y) |
-| `origin` | choice | no | Where the origin goes: model (world zero), box (a point on the model's box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, point, intersection |
-| `origin_box` | choice | no | Box point, for origin = box (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right |
+| `origin` | choice | no | Where the origin goes: model (world zero), box (a point on the model's box), stock (a point on the stock box), point (a selected point) or intersection (where selected geometry meets) — one of model, box, stock, point, intersection |
+| `origin_box` | choice | no | Box point, for origin = box or stock (default top_center) — one of top_front_left, top_front, top_front_right, top_left, top_center, top_right, top_back_left, top_back, top_back_right, middle_front_left, middle_front, middle_front_right, middle_left, center, middle_right, middle_back_left, middle_back, middle_back_right, bottom_front_left, bottom_front, bottom_front_right, bottom_left, bottom_center, bottom_right, bottom_back_left, bottom_back, bottom_back_right |
 | `origin_point` | vec3 | no | Coordinates, for origin = point — [x, y, z] in mm |
 | `origin_geometry` | string | no | Selection, for origin = point: a circular edge or cylinder (centre / upper axis end), plane (centre) or straight edge (midpoint) |
 | `origin_a` | string | no | First selection, for origin = intersection: a plane, cylinder or edge |
@@ -731,19 +787,6 @@ Returns: not defined yet
 
 <sub>ribbon: Setup › Stock</sub>
 
-#### `setup.stock.fit`
-
-```python
-cc.setup_stock_fit()
-```
-
-Size the stock to the model's bounding box (Phase 3).
- **Planned — not available yet.**
-
-Returns: not defined yet
-
-<sub>ribbon: Setup › Stock</sub>
-
 #### `setup.stock.margins`
 
 ```python
@@ -756,6 +799,36 @@ Extra stock around chosen faces (Phase 5).
 Returns: not defined yet
 
 <sub>ribbon: Setup › Stock</sub>
+
+#### `setup.stock.fit`
+
+```python
+cc.setup_stock_fit(margin_sides=None, margin_top=None, margin_bottom=None)
+```
+
+Size the stock box to the models' bounding box, plus margins.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `margin_sides` | number | no | Extra material on the four sides, mm (default 0) (0 to 10000) |
+| `margin_top` | number | no | Extra material on top, mm (default 0) (0 to 10000) |
+| `margin_bottom` | number | no | Extra material underneath, mm (default 0) (0 to 10000) |
+
+Returns: the stock {shape, min, max, size}
+
+<sub>ribbon: Setup › Stock</sub>
+
+#### `setup.stock.get`
+
+```python
+cc.setup_stock_get()
+```
+
+The job's stock.
+
+
+Returns: the stock {shape, min, max, size}, or null when none is defined
 
 
 ### view

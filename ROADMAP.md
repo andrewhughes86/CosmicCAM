@@ -3,8 +3,8 @@
 | Phase | Milestone | Status |
 | --- | --- | --- |
 | 1 | Desktop UI & theme engine | **Done** (2026-10-24) |
-| 2 | Model import & geometry ingestion | **In progress** (STL/OBJ landed 2026-10-24) |
-| 3 | Work coordinate system (WCS) creation | **In progress** (WCS commands landed 2026-10-24) |
+| 2 | Model import & geometry ingestion | **Done except STEP/IGES** (2026-10-24) |
+| 3 | Work coordinate system (WCS) creation | **Done** (2026-10-24) |
 | 4 | Tool library & management | Planned |
 | 5 | Stock setup & material definition | Planned |
 | 6 | Toolpath creation engine | Planned |
@@ -57,8 +57,10 @@
   boundaries); large meshes are split across GPU buffers.
 - The Import model button and Ctrl+I open a native file dialog (`rfd`); `ui.start` does the same
   over the control channel. Files dropped on the window are imported.
-- Still to do in Phase 2: the STEP/IGES B-Rep bridge and topology mapping (face and edge
-  recognition and viewport picking landed with Phase 3's WCS work).
+- Faces (planes, cylinders, freeform), edges (lines, circles) and vertices (corners) are
+  recognised on every mesh. Clicking in the viewport selects a vertex, edge or face and the
+  inspector shows its geometry; `selection.set` takes face, edge and vertex references.
+- Still to do in Phase 2: the STEP/IGES B-Rep bridge (deferred). Shells are not modelled.
 
 ## Phase 3 — work coordinate systems (2026-10-24)
 
@@ -83,8 +85,25 @@
   faint (short, thin, mostly grey) once a WCS exists, and stays there for reference.
 - The viewport's view buttons are larger and sit against the right edge.
 - `ui.click {x, y}` control method (and `cc.click`) for driving the UI in tests.
-- Still to do in Phase 3: stock bounding box (`setup.stock.fit`), dragging the triad in the
-  viewport, saving WCS in a job file (no job file format yet).
+- Stock: `setup.stock.fit` sizes a box stock to the models with side, top and bottom margins;
+  `setup.stock.get`; shown in the outline and viewport; WCS origin can sit on a stock box point.
+- Later: dragging the triad in the viewport, saving WCS and stock in a job file (no job file
+  format yet).
+
+## Web app (2026-10-24)
+
+- `apps/CosmicCAM-web`: the app compiled to WebAssembly with eframe's web runner, drawing with
+  wgpu (WebGPU, or WebGL 2). Built with trunk from `index.html`.
+- Browser file import: the Import button opens the browser's file picker and dropped files are
+  read in the page; their bytes are staged in the session and imported as `upload://<name>`.
+- The control channel is desktop-only (a stub in the browser).
+- `.github/workflows/pages.yml` publishes the web app to GitHub Pages; `cargo xtask ci` lints
+  the web build for wasm32.
+- WebGL has no extra texture view formats, so the viewport renders straight into its texture
+  there and encodes sRGB in the shader. GPU validation errors are logged and stop only the
+  viewport (with a message) instead of panicking.
+- In the browser a panic cannot be caught (wasm aborts), so the session's last-resort panic
+  guard does not apply there; errors returned by commands work as on the desktop.
 
 ## Not started yet (from AGENTS.md)
 

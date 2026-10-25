@@ -48,12 +48,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     // Setup (Phases 3 and 5)
     planned!("setup.stock.box", "Box stock", "Rectangular block stock (Phase 5)", large(Setup, "Stock")),
     planned!("setup.stock.cylinder", "Cylinder stock", "Round bar stock (Phase 5)", large(Setup, "Stock")),
-    planned!(
-        "setup.stock.fit",
-        "Fit to model",
-        "Size the stock to the model's bounding box (Phase 3)",
-        small(Setup, "Stock")
-    ),
     planned!("setup.stock.margins", "Margins", "Extra stock around chosen faces (Phase 5)", small(Setup, "Stock")),
     // Tooling (Phase 4)
     planned!(

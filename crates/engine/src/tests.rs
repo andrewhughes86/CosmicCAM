@@ -784,3 +784,91 @@ fn wcs_quick_placements_need_a_part() {
     let w = s.execute("setup.wcs.bottom_corner", &json!({"corner": "back_right"})).unwrap_or_default();
     assert!(close(vec3(&w["origin"]), [50.0, 30.0, 0.0]) && w["id"] == "wcs.1", "{w}");
 }
+
+#[test]
+fn stock_fits_the_models_with_margins() {
+    let mut s = Session::new();
+    assert!(s.execute("setup.stock.fit", &Value::Null).is_err(), "nothing to fit");
+    assert_eq!(s.execute("setup.stock.get", &Value::Null).unwrap_or_default(), Value::Null);
+    let file = TempFile::new("p.obj", PYRAMID_OBJ);
+    assert!(s.execute("model.import", &json!({"path": file.path()})).is_ok());
+    let st = s
+        .execute("setup.stock.fit", &json!({"margin_sides": 2, "margin_top": 1, "margin_bottom": 0.5}))
+        .unwrap_or_default();
+    assert!(close(vec3(&st["min"]), [-2.0, -2.0, -0.5]) && close(vec3(&st["max"]), [42.0, 32.0, 26.0]), "{st}");
+    assert!(close(vec3(&st["size"]), [44.0, 34.0, 26.5]));
+    assert!(s.outline_node("stock").is_some_and(|n| n.properties.iter().any(|(k, _)| k == "Size")));
+    let state = s.execute("session.state.get", &Value::Null).unwrap_or_default();
+    assert_eq!(state["job"]["stock"]["shape"], "box");
+    assert!(s.execute("setup.stock.fit", &json!({"margin_top": -1})).is_err());
+    // A WCS on the stock's top centre.
+    let w = wcs(&mut s, json!({"origin": "stock", "origin_box": "top_center"}));
+    assert!(close(vec3(&w["origin"]), [20.0, 15.0, 26.0]), "{w}");
+}
+
+#[test]
+fn the_sample_has_stock_and_an_import_replaces_it() {
+    let mut s = Session::with_sample();
+    let st = s.execute("setup.stock.get", &Value::Null).unwrap_or_default();
+    assert!(close(vec3(&st["max"]), [53.0, 33.0, 45.0]), "{st}");
+    let file = TempFile::new("p.obj", PYRAMID_OBJ);
+    assert!(s.execute("model.import", &json!({"path": file.path()})).is_ok());
+    assert_eq!(s.execute("setup.stock.get", &Value::Null).unwrap_or_default(), Value::Null);
+    assert!(wcs_err(&mut s, json!({"origin": "stock"})).contains("setup.stock.fit"));
+}
+
+#[test]
+fn faces_edges_and_vertices_can_be_selected_and_inspected() {
+    let mut s = Session::with_sample();
+    let r = sample_refs(&mut s);
+    assert!(s.execute("selection.set", &json!({"id": r.boss})).is_ok());
+    let node = s.execute("selection.get", &Value::Null).unwrap_or_default();
+    let props = node["properties"].as_array().cloned().unwrap_or_default();
+    let prop = |name: &str| props.iter().find(|p| p["name"] == name).map(|p| p["value"].clone()).unwrap_or_default();
+    assert_eq!(prop("Type"), "Boss");
+    assert_eq!(prop("Diameter"), "24.000 mm");
+    assert!(s.execute("selection.set", &json!({"id": r.top_front_edge})).is_ok());
+    let node = s.execute("selection.get", &Value::Null).unwrap_or_default();
+    assert!(node["label"].as_str().is_some_and(|l| l.contains("line")), "{node}");
+
+    let vertices = s.execute("model.vertices.list", &json!({"id": "model.sample"})).unwrap_or_default();
+    let corner = vertices
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|v| close(vec3(&v["position"]), [-40.0, -20.0, 35.0]))
+        .and_then(|v| v["vertex"].as_str().map(str::to_owned))
+        .unwrap_or_default();
+    assert!(s.execute("selection.set", &json!({"id": corner})).is_ok(), "{corner}");
+    let node = s.execute("selection.get", &Value::Null).unwrap_or_default();
+    assert!(node["label"].as_str().is_some_and(|l| l.starts_with("Vertex")), "{node}");
+    // Picking a vertex just beside the corner, from above.
+    let hit = s
+        .execute("model.vertex.pick", &json!({"origin": [-40.2, -20.2, 100], "direction": [0, 0, -1], "radius": 0.5}))
+        .unwrap_or_default();
+    assert_eq!(hit["vertex"], json!(corner), "{hit}");
+    // A vertex is an origin point but has no direction.
+    let w = wcs(&mut s, json!({"origin": "point", "origin_geometry": corner}));
+    assert!(close(vec3(&w["origin"]), [-40.0, -20.0, 35.0]));
+    assert!(
+        wcs_err(&mut s, json!({"orientation": "z_x", "orientation_z": corner, "orientation_x": r.top_front_edge}))
+            .contains("no direction")
+    );
+    assert!(s.execute("selection.set", &json!({"id": "model.sample/vertex.99999"})).is_err());
+    assert!(s.execute("selection.set", &json!({})).is_ok());
+    assert_eq!(s.view.selection, None);
+}
+
+#[test]
+fn staged_uploads_import_by_name() {
+    let mut s = Session::new();
+    let path = s.stage_upload("Pyramid.obj", PYRAMID_OBJ.to_vec());
+    assert_eq!(path, "upload://Pyramid.obj");
+    let r = s.execute("model.import", &json!({"path": path})).unwrap_or_default();
+    assert_eq!(r["name"], "Pyramid");
+    assert_eq!(r["triangles"], 6);
+    // The staged bytes are used up by the import.
+    assert!(matches!(s.execute("model.import", &json!({"path": path})), Err(EngineError::Import(_))));
+    let bad = s.stage_upload("part.step", b"ISO-10303-21;".to_vec());
+    assert!(matches!(s.execute("model.import", &json!({"path": bad})), Err(EngineError::Import(_))));
+}

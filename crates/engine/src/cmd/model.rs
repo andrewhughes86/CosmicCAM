@@ -3,13 +3,13 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use CosmicCAM_io::{Units, import_mesh};
+use CosmicCAM_io::{Units, import_mesh, import_mesh_bytes};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, Param, ParamKind, Placement, RibbonTab, always};
 use crate::error::{EngineError, EngineResult};
 use crate::params;
-use crate::session::{MAX_MODELS, Model, SAMPLE_MODEL_ID, Session, edge_json, face_json};
+use crate::session::{MAX_MODELS, Model, SAMPLE_MODEL_ID, Session, edge_json, face_json, vertex_json};
 
 /// Longest model name kept.
 const MAX_NAME_CHARS: usize = 128;
@@ -23,7 +23,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         icon: None,
         shortcut: Some("Ctrl+I"),
         params: &[
-            Param::required("path", ParamKind::Str, "Model file (.stl or .obj)"),
+            Param::required(
+                "path",
+                ParamKind::Str,
+                "Model file (.stl or .obj), or upload://<name> for a file staged by the browser app",
+            ),
             Param::optional(
                 "units",
                 ParamKind::Choice(Units::IDS),
@@ -66,6 +70,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             }
             if id == SAMPLE_MODEL_ID {
                 s.job.sample_loaded = false;
+                s.job.stock = None;
+                s.job.setup_changed();
             }
             if s.view.selection.as_deref() == Some(id) {
                 s.view.selection = None;
@@ -223,6 +229,52 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 .map_or(Value::Null, |(mi, e)| s.job.models.get(mi).map_or(Value::Null, |m| edge_json(m, e))))
         },
     },
+    CommandSpec {
+        id: "model.vertices.list",
+        label: "Model vertices",
+        tooltip: "The corners recognised on a model, where straight edges end",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[Param::required("id", ParamKind::Str, "Model id, e.g. model.1")],
+        returns: "list of {vertex, model, kind, position} (at most 5000)",
+        enabled: always,
+        run: |s, p| {
+            let id = params::req_str(p, "id")?;
+            let m = s.job.model(id).ok_or_else(|| EngineError::InvalidParams(format!("no model `{id}`")))?;
+            Ok(json!((0..m.edges.vertices.len()).take(MAX_LISTED_FACES).map(|i| vertex_json(m, i)).collect::<Vec<_>>()))
+        },
+    },
+    CommandSpec {
+        id: "model.vertex.pick",
+        label: "Pick vertex",
+        tooltip: "The visible vertex closest to a ray",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[
+            Param::required("origin", ParamKind::Vec3, "Ray start, world mm"),
+            Param::required("direction", ParamKind::Vec3, "Ray direction"),
+            Param::optional(
+                "radius",
+                ParamKind::Number { min: 0.0001, max: 1.0e6 },
+                "How far from the ray a vertex may be, mm (default 1)",
+            ),
+        ],
+        returns: "{vertex, model, kind, position} for the vertex found, or null",
+        enabled: always,
+        run: |s, p| {
+            let origin = params::opt_vec3(p, "origin")?.unwrap_or_default();
+            let direction = params::opt_vec3(p, "direction")?.unwrap_or_default();
+            if direction.length() <= 1.0e-9 {
+                return Err(EngineError::InvalidParams("`direction` must have a direction".into()));
+            }
+            let radius = params::opt_f64(p, "radius", 0.0001, 1.0e6)?.unwrap_or(1.0) as f32;
+            Ok(s.job
+                .pick_vertex(origin, direction, radius)
+                .map_or(Value::Null, |(mi, v)| s.job.models.get(mi).map_or(Value::Null, |m| vertex_json(m, v))))
+        },
+    },
 ];
 
 /// Most faces `model.faces.list` returns.
@@ -237,8 +289,13 @@ fn import(s: &mut Session, p: &Value) -> EngineResult<Value> {
     if s.job.models.len() >= MAX_MODELS {
         return Err(EngineError::InvalidParams(format!("a job holds at most {MAX_MODELS} models")));
     }
+    let staged = s.take_upload(path);
     let path = Path::new(path);
-    let (mesh, format) = import_mesh(path, units).map_err(|e| EngineError::Import(e.to_string()))?;
+    let (mesh, format) = match &staged {
+        Some((name, bytes)) => import_mesh_bytes(name, bytes, units),
+        None => import_mesh(path, units),
+    }
+    .map_err(|e| EngineError::Import(e.to_string()))?;
     let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let name = match params::opt_str(p, "name")? {
         Some(n) if !n.trim().is_empty() => n.trim().to_owned(),
@@ -257,6 +314,11 @@ fn import(s: &mut Session, p: &Value) -> EngineResult<Value> {
     };
     s.job.next_model = s.job.next_model.saturating_add(1);
     // The placeholder part stands in for a real model; the first import replaces it.
+    // The sample's stock goes with it; a real model gets its own.
+    if s.job.sample_loaded {
+        s.job.stock = None;
+        s.job.setup_changed();
+    }
     s.job.sample_loaded = false;
     s.job.models.retain(|m| m.id != SAMPLE_MODEL_ID);
     if s.view.selection.as_deref() == Some(SAMPLE_MODEL_ID) {

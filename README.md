@@ -12,15 +12,15 @@ the built-in sample part. STL and OBJ models can now be imported.*
 
 ## Where the project is
 
-**Early development.** Phase 1 of 9 is complete and Phase 2 has started. CosmicCAM can't machine
+**Early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart from STEP/IGES import. CosmicCAM can't machine
 anything yet: it imports STL and OBJ models, but there is no tooling, toolpath generation or
 G-code output so far.
 
 | Phase | Milestone | Status |
 | --- | --- | --- |
 | 1 | Desktop UI & theme engine | **Done** |
-| 2 | Model import & geometry ingestion (STL/OBJ, STEP/IGES) | **In progress** (STL/OBJ done) |
-| 3 | Work coordinate system (WCS) creation | **In progress** |
+| 2 | Model import & geometry ingestion (STL/OBJ, STEP/IGES) | **Done except STEP/IGES** |
+| 3 | Work coordinate system (WCS) creation | **Done** |
 | 4 | Tool library & management | Planned |
 | 5 | Stock setup & material definition | Planned |
 | 6 | Toolpath creation (2.5D and 3-axis strategies) | Planned |
@@ -45,7 +45,7 @@ G-code output so far.
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 91 commands. Each command has a typed parameter schema that the engine checks before
+  the same 94 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.
@@ -58,6 +58,24 @@ G-code output so far.
 Commands for later phases ( stock, tools, toolpaths, simulation, post-processing)
 already appear in the ribbon and the API. They are disabled and report "not available yet" so the
 full surface is visible and scriptable ahead of time.
+
+## In the browser
+
+CosmicCAM also runs as a web app (`apps/CosmicCAM-web`): the same application compiled to
+WebAssembly, drawing with WebGPU, or WebGL 2 where WebGPU is not available. Import models
+with the Import button or by dropping files on the page; everything stays in the browser.
+The Python control channel and window screenshots are desktop-only.
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install --locked trunk
+cd apps/CosmicCAM-web
+trunk serve --open                     # local build at http://127.0.0.1:8080
+trunk build --release                  # static site in apps/CosmicCAM-web/dist
+```
+
+`.github/workflows/pages.yml` builds it on every push to `main` and publishes it to GitHub
+Pages. To turn that on, set **Settings → Pages → Source** to **GitHub Actions**.
 
 ## Getting started
 

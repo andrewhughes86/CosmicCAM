@@ -28,6 +28,7 @@ const ORIENTATIONS: &[(&str, &str)] = &[
 const ORIGINS: &[(&str, &str)] = &[
     ("model", "Model origin"),
     ("box", "Point on model box"),
+    ("stock", "Point on stock box"),
     ("point", "Selected point"),
     ("intersection", "Intersection of selections"),
 ];
@@ -76,8 +77,11 @@ impl WcsTool {
         let mut tool = Self {
             command,
             orientation: if align { None } else { Some(1) },
+            // Stock box top centre when there is stock, else the model box, else world zero.
             origin: if align {
                 None
+            } else if session.job.stock.is_some() {
+                Some(2)
             } else if has_part {
                 Some(1)
             } else {
@@ -223,7 +227,7 @@ impl WcsTool {
         }
         if let Some(o) = self.origin_id() {
             out.insert("origin".into(), json!(o));
-            if o == "box" {
+            if o == "box" || o == "stock" {
                 out.insert(
                     "origin_box".into(),
                     json!(cmd::WCS_BOX_POINTS.get(self.box_point).copied().unwrap_or("top_center")),
@@ -309,7 +313,9 @@ impl WcsTool {
                 } else if let Some(key) = self.active {
                     let hint = match Self::accept_for(key) {
                         Accept::Axis => "Click a plane (its normal), a cylinder (its axis) or an edge in the viewport.",
-                        Accept::Point => "Click a point on the model (corners snap) or a circular edge (its centre).",
+                        Accept::Point | Accept::Select => {
+                            "Click a point on the model (corners snap) or a circular edge (its centre)."
+                        }
                     };
                     ui.label(RichText::new(hint).color(tokens.accent));
                 }
@@ -384,7 +390,7 @@ impl WcsTool {
             changed |= Self::mode_combo(ui, "wcs-origin", &mut self.origin, ORIGINS, align);
         });
         match self.origin_id() {
-            Some("box") => {
+            Some("box" | "stock") => {
                 ui.horizontal(|ui| {
                     ui.label("Box point");
                     let before = self.box_point;

@@ -11,6 +11,10 @@
 
 mod app;
 mod automation;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod control;
+#[cfg(target_arch = "wasm32")]
+#[path = "control_web.rs"]
 pub mod control;
 mod dock;
 pub mod icon_svg;
@@ -35,6 +39,7 @@ pub type Request = (String, serde_json::Value);
 pub const APP_ID: &str = "CosmicCAM";
 
 /// Native window configuration: wgpu renderer, sensible default and minimum sizes.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn native_options() -> eframe::NativeOptions {
     eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -52,6 +57,17 @@ pub fn native_options() -> eframe::NativeOptions {
 }
 
 /// Opens the desktop window and runs until it closes.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run(session: Session, options: LaunchOptions) -> eframe::Result {
     eframe::run_native(APP_ID, native_options(), Box::new(move |cc| Ok(Box::new(CosmicApp::new(cc, session, options)))))
+}
+
+/// Starts the app in a browser page, drawing into the canvas with id `canvas_id`.
+#[cfg(target_arch = "wasm32")]
+pub async fn run_web(canvas: eframe::web_sys::HtmlCanvasElement, session: Session) -> Result<(), String> {
+    let options = eframe::WebOptions::default();
+    eframe::WebRunner::new()
+        .start(canvas, options, Box::new(move |cc| Ok(Box::new(CosmicApp::new(cc, session, LaunchOptions::default())))))
+        .await
+        .map_err(|e| format!("{e:?}"))
 }

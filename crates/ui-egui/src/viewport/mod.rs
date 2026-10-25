@@ -5,6 +5,7 @@ mod overlay;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use CosmicCAM_engine::session::Entity;
 use CosmicCAM_engine::{Display, Session, Theme};
 use CosmicCAM_geom::{Aabb, FaceKind, Vec3};
 use CosmicCAM_render::{OrbitCamera, SceneGeometry, TriadStyle, scene};
@@ -25,6 +26,9 @@ pub enum Accept {
     /// A point: a circular edge (its centre) near the pointer, else a point on a face,
     /// snapped to a nearby corner.
     Point,
+    /// Plain selection with no tool open: a vertex, else an edge, else any face. Clicks
+    /// run `selection.set`.
+    Select,
 }
 
 /// How close to an edge, in screen points, the pointer must be to pick it.
@@ -78,6 +82,10 @@ type HighlightKey = (Vec<(String, usize)>, Option<(usize, usize, bool)>, u64, Th
 pub struct Viewport {
     /// The open picking tool's request, if any; set by the app before each frame.
     pub pick_mode: Option<PickMode>,
+    /// This frame's mode: the tool's, or plain selection built from the session.
+    mode: Option<PickMode>,
+    /// (model index, vertex) under the pointer in select mode.
+    hover_vertex: Option<(usize, usize)>,
     picked: Option<PickHit>,
     /// (model index, face, acceptable) under the pointer.
     hover: Option<(usize, usize, bool)>,
@@ -121,6 +129,8 @@ impl Viewport {
     pub fn new() -> Self {
         Self {
             pick_mode: None,
+            mode: None,
+            hover_vertex: None,
             picked: None,
             hover: None,
             hover_edge: None,
@@ -184,7 +194,8 @@ impl Viewport {
             self.shown = cam;
         }
         self.animate(ui, session);
-        self.handle_picking(ui, &response, rect, session);
+        self.mode = Some(self.pick_mode.clone().unwrap_or_else(|| select_mode(session)));
+        self.handle_picking(ui, &response, rect, session, requests);
         self.update_highlight(session, tokens);
 
         let painter = ui.painter_at(rect);
@@ -264,8 +275,15 @@ impl Viewport {
         (near.is_finite() && dir != Vec3::ZERO).then_some((near, dir))
     }
 
-    fn handle_picking(&mut self, ui: &Ui, response: &egui::Response, rect: Rect, session: &Session) {
-        let Some(mode) = &self.pick_mode else {
+    fn handle_picking(
+        &mut self,
+        ui: &Ui,
+        response: &egui::Response,
+        rect: Rect,
+        session: &Session,
+        requests: &mut Vec<Request>,
+    ) {
+        let Some(mode) = &self.mode else {
             self.hover = None;
             self.hover_edge = None;
             self.last_pointer = None;
@@ -280,11 +298,13 @@ impl Viewport {
             self.hover_edge = None;
             return;
         };
-        let pointer = response.hover_pos();
+        // No hover tests while dragging the camera.
+        let pointer = response.hover_pos().filter(|_| !ui.input(|i| i.pointer.any_down()));
         if pointer != self.last_pointer {
             self.last_pointer = pointer;
             self.hover = None;
             self.hover_edge = None;
+            self.hover_vertex = None;
             self.hover_point = None;
             if let Some(p) = pointer
                 && let (Some((o, d)), Some((o2, d2))) =
@@ -295,9 +315,10 @@ impl Viewport {
                 // the depth of the surface under the pointer.
                 let depth = hit.map_or(self.shown.distance, |h| h.distance);
                 let radius = ((o2 + d2 * depth) - (o + d * depth)).length().max(1.0e-4);
+                let vertex = if accept == Accept::Select { session.job.pick_vertex(o, d, radius) } else { None };
                 let edge = session.job.pick_edge(o, d, radius).filter(|(mi, ei)| {
                     // Points come from circle centres only; a straight edge has no single point.
-                    accept == Accept::Axis
+                    accept != Accept::Point
                         || session
                             .job
                             .models
@@ -305,13 +326,15 @@ impl Viewport {
                             .and_then(|m| m.edges.edges.get(*ei))
                             .is_some_and(|e| e.kind.id() == "circle")
                 });
-                if let Some((mi, ei)) = edge {
+                if let Some(v) = vertex {
+                    self.hover_vertex = Some(v);
+                } else if let Some((mi, ei)) = edge {
                     self.hover_edge = Some((mi, ei, true));
                 } else if let Some(hit) = hit
                     && let Some(model) = session.job.models.get(hit.model)
                 {
                     let ok = match (accept, model.faces.faces.get(hit.face).map(|f| f.kind)) {
-                        (Accept::Point, _) => true,
+                        (Accept::Point | Accept::Select, _) => true,
                         (Accept::Axis, Some(FaceKind::Plane { normal, .. })) => {
                             independent(normal, &mode.independent_of)
                         }
@@ -323,10 +346,26 @@ impl Viewport {
                 }
             }
         }
-        if self.hover.is_some() || self.hover_edge.is_some() {
+        if accept != Accept::Select && (self.hover.is_some() || self.hover_edge.is_some()) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }
         if !response.clicked() {
+            return;
+        }
+        if accept == Accept::Select {
+            // A click selects what is under the pointer; a click on nothing clears the selection.
+            let model_id = |mi: usize| session.job.models.get(mi).map(|m| m.id.clone());
+            let target = if let Some((mi, v)) = self.hover_vertex {
+                model_id(mi).map(|m| Entity::Vertex(v).reference(&m))
+            } else if let Some((mi, e, _)) = self.hover_edge {
+                model_id(mi).map(|m| Entity::Edge(e).reference(&m))
+            } else if let Some((mi, f, _)) = self.hover {
+                model_id(mi).map(|m| Entity::Face(f).reference(&m))
+            } else {
+                None
+            };
+            let params = target.map_or_else(|| serde_json::json!({}), |id| serde_json::json!({ "id": id }));
+            requests.push(("selection.set".into(), params));
             return;
         }
         if let Some((mi, edge, true)) = self.hover_edge
@@ -358,7 +397,7 @@ impl Viewport {
 
     /// Draws picked edges and the edge under the pointer as thick lines over the scene.
     fn paint_edges(&self, painter: &egui::Painter, rect: Rect, session: &Session, tokens: &Tokens) {
-        let picked = self.pick_mode.as_ref().map(|m| m.picked_edges.clone()).unwrap_or_default();
+        let picked = self.mode.as_ref().map(|m| m.picked_edges.clone()).unwrap_or_default();
         let mut lines: Vec<(usize, usize, Color32, f32)> = picked
             .iter()
             .filter_map(|(model, e)| session.job.models.iter().position(|m| &m.id == model).map(|mi| (mi, *e)))
@@ -368,12 +407,21 @@ impl Viewport {
             lines.push((mi, e, if ok { tokens.accent.gamma_multiply(0.7) } else { tokens.error }, 3.0));
         }
         let to_screen = self.projector(rect);
-        let mut dots = self.pick_mode.as_ref().map(|m| m.picked_points.clone()).unwrap_or_default();
-        if self.pick_mode.as_ref().is_some_and(|m| m.accept == Some(Accept::Point)) && self.hover_edge.is_none() {
-            dots.extend(self.hover_point);
+        let mut dots: Vec<(Vec3, Color32)> = self
+            .mode
+            .as_ref()
+            .map(|m| m.picked_points.iter().map(|p| (*p, tokens.accent)).collect())
+            .unwrap_or_default();
+        if self.mode.as_ref().is_some_and(|m| m.accept == Some(Accept::Point)) && self.hover_edge.is_none() {
+            dots.extend(self.hover_point.map(|p| (p, tokens.accent)));
         }
-        for p in dots.iter().filter_map(|p| to_screen(*p)) {
-            painter.circle(p, 4.5, tokens.accent, egui::Stroke::new(1.5, tokens.panel_bg));
+        if let Some((mi, v)) = self.hover_vertex
+            && let Some(p) = session.job.models.get(mi).and_then(|m| m.edges.vertices.get(v))
+        {
+            dots.push((*p, tokens.accent.gamma_multiply(0.7)));
+        }
+        for (p, colour) in dots.iter().filter_map(|(p, c)| to_screen(*p).map(|s| (s, *c))) {
+            painter.circle(p, 4.5, colour, egui::Stroke::new(1.5, tokens.panel_bg));
         }
         for (mi, e, colour, width) in lines {
             let Some(edge) = session.job.models.get(mi).and_then(|m| m.edges.edges.get(e)) else { continue };
@@ -445,7 +493,7 @@ impl Viewport {
         if self.gpu.is_none() {
             return; // built once the GPU exists
         }
-        let picked = self.pick_mode.as_ref().map(|m| m.picked.clone()).unwrap_or_default();
+        let picked = self.mode.as_ref().map(|m| m.picked.clone()).unwrap_or_default();
         let key: HighlightKey = (picked.clone(), self.hover, session.job.revision, session.prefs.theme);
         if self.highlight_key.as_ref() != Some(&key) {
             let mut g = SceneGeometry::default();
@@ -464,7 +512,7 @@ impl Viewport {
                     paint(mi, *face, accent);
                 }
             }
-            let axis_mode = self.pick_mode.as_ref().is_some_and(|m| m.accept == Some(Accept::Axis));
+            let axis_mode = self.mode.as_ref().is_some_and(|m| matches!(m.accept, Some(Accept::Axis | Accept::Select)));
             if let Some((mi, face, ok)) = self.hover
                 && axis_mode
                 && !picked.iter().any(|(m, f)| session.job.models.get(mi).is_some_and(|mm| &mm.id == m) && *f == face)
@@ -477,7 +525,7 @@ impl Viewport {
             }
             self.highlight_key = Some(key);
         }
-        let preview = self.pick_mode.as_ref().and_then(|m| m.preview);
+        let preview = self.mode.as_ref().and_then(|m| m.preview);
         if preview != self.preview_shown {
             let mut overlay = self.base_overlay.clone();
             if let Some((origin, axes)) = preview {
@@ -542,9 +590,7 @@ impl Viewport {
         }
         let palette = tokens.scene_palette();
         let mut content = SceneGeometry::default();
-        // The sample part is a model like any other; only its stock outline is extra.
-        if session.job.sample_loaded {
-            let stock = scene::sample_stock_box();
+        if let Some(stock) = session.job.stock {
             if display.stock {
                 content.push_box_edges(&stock, palette.stock_edge);
             }
@@ -662,6 +708,10 @@ impl Viewport {
             bg_bottom: theme::linear(tokens.viewport_bottom),
         };
         let gpu = self.gpu.as_mut()?;
+        if let Some(e) = gpu.error() {
+            self.fail(&format!("the GPU reported an error: {e}"));
+            return None;
+        }
         match catch_unwind(AssertUnwindSafe(|| gpu.render(&params))) {
             Ok(id) => {
                 let now = ui.input(|i| i.time);
@@ -687,6 +737,26 @@ impl Viewport {
         self.gpu = None;
         self.gpu_error = Some(format!("3D viewport unavailable: {message}"));
     }
+}
+
+/// Plain selection: what the session has selected, drawn as picked.
+fn select_mode(session: &Session) -> PickMode {
+    let mut mode = PickMode {
+        accept: Some(Accept::Select),
+        picked: Vec::new(),
+        picked_edges: Vec::new(),
+        picked_points: Vec::new(),
+        preview: None,
+        independent_of: Vec::new(),
+    };
+    if let Some((m, entity)) = session.view.selection.as_deref().and_then(|id| session.job.entity(id)) {
+        match entity {
+            Entity::Face(f) => mode.picked.push((m.id.clone(), f)),
+            Entity::Edge(e) => mode.picked_edges.push((m.id.clone(), e)),
+            Entity::Vertex(v) => mode.picked_points.extend(m.edges.vertices.get(v).copied()),
+        }
+    }
+    mode
 }
 
 /// `share` of `colour` over `base`, as the scene greys inactive triads.

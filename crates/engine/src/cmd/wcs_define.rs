@@ -17,7 +17,7 @@ use crate::session::{Session, Wcs};
 /// Orientation modes: model axes, two selected axes (the third follows), or vectors.
 pub const ORIENTATIONS: &[&str] = &["model", "z_x", "z_y", "x_y", "vectors"];
 /// Origin modes.
-pub const ORIGINS: &[&str] = &["model", "box", "point", "intersection"];
+pub const ORIGINS: &[&str] = &["model", "box", "stock", "point", "intersection"];
 /// Points on the model's bounding box: a level, then a position seen from the front (−Y).
 pub const BOX_POINTS: &[&str] = &[
     "top_front_left",
@@ -71,10 +71,10 @@ macro_rules! define_params {
             $crate::cmd::Param::optional(
                 "origin",
                 $crate::cmd::ParamKind::Choice($crate::cmd::wcs_define::ORIGINS),
-                "Where the origin goes: model (world zero), box (a point on the model's box), point (a selected point) or \
-                 intersection (where selected geometry meets)",
+                "Where the origin goes: model (world zero), box (a point on the model's box), stock (a point on the stock box), \
+                 point (a selected point) or intersection (where selected geometry meets)",
             ),
-            $crate::cmd::Param::optional("origin_box", $crate::cmd::ParamKind::Choice($crate::cmd::wcs_define::BOX_POINTS), "Box point, for origin = box (default top_center)"),
+            $crate::cmd::Param::optional("origin_box", $crate::cmd::ParamKind::Choice($crate::cmd::wcs_define::BOX_POINTS), "Box point, for origin = box or stock (default top_center)"),
             $crate::cmd::Param::optional("origin_point", $crate::cmd::ParamKind::Vec3, "Coordinates, for origin = point"),
             $crate::cmd::Param::optional(
                 "origin_geometry",
@@ -97,10 +97,26 @@ fn bad(message: impl Into<String>) -> EngineError {
 /// Selected geometry, reduced to what defining a WCS needs.
 #[derive(Clone, Copy, Debug)]
 enum Geom {
-    Plane { normal: Vec3, point: Vec3, centre: Vec3 },
-    Cylinder { base: Vec3, axis: Vec3, length: f32 },
-    Line { start: Vec3, end: Vec3 },
-    Circle { centre: Vec3, normal: Vec3 },
+    Plane {
+        normal: Vec3,
+        point: Vec3,
+        centre: Vec3,
+    },
+    Cylinder {
+        base: Vec3,
+        axis: Vec3,
+        length: f32,
+    },
+    Line {
+        start: Vec3,
+        end: Vec3,
+    },
+    Circle {
+        centre: Vec3,
+        normal: Vec3,
+    },
+    /// A vertex: a position only.
+    Point(Vec3),
 }
 
 /// The geometry a selection names.
@@ -120,7 +136,17 @@ fn geom(s: &Session, key: &str, reference: &str) -> EngineResult<Geom> {
             None => Err(bad(format!("`{key}`: no edge `{reference}`"))),
         };
     }
-    Err(bad(format!("`{key}`: no face or edge `{reference}` (expected model.N/face.N or model.N/edge.N)")))
+    if let Some((m, crate::session::Entity::Vertex(v))) = s.job.entity(reference) {
+        return m
+            .edges
+            .vertices
+            .get(v)
+            .map(|p| Geom::Point(*p))
+            .ok_or_else(|| bad(format!("`{key}`: no vertex `{reference}`")));
+    }
+    Err(bad(format!(
+        "`{key}`: no face, edge or vertex `{reference}` (expected model.N/face.N, model.N/edge.N or model.N/vertex.N)"
+    )))
 }
 
 fn selection(s: &Session, p: &Value, key: &str) -> EngineResult<Option<Geom>> {
@@ -160,6 +186,7 @@ fn direction(g: Geom, origin: Vec3, role: Role) -> Vec3 {
         Geom::Plane { normal, .. } => normal,
         Geom::Cylinder { axis, .. } => upward(axis),
         Geom::Circle { normal, .. } => upward(normal),
+        Geom::Point(_) => Vec3::ZERO,
         Geom::Line { start, end } => {
             let d = (end - start).normalize_or_zero();
             let rel = origin - start;
@@ -241,6 +268,11 @@ pub(crate) fn resolve_origin(s: &Session, p: &Value, current: Option<Vec3>) -> E
             }
             box_point(b, params::opt_str(p, "origin_box")?.unwrap_or("top_center"))
         }
+        "stock" => {
+            unused(p, &uses(&["origin_box"]), "origin", mode)?;
+            let b = s.job.stock.ok_or_else(|| bad("there is no stock yet; fit one with setup.stock.fit"))?;
+            box_point(b, params::opt_str(p, "origin_box")?.unwrap_or("top_center"))
+        }
         "point" => {
             unused(p, &uses(&["origin_point", "origin_geometry"]), "origin", mode)?;
             match (params::opt_vec3(p, "origin_point")?, selection(s, p, "origin_geometry")?) {
@@ -256,6 +288,7 @@ pub(crate) fn resolve_origin(s: &Session, p: &Value, current: Option<Vec3>) -> E
                         }
                     }
                     Geom::Line { start, end } => (start + end) * 0.5,
+                    Geom::Point(p) => p,
                 }),
                 (None, None) => Err(bad("origin = \"point\" needs `origin_point` or `origin_geometry`")),
             }
@@ -303,19 +336,28 @@ enum Prim {
     Line(Vec3, Vec3),
 }
 
-fn prim(g: Geom) -> Prim {
-    match g {
+fn prim(g: Geom) -> Option<Prim> {
+    Some(match g {
         Geom::Plane { normal, point, .. } => Prim::Plane(normal, point),
         Geom::Cylinder { base, axis, .. } => Prim::Line(base, axis),
         Geom::Circle { centre, normal } => Prim::Line(centre, normal),
         Geom::Line { start, end } => Prim::Line(start, (end - start).normalize_or_zero()),
-    }
+        Geom::Point(_) => return None,
+    })
 }
 
 /// Where the selections meet: three planes, a line (edge or axis) and a plane, or two lines.
 fn intersection(a: Geom, b: Geom, c: Option<Geom>) -> EngineResult<Vec3> {
     let none = || bad("these selections do not meet in one point");
-    match (prim(a), prim(b), c.map(prim)) {
+    let (Some(a), Some(b)) = (prim(a), prim(b)) else {
+        return Err(bad("a vertex cannot take part in an intersection; use origin = \"point\" for it"));
+    };
+    let c = match c.map(prim) {
+        Some(None) => return Err(bad("a vertex cannot take part in an intersection; use origin = \"point\" for it")),
+        Some(Some(c)) => Some(c),
+        None => None,
+    };
+    match (a, b, c) {
         (Prim::Plane(n1, p1), Prim::Plane(n2, p2), Some(Prim::Plane(n3, p3))) => {
             let det = n1.dot(n2.cross(n3));
             if det.abs() < 0.25 {
@@ -373,7 +415,10 @@ pub(crate) fn resolve_axes(s: &Session, p: &Value, origin: Vec3, current: Option
     let uses = |keep: &[&str]| -> Vec<&'static str> {
         ORIENTATION_KEYS.iter().copied().filter(|k| !keep.contains(k)).collect()
     };
-    let need = |key: &str| required(s, p, key, &format!("for orientation = \"{mode}\""));
+    let need = |key: &str| match required(s, p, key, &format!("for orientation = \"{mode}\""))? {
+        Geom::Point(_) => Err(bad(format!("`{key}`: a vertex has no direction; pick a plane, cylinder or edge"))),
+        g => Ok(g),
+    };
     let sign = |v: Vec3, key: &str| -> EngineResult<Vec3> { Ok(if flip(key)? { -v } else { v }) };
     let (x, z) = match mode {
         "model" => {

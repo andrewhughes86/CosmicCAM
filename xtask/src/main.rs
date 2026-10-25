@@ -89,6 +89,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("CosmicCAM-ui-egui", 5),
     ("CosmicCAM", 6),
     ("CosmicCAM-cli", 6),
+    ("CosmicCAM-web", 6),
 ];
 
 /// UI and windowing crates only L5 and the apps may use.
@@ -220,7 +221,9 @@ fn wasm() -> Result<(), String> {
             args.extend(["-p", name]);
         }
     }
-    cargo(&args)
+    cargo(&args)?;
+    // The browser app (and the UI crate under it), linted as it is built for the web.
+    cargo(&["clippy", "--target", "wasm32-unknown-unknown", "-p", "CosmicCAM-web", "--", "-D", "warnings"])
 }
 
 /// Runs the Python client's unit tests with the standard library only.

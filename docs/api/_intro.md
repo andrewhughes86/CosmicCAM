@@ -96,9 +96,9 @@ second dowel hole sets X.
 
 | Parameter | Meaning |
 | --- | --- |
-| `origin` | `model` (world zero, the default), `box`, `point` or `intersection` |
-| `origin_box` | For `box`: a point on the models' bounding box, `<level>_<position>` with level `top`, `middle`, `bottom` and position `front_left`, `front`, `front_right`, `left`, `center`, `right`, `back_left`, `back`, `back_right` (`center` alone is the box centre; default `top_center`) |
-| `origin_point` / `origin_geometry` | For `point`: coordinates, or a selection (a circle's centre, a cylinder's upper axis end, a plane's centre, an edge's midpoint) |
+| `origin` | `model` (world zero, the default), `box`, `stock`, `point` or `intersection` |
+| `origin_box` | For `box` or `stock`: a point on the models' (or the stock's) bounding box, `<level>_<position>` with level `top`, `middle`, `bottom` and position `front_left`, `front`, `front_right`, `left`, `center`, `right`, `back_left`, `back`, `back_right` (`center` alone is the box centre; default `top_center`) |
+| `origin_point` / `origin_geometry` | For `point`: coordinates, or a selection (a vertex, a circle's centre, a cylinder's upper axis end, a plane's centre, an edge's midpoint) |
 | `origin_a`, `origin_b`, `origin_c` | For `intersection`: three planes (a corner), a line and a plane (an edge or a cylinder axis meeting a face), or two lines |
 
 Parameters the chosen modes do not use are refused, so a script always gets what it asked for.
@@ -131,6 +131,30 @@ each selection row and then the geometry in the viewport (picked faces and edges
 accent colour; things that cannot be used turn red under the pointer), tick Flip where needed,
 check the preview triad and press OK. Offset, Rotate and Rename open a small dialog. Scripts
 never get dialogs.
+
+## Stock
+
+```python
+cc.setup_stock_fit(margin_sides=5, margin_top=2, margin_bottom=0)   # box around the models
+print(cc.setup_stock_get())        # {'shape': 'box', 'min': [...], 'max': [...], 'size': [...]}
+cc.setup_wcs_create(origin="stock", origin_box="top_front_left")
+```
+
+The sample part comes with stock; importing a model replaces the sample and its stock.
+
+## Selecting geometry
+
+Clicking in the viewport selects what is under the pointer: a vertex (corner) if one is close,
+else an edge, else the face. The inspector shows its geometry (a face's kind, area, normal or
+diameter and axis; an edge's length and ends or centre; a vertex's position). Clicking empty
+space clears the selection. From a script:
+
+```python
+cc.selection_set(id="model.1/face.3")       # or model.1/edge.4, model.1/vertex.2, or an outline id
+print(cc.selection_get())                   # {id, label, properties: [{name, value}], children}
+cc.model_vertices_list(id="model.1")        # corners: {vertex, model, kind, position}
+cc.model_vertex_pick(origin=[0, 0, 100], direction=[0, 0, -1], radius=1)
+```
 
 ## State, screenshots and the log
 

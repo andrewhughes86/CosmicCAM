@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CosmicCAM</title>
+    <meta name="description" content="CosmicCAM: an open-source CAM application, running in the browser." />
+    <link data-trunk rel="rust" data-bin="CosmicCAM-web" data-wasm-opt="z" />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0f172a; }
+      #cosmiccam-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+      #cosmiccam-loading {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        color: #94a3b8; font: 15px system-ui, sans-serif; padding: 16px; text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="cosmiccam-canvas"></canvas>
+    <div id="cosmiccam-loading">Loading CosmicCAM…</div>
+  </body>
+</html>

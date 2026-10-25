@@ -315,13 +315,13 @@ impl eframe::App for CosmicApp {
         }
 
         let mut requests = self.handle_shortcuts(&ctx);
-        requests.extend(self.tools.poll());
+        requests.extend(self.tools.poll(&mut self.session));
         if self.tools.is_busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         // Model files dropped on the window are imported.
-        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
-        requests.extend(dropped.iter().map(|p| tools::import_request(p)));
+        let dropped = ctx.input(|i| i.raw.dropped_files.clone());
+        requests.extend(self.tools.dropped(&dropped));
         let step = self.automation.tick(&ctx);
         requests.extend(step.requests);
         if let Some(path) = step.capture {

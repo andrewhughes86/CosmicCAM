@@ -55,9 +55,29 @@ pub struct Edge {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EdgeMap {
     pub edges: Vec<Edge>,
+    /// Corners: where straight edges end (meet another edge or turn).
+    pub vertices: Vec<Vec3>,
 }
 
 impl EdgeMap {
+    /// The nearest vertex within `radius` of a ray and not behind `limit` along it:
+    /// (vertex index, distance along the ray).
+    pub fn nearest_vertex_to_ray(&self, origin: Vec3, dir: Vec3, radius: f32, limit: f32) -> Option<(usize, f32)> {
+        let dir = dir.normalize_or_zero();
+        if dir == Vec3::ZERO {
+            return None;
+        }
+        let mut best: Option<(usize, f32)> = None;
+        for (i, v) in self.vertices.iter().enumerate() {
+            let along = (*v - origin).dot(dir);
+            let gap = (origin + dir * along - *v).length();
+            if gap <= radius && along > 0.0 && along <= limit && best.is_none_or(|(_, d)| along < d) {
+                best = Some((i, along));
+            }
+        }
+        best
+    }
+
     /// The nearest edge passing within `radius` of a ray and not behind the first surface
     /// hit at `limit` along it: (edge index, distance along the ray).
     pub fn nearest_to_ray(&self, origin: Vec3, dir: Vec3, radius: f32, limit: f32) -> Option<(usize, f32)> {
@@ -186,7 +206,19 @@ pub fn extract(mesh: &Mesh) -> EdgeMap {
             edges.push(line(run));
         }
     }
-    EdgeMap { edges }
+    // Every straight edge's ends are corners; circles have no corner.
+    let mut vertices: Vec<Vec3> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for e in &edges {
+        if let EdgeKind::Line { start, end } = e.kind {
+            for v in [start, end] {
+                if seen.insert((v + Vec3::ZERO).to_array().map(f32::to_bits)) {
+                    vertices.push(v);
+                }
+            }
+        }
+    }
+    EdgeMap { edges, vertices }
 }
 
 fn polyline_length(pts: &[Vec3]) -> f32 {
@@ -263,6 +295,9 @@ mod tests {
     fn a_cube_has_twelve_straight_edges() -> Result<(), crate::MeshError> {
         let map = extract(&cube()?);
         assert_eq!(map.edges.len(), 12);
+        assert_eq!(map.vertices.len(), 8);
+        let hit = map.nearest_vertex_to_ray(Vec3::new(1.01, 1.0, 5.0), Vec3::NEG_Z, 0.05, 10.0);
+        assert!(hit.is_some_and(|(i, d)| map.vertices[i] == Vec3::new(1.0, 1.0, 1.0) && (d - 4.0).abs() < 1e-5));
         assert!(map.edges.iter().all(|e| matches!(e.kind, EdgeKind::Line { .. }) && (e.length - 1.0).abs() < 1e-5));
         Ok(())
     }

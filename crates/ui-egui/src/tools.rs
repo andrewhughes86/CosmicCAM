@@ -3,7 +3,7 @@
 //! command with explicit parameters; programmatic `engine.execute` calls never get here.
 
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 
 use serde_json::json;
 
@@ -33,25 +33,41 @@ const MODEL_FILTERS: &[(&str, &[&str])] = &[
     ("Wavefront OBJ", &["obj", "OBJ"]),
 ];
 
+/// A model file the user chose: a path on the desktop, the bytes themselves in the browser.
+pub enum ImportChoice {
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    Path(PathBuf),
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    Upload { name: String, bytes: Vec<u8> },
+}
+
 /// An interactive start waiting for the user.
 pub enum Pending {
-    /// A native file dialog, answered on a channel when it closes.
-    Import(Receiver<Option<PathBuf>>),
+    /// A file dialog, answered on a channel when it closes.
+    Import(Receiver<Option<ImportChoice>>),
     /// A parameter dialog.
     Form(Box<ParamForm>),
     /// The WCS panel, picking geometry in the viewport.
     Pick(Box<WcsTool>),
 }
 
-#[derive(Default)]
 pub struct Tools {
     pending: Option<Pending>,
+    /// Files dropped on the window whose bytes are still being read (browser).
+    drops: (Sender<ImportChoice>, Receiver<ImportChoice>),
+}
+
+impl Default for Tools {
+    fn default() -> Self {
+        Self { pending: None, drops: channel() }
+    }
 }
 
 impl Tools {
     /// Starts `id`'s interactive tool. Errors are user-facing messages.
     pub fn start(&mut self, id: &str, session: &Session) -> Result<(), String> {
-        if self.pending.is_some() {
+        // A browser file picker may never report a cancel, so a new import replaces it.
+        if self.pending.as_ref().is_some_and(|p| !(id == "model.import" && matches!(p, Pending::Import(_)))) {
             return Err("finish the open dialog first".into());
         }
         match id {
@@ -120,32 +136,61 @@ impl Tools {
         }
     }
 
-    /// Commands to run now that a tool has its input.
-    pub fn poll(&mut self) -> Vec<Request> {
-        let Some(Pending::Import(rx)) = &self.pending else {
-            return Vec::new();
-        };
-        match rx.try_recv() {
-            Err(TryRecvError::Empty) => Vec::new(),
-            Ok(choice) => {
-                self.pending = None;
-                choice.into_iter().map(|path| import_request(&path)).collect()
+    /// Commands to run now that a tool has its input. Uploaded bytes are staged in the
+    /// session and imported by their `upload://` path.
+    pub fn poll(&mut self, session: &mut Session) -> Vec<Request> {
+        let mut choices: Vec<ImportChoice> = self.drops.1.try_iter().collect();
+        if let Some(Pending::Import(rx)) = &self.pending {
+            match rx.try_recv() {
+                Err(TryRecvError::Empty) => {}
+                Ok(choice) => {
+                    self.pending = None;
+                    choices.extend(choice);
+                }
+                Err(TryRecvError::Disconnected) => self.pending = None,
             }
-            Err(TryRecvError::Disconnected) => {
-                self.pending = None;
-                Vec::new()
+        }
+        choices
+            .into_iter()
+            .map(|choice| match choice {
+                ImportChoice::Path(path) => import_request(&path.display().to_string()),
+                ImportChoice::Upload { name, bytes } => import_request(&session.stage_upload(&name, bytes)),
+            })
+            .collect()
+    }
+
+    /// Files dropped on the window. On the desktop they have paths; in the browser their
+    /// bytes are read in the background and imported when ready.
+    pub fn dropped(&mut self, files: &[std::sync::Arc<dyn egui::DroppedFile + Send + Sync>]) -> Vec<Request> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            for file in files {
+                let file = std::sync::Arc::clone(file);
+                let tx = self.drops.0.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let name = file.path().display().to_string();
+                    if let Ok(bytes) = file.bytes_async().await {
+                        let _ = tx.send(ImportChoice::Upload { name, bytes });
+                    }
+                });
             }
+            Vec::new()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = &self.drops.0;
+            files.iter().map(|f| import_request(&f.path().display().to_string())).collect()
         }
     }
 }
 
-pub fn import_request(path: &std::path::Path) -> Request {
-    ("model.import".into(), json!({ "path": path.display().to_string() }))
+fn import_request(path: &str) -> Request {
+    ("model.import".into(), json!({ "path": path }))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn pick_model_file() -> Result<Receiver<Option<PathBuf>>, String> {
-    let (tx, rx) = std::sync::mpsc::channel();
+fn pick_model_file() -> Result<Receiver<Option<ImportChoice>>, String> {
+    let (tx, rx) = channel();
     let dialog = MODEL_FILTERS
         .iter()
         .fold(rfd::FileDialog::new().set_title("Import model"), |d, (label, exts)| d.add_filter(*label, exts));
@@ -153,20 +198,31 @@ fn pick_model_file() -> Result<Receiver<Option<PathBuf>>, String> {
     // window keeps drawing and the control channel keeps answering.
     #[cfg(target_os = "macos")]
     {
-        let _ = tx.send(dialog.pick_file());
+        let _ = tx.send(dialog.pick_file().map(ImportChoice::Path));
     }
     #[cfg(not(target_os = "macos"))]
     std::thread::Builder::new()
         .name("import-dialog".into())
         .spawn(move || {
-            let _ = tx.send(dialog.pick_file());
+            let _ = tx.send(dialog.pick_file().map(ImportChoice::Path));
         })
         .map_err(|e| format!("could not open the file dialog: {e}"))?;
     Ok(rx)
 }
 
+/// The browser's file picker; the chosen file's bytes arrive on the channel.
 #[cfg(target_arch = "wasm32")]
-fn pick_model_file() -> Result<Receiver<Option<PathBuf>>, String> {
-    let _ = MODEL_FILTERS;
-    Err("file dialogs are not available in the browser yet".into())
+fn pick_model_file() -> Result<Receiver<Option<ImportChoice>>, String> {
+    let (tx, rx) = channel();
+    let dialog = MODEL_FILTERS
+        .iter()
+        .fold(rfd::AsyncFileDialog::new().set_title("Import model"), |d, (label, exts)| d.add_filter(*label, exts));
+    wasm_bindgen_futures::spawn_local(async move {
+        let choice = match dialog.pick_file().await {
+            Some(file) => Some(ImportChoice::Upload { name: file.file_name(), bytes: file.read().await }),
+            None => None,
+        };
+        let _ = tx.send(choice);
+    });
+    Ok(rx)
 }

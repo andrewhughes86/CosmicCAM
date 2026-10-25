@@ -64,7 +64,19 @@ dependencies = [
  "resvg",
  "rfd",
  "serde_json",
+ "wasm-bindgen-futures",
  "wgpu",
+]
+
+[[package]]
+name = "CosmicCAM-web"
+version = "0.1.0"
+dependencies = [
+ "CosmicCAM-ui-egui",
+ "eframe",
+ "log",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

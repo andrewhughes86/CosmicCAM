@@ -247,6 +247,36 @@ pub fn edge_ref(model: &str, edge: usize) -> String {
     format!("{model}/edge.{edge}")
 }
 
+/// `<model id>/vertex.<n>`, as commands name vertices.
+pub fn vertex_ref(model: &str, vertex: usize) -> String {
+    format!("{model}/vertex.{vertex}")
+}
+
+/// A vertex as the API reports it.
+pub fn vertex_json(model: &Model, vertex: usize) -> Value {
+    model.edges.vertices.get(vertex).map_or(Value::Null, |p| {
+        json!({ "vertex": vertex_ref(&model.id, vertex), "model": model.id, "kind": "vertex", "position": p.to_array() })
+    })
+}
+
+/// A face, edge or vertex of a model, as a selection or pick names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Entity {
+    Face(usize),
+    Edge(usize),
+    Vertex(usize),
+}
+
+impl Entity {
+    pub fn reference(self, model: &str) -> String {
+        match self {
+            Self::Face(i) => face_ref(model, i),
+            Self::Edge(i) => edge_ref(model, i),
+            Self::Vertex(i) => vertex_ref(model, i),
+        }
+    }
+}
+
 /// An edge as the API reports it.
 pub fn edge_json(model: &Model, edge: usize) -> Value {
     let Some(e) = model.edges.edges.get(edge) else {
@@ -271,6 +301,14 @@ pub fn edge_json(model: &Model, edge: usize) -> Value {
         }
     }
     v
+}
+
+/// Outline id of the stock.
+pub const STOCK_ID: &str = "stock";
+
+/// The stock as the API reports it.
+pub fn stock_json(b: &Aabb) -> Value {
+    json!({ "shape": "box", "min": b.min.to_array(), "max": b.max.to_array(), "size": b.size().to_array() })
 }
 
 /// Outline id of the built-in sample part.
@@ -422,8 +460,10 @@ pub struct JobState {
     /// Id of the WCS toolpaths are programmed in.
     pub active_wcs: Option<String>,
     pub(crate) next_wcs: u64,
-    /// Bumped whenever a WCS changes; like `revision`, it never repeats within a run.
+    /// Bumped whenever a WCS or the stock changes; like `revision`, it never repeats within a run.
     pub setup_revision: u64,
+    /// The raw material: a box in world millimetres, once defined.
+    pub stock: Option<Aabb>,
 }
 
 impl Default for JobState {
@@ -438,6 +478,7 @@ impl Default for JobState {
             active_wcs: None,
             next_wcs: 1,
             setup_revision: 0,
+            stock: None,
         }
     }
 }
@@ -496,6 +537,47 @@ impl JobState {
             }
         }
         best.map(|(m, e, _)| (m, e))
+    }
+
+    /// The vertex within `radius` of a ray and not hidden behind the first surface it hits:
+    /// (model index, vertex index).
+    pub fn pick_vertex(&self, origin: Vec3, direction: Vec3, radius: f32) -> Option<(usize, usize)> {
+        let limit = self.pick(origin, direction).map_or(f32::INFINITY, |hit| hit.distance + radius * 2.0);
+        let mut best: Option<(usize, usize, f32)> = None;
+        for (mi, m) in self.models.iter().enumerate() {
+            if let Some((v, along)) = m.edges.nearest_vertex_to_ray(origin, direction, radius, limit)
+                && best.is_none_or(|(_, _, d)| along < d)
+            {
+                best = Some((mi, v, along));
+            }
+        }
+        best.map(|(m, v, _)| (m, v))
+    }
+
+    /// What a click would select along a ray: a vertex, else an edge (both within
+    /// `radius`), else the face hit. (model index, entity).
+    pub fn pick_entity(&self, origin: Vec3, direction: Vec3, radius: f32) -> Option<(usize, Entity)> {
+        if let Some((m, v)) = self.pick_vertex(origin, direction, radius) {
+            return Some((m, Entity::Vertex(v)));
+        }
+        if let Some((m, e)) = self.pick_edge(origin, direction, radius) {
+            return Some((m, Entity::Edge(e)));
+        }
+        self.pick(origin, direction).map(|hit| (hit.model, Entity::Face(hit.face)))
+    }
+
+    /// Resolves `<model id>/face.<n>`, `/edge.<n>` or `/vertex.<n>`.
+    pub fn entity(&self, reference: &str) -> Option<(&Model, Entity)> {
+        if let Some((m, f)) = self.face(reference) {
+            return Some((m, Entity::Face(f)));
+        }
+        if let Some((m, e)) = self.edge(reference) {
+            return Some((m, Entity::Edge(e)));
+        }
+        let (model, v) = reference.rsplit_once("/vertex.")?;
+        let v: usize = v.parse().ok()?;
+        let m = self.model(model)?;
+        (v < m.edges.vertices.len()).then_some((m, Entity::Vertex(v)))
     }
 
     /// Resolves `<model id>/edge.<n>`.
@@ -575,8 +657,15 @@ pub fn bounds_json(b: &Aabb) -> Value {
     if b.is_empty() { Value::Null } else { json!({ "min": b.min.to_array(), "max": b.max.to_array() }) }
 }
 
+/// Prefix of paths naming a staged upload: `upload://<file name>`.
+pub const UPLOAD_PREFIX: &str = "upload://";
+/// Most uploads staged at once; the oldest is dropped beyond it.
+const MAX_UPLOADS: usize = 8;
+
 #[derive(Clone, Debug, Default)]
 pub struct Session {
+    /// Files handed to the app without a path (browser uploads), by name, until imported.
+    uploads: Vec<(String, Arc<Vec<u8>>)>,
     pub prefs: Preferences,
     pub view: ViewState,
     pub job: JobState,
@@ -596,7 +685,27 @@ impl Session {
         s.job.name = "Sample".into();
         s.job.sample_loaded = true;
         s.job.models.push(Model::sample());
+        s.job.stock = Some(CosmicCAM_render::scene::sample_stock_box());
         s
+    }
+
+    /// Stages file bytes that have no path (a browser upload) and returns the path
+    /// `model.import` takes for them: `upload://<name>`.
+    pub fn stage_upload(&mut self, name: &str, bytes: Vec<u8>) -> String {
+        let name: String = name.chars().filter(|c| !c.is_control()).take(256).collect();
+        self.uploads.retain(|(n, _)| *n != name);
+        if self.uploads.len() >= MAX_UPLOADS {
+            self.uploads.remove(0);
+        }
+        self.uploads.push((name.clone(), Arc::new(bytes)));
+        format!("{UPLOAD_PREFIX}{name}")
+    }
+
+    /// Takes a staged upload by its `upload://` path.
+    pub(crate) fn take_upload(&mut self, path: &str) -> Option<(String, Arc<Vec<u8>>)> {
+        let name = path.strip_prefix(UPLOAD_PREFIX)?;
+        let i = self.uploads.iter().position(|(n, _)| n == name)?;
+        Some(self.uploads.remove(i))
     }
 
     pub fn log(&self) -> &[LogEntry] {
@@ -694,6 +803,7 @@ impl Session {
                 "models": self.job.models.iter().map(Model::to_json).collect::<Vec<_>>(),
                 "wcs": self.job.wcs.iter().map(|w| w.to_json(self.job.active_wcs.as_deref() == Some(&w.id))).collect::<Vec<_>>(),
                 "active_wcs": self.job.active_wcs,
+                "stock": self.job.stock.as_ref().map_or(Value::Null, stock_json),
             },
             "theme": self.prefs.theme.id(),
             "fps_limit": self.prefs.fps_limit,
@@ -768,11 +878,31 @@ impl Session {
             properties: vec![("Name".into(), self.job.name.clone()), ("Units".into(), "Millimetres".into())],
             children: vec![
                 group("models", "Models", models),
-                group("setups", "Setups", self.wcs_nodes()),
+                group("setups", "Setups", self.setup_nodes()),
                 group("tools", "Tools", Vec::new()),
                 group("toolpaths", "Toolpaths", Vec::new()),
             ],
         }]
+    }
+
+    /// The stock, then each WCS.
+    fn setup_nodes(&self) -> Vec<OutlineNode> {
+        let v = |p: Vec3| format!("{:.3}, {:.3}, {:.3}", p.x, p.y, p.z);
+        let stock = self.job.stock.map(|b| {
+            let size = b.size();
+            OutlineNode {
+                id: STOCK_ID.into(),
+                label: "Stock".into(),
+                children: Vec::new(),
+                properties: vec![
+                    ("Shape".into(), "Box".into()),
+                    ("Size".into(), format!("{:.2} × {:.2} × {:.2} mm", size.x, size.y, size.z)),
+                    ("Min".into(), v(b.min)),
+                    ("Max".into(), v(b.max)),
+                ],
+            }
+        });
+        stock.into_iter().chain(self.wcs_nodes()).collect()
     }
 
     fn wcs_nodes(&self) -> Vec<OutlineNode> {
@@ -797,6 +927,65 @@ impl Session {
                 }
             })
             .collect()
+    }
+
+    /// The selected item as the inspector shows it: an outline node, or a face, edge or
+    /// vertex of a model.
+    pub fn selection_node(&self, id: &str) -> Option<OutlineNode> {
+        if let Some(node) = self.outline_node(id) {
+            return Some(node);
+        }
+        let (m, entity) = self.job.entity(id)?;
+        let v = |p: Vec3| format!("{:.3}, {:.3}, {:.3}", p.x, p.y, p.z);
+        let (label, properties): (String, Vec<(String, String)>) = match entity {
+            Entity::Face(f) => {
+                let face = m.faces.faces.get(f)?;
+                let mut props = vec![
+                    ("Model".into(), m.name.clone()),
+                    ("Kind".into(), face.kind.id().into()),
+                    ("Area".into(), format!("{:.3} mm²", face.area)),
+                    ("Centre".into(), v(face.centroid)),
+                ];
+                match face.kind {
+                    FaceKind::Plane { normal, .. } => props.push(("Normal".into(), v(normal))),
+                    FaceKind::Cylinder { base, axis, radius, length, hole } => props.extend([
+                        ("Type".into(), if hole { "Hole" } else { "Boss" }.into()),
+                        ("Diameter".into(), format!("{:.3} mm", radius * 2.0)),
+                        ("Length".into(), format!("{:.3} mm", length)),
+                        ("Axis".into(), v(axis)),
+                        ("Axis base".into(), v(base)),
+                    ]),
+                    FaceKind::Freeform => {}
+                }
+                (format!("Face {f} ({})", face.kind.id()), props)
+            }
+            Entity::Edge(e) => {
+                let edge = m.edges.edges.get(e)?;
+                let mut props = vec![
+                    ("Model".into(), m.name.clone()),
+                    ("Kind".into(), edge.kind.id().into()),
+                    ("Length".into(), format!("{:.3} mm", edge.length)),
+                ];
+                match edge.kind {
+                    EdgeKind::Line { start, end } => props.extend([
+                        ("Start".into(), v(start)),
+                        ("End".into(), v(end)),
+                        ("Direction".into(), v(edge.kind.direction())),
+                    ]),
+                    EdgeKind::Circle { center, normal, radius } => props.extend([
+                        ("Centre".into(), v(center)),
+                        ("Diameter".into(), format!("{:.3} mm", radius * 2.0)),
+                        ("Normal".into(), v(normal)),
+                    ]),
+                }
+                (format!("Edge {e} ({})", edge.kind.id()), props)
+            }
+            Entity::Vertex(i) => {
+                let p = m.edges.vertices.get(i)?;
+                (format!("Vertex {i}"), vec![("Model".into(), m.name.clone()), ("Position".into(), v(*p))])
+            }
+        };
+        Some(OutlineNode { id: id.to_owned(), label, children: Vec::new(), properties })
     }
 
     /// Finds an outline node by id.
