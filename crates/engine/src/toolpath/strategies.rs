@@ -433,7 +433,15 @@ const MAX_ROW_POINTS: usize = 200_000;
 
 /// Points along `a`→`b` every `step`, each at the height the cutter can come down to, never
 /// below `floor`, simplified where the path stays within `tolerance` of a straight line.
-fn drop_line(cutter: &DropCutter, a: DVec2, b: DVec2, step: f64, floor: f64, raise: f64, tolerance: f64) -> Vec<DVec3> {
+pub(super) fn drop_line(
+    cutter: &DropCutter,
+    a: DVec2,
+    b: DVec2,
+    step: f64,
+    floor: f64,
+    raise: f64,
+    tolerance: f64,
+) -> Vec<DVec3> {
     let height = |q: DVec2| cutter.height(q).map_or(floor, |z| (z + raise).max(floor));
     let n = ((a.distance(b) / step.max(1.0e-3)).ceil() as usize).clamp(1, MAX_ROW_POINTS);
     let samples: Vec<DVec2> = (0..=n).map(|i| a.lerp(b, i as f64 / n as f64)).collect();
@@ -488,7 +496,7 @@ pub(super) fn refine<T: Copy>(
 }
 
 /// Drops points that lie within `tolerance` of the line through their neighbours.
-fn simplify(pts: &[DVec3], tolerance: f64) -> Vec<DVec3> {
+pub(super) fn simplify(pts: &[DVec3], tolerance: f64) -> Vec<DVec3> {
     let mut out: Vec<DVec3> = Vec::with_capacity(pts.len());
     for (i, &q) in pts.iter().enumerate() {
         if i + 1 == pts.len() || out.is_empty() {
@@ -565,6 +573,11 @@ pub fn preview_heights(strategy: &str, s: &Session, p: &Value) -> Vec<(String, O
         ROUGH => &ROUGH_HEIGHTS,
         super::drill::DRILL => &super::drill::DRILL_HEIGHTS,
         super::bore::BORE => &super::bore::BORE_HEIGHTS,
+        super::twod::THREAD => &super::twod::THREAD_HEIGHTS,
+        super::adaptive::ADAPTIVE if params::opt_str(p, "boundary").ok().flatten() == Some("selection") => {
+            &POCKET_HEIGHTS
+        }
+        super::adaptive::ADAPTIVE => &ROUGH_HEIGHTS,
         _ => &FINISH_HEIGHTS,
     };
     let Ok((f, _)) = super::contour::frame(s, p) else {

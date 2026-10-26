@@ -190,6 +190,11 @@ fn context_menu(
                 }
                 item(ui, requests, "Duplicate", run("toolpath.duplicate", json!({ "id": id })));
                 ui.separator();
+                item(ui, requests, "Move up", run("toolpath.move", json!({ "id": id, "by": -1 })));
+                item(ui, requests, "Move down", run("toolpath.move", json!({ "id": id, "by": 1 })));
+                item(ui, requests, "Regenerate", run("toolpath.regenerate", json!({ "ids": [id] })));
+                item(ui, requests, "Save as template…", rename("toolpath.template.save"));
+                ui.separator();
                 item(ui, requests, "Delete", delete("toolpath.remove"));
             }
             m if m.starts_with("model.") => {

@@ -32,7 +32,7 @@ const LARGE_MIN_WIDTH: f32 = 46.0;
 const LARGE_WRAP_WIDTH: f32 = 64.0;
 const TILE_WIDTH: f32 = 78.0;
 const TILE_HEIGHT: f32 = 58.0;
-const GALLERY_VISIBLE: usize = 5;
+const GALLERY_VISIBLE: usize = 4;
 const LABEL_SIZE: f32 = 12.0;
 
 pub fn show(ui: &mut Ui, session: &Session, tokens: &Tokens, requests: &mut Vec<Request>) {
@@ -553,8 +553,8 @@ fn gallery(
     );
     ui.painter().vline(column.left(), column.y_range(), Stroke::new(1.0, tokens.border));
     let third = column.height() / 3.0;
-    // Up, down and "show all" (not wired yet).
-    for (n, active) in [page > 0, page + 1 < pages, false].into_iter().enumerate() {
+    // Up, down and "show all" (a menu of every tile).
+    for (n, active) in [page > 0, page + 1 < pages, pages > 1].into_iter().enumerate() {
         let cell =
             Rect::from_min_size(pos2(column.left(), column.top() + n as f32 * third), vec2(column.width(), third));
         let response = ui.interact(cell, id.with(n), if active { Sense::click() } else { Sense::hover() });
@@ -571,7 +571,27 @@ fn gallery(
             ui.painter().hline((c.x - 3.0)..=(c.x + 3.0), c.y - 3.5, Stroke::new(1.0, color));
         }
         ui.painter().add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
-        if response.clicked() {
+        if n == 2 {
+            if active {
+                Menu::below(&response).show(tokens, |ui| {
+                    for spec in tiles {
+                        let on = session.is_enabled(spec);
+                        let clicked = ui
+                            .horizontal(|ui| {
+                                let (icon, _) = ui.allocate_exact_size(vec2(SMALL_ICON, SMALL_ICON), Sense::hover());
+                                paint_icon(ui, icon, spec, tokens, on);
+                                ui.add_enabled(on, egui::Button::new(spec.label).frame(false))
+                                    .on_hover_text(spec.tooltip)
+                                    .clicked()
+                            })
+                            .inner;
+                        if clicked {
+                            requests.push((spec.id.to_owned(), Value::Null));
+                        }
+                    }
+                });
+            }
+        } else if response.clicked() {
             page = if n == 0 { page.saturating_sub(1) } else { (page + 1).min(pages - 1) };
         }
     }

@@ -339,40 +339,90 @@ cc.job_tab_close(index=1, discard=True)     # ...unless they are discarded
 
 Every strategy is a command that adds a toolpath (or regenerates one when given its `id`). They
 share the tool, feeds, coolant, WCS and the five heights (`clearance`, `retract`, `feed_height`,
-`top`, `bottom`, each `<name>_from` a reference plus `<name>_offset`).
+`top`, `bottom`, each `<name>_from` a reference plus `<name>_offset`). In the app the toolpath
+panel previews the result as you change settings, working it out in the background.
+
+The ribbon groups them as a job uses them: **2D**, **Drilling**, **3D** and **Multi-axis**.
 
 | Command | What it cuts | Picks (`geometry`) |
 | --- | --- | --- |
-| `toolpath_contour` | along edges or a face outline, offset by the tool radius | edges or faces |
 | `toolpath_face` | rows across the stock top, down to a height | none (or faces with `boundary="selection"`) |
+| `toolpath_contour` | along edges or a face outline, offset by the tool radius | edges or faces |
 | `toolpath_pocket` | offset rings inside floor faces or closed edges, around islands | floor faces or closed edges |
+| `toolpath_slot` | the tool's centre along edges, down in steps | edges |
+| `toolpath_chamfer` | a chamfer of a given width along edges, from the chamfer mill's angle and tip | edges or faces |
+| `toolpath_trace` | the tool's centre along edges at one depth: engraving, scribing | edges |
 | `toolpath_drill` | drill, spot, peck, chip break, tap or bore cycles (canned cycles in the G-code) | hole walls, rims or points |
-| `toolpath_rough` | Z-level clearing of the stock around the whole part | none |
+| `toolpath_bore` | helical boring: the tool spirals down inside each hole, then circles the floor | hole walls or rims |
+| `toolpath_thread` | thread milling, internal or external, right- or left-hand, with arc leads | hole or boss walls or rims |
+| `toolpath_adaptive` | adaptive clearing: a steady tool load, deep cuts, no buried corners; rest machining | none (3D), or pockets with `boundary="selection"` (2D) |
+| `toolpath_rough` | Z-level clearing of the stock around the whole part, rows and a pass around it | none |
+| `toolpath_flat` | the model's flat floors at their exact heights | none (or faces to pick floors) |
 | `toolpath_waterline` | Z-level passes around the part, for steep walls | none |
 | `toolpath_raster` | parallel rows following the surface, for shallow areas | none (or faces with `boundary="selection"`) |
-| `toolpath_bore` | helical boring: the tool spirals down inside each hole, then circles the floor | hole walls or rims |
+| `toolpath_scallop` | passes a constant stepover apart measured over the surface | none (or faces) |
+| `toolpath_steep_shallow` | level passes on steep walls, scallop passes on shallow areas | none (or faces) |
+| `toolpath_pencil` | one pass along the concave corners (ball-ended tools) | none (or faces) |
+| `toolpath_spiral` | one pass spiralling out from (or in to) a centre | none (or faces) |
+| `toolpath_radial` | passes radiating from a centre | none (or faces) |
 | `toolpath_multiaxis` | a ball tilting as it follows the surface (see "4- and 5-axis machining") | none (or faces with `boundary="selection"`) |
 
 ```python
 cc.toolpath_face(stepover=4, multiple_depths=True, stepdown=1)
+cc.toolpath_adaptive(stepover=1.5, stepdown=12, stock_radial=0.3)         # 3D roughing
+cc.toolpath_adaptive(tool=2, stepover=0.6, rest="previous")              # rest roughing
+cc.toolpath_adaptive(boundary="selection", geometry=["model.1/face.8"])  # a 2D pocket
+cc.toolpath_flat(tool=2, stepover=4)
+cc.toolpath_scallop(tool=3, stepover=0.4)
+cc.toolpath_steep_shallow(tool=3, stepover=0.4, threshold_angle=45)
+cc.toolpath_pencil(tool=4)
 cc.toolpath_pocket(geometry=["model.1/face.8"], stepover=2.5, stepdown=2, bottom_offset=-5)
+cc.toolpath_chamfer(tool=11, geometry=["model.1/edge.3"], chamfer_width=0.5, tip_offset=0.25)
 cc.toolpath_drill(geometry=["model.1/edge.12"], cycle="peck", peck_depth=3, bottom_offset=-12)
-cc.toolpath_rough(stepdown=3, stock_radial=0.5, stock_axial=0.3)
-cc.toolpath_waterline(stepdown=0.5)
-cc.toolpath_raster(stepover=0.5, angle=45)
+cc.toolpath_thread(tool=17, geometry=["model.1/face.1"], pitch=1.5, bottom_offset=-12)
 cc.toolpath_bore(geometry=["model.1/face.1"], tool=1, pitch=1.5)   # a Ø24 hole with a Ø12 end mill
 ```
+
+**Adaptive clearing** keeps the width of cut (the optimal load, `stepover`) steady by steering:
+it spirals out from a helix entry, follows the walls, loops back through cleared ground in
+narrow channels and links between areas at depth (routed through what is already cut, up to
+`stay_down_distance`). A pass along the walls at each level takes off what is left there. Levels
+follow the stepdown with extra ones at the model's flat areas (`flat_levels`). `rest="previous"`
+clears only what the toolpaths before it leave, found by cutting them through a height map of
+the stock.
+
+**Scallop** and **steep and shallow** measure the stepover over the surface (on a grid of
+tool-tip heights), so a wall gets as many passes as a floor of the same width. The finishing
+strategies drop the tool onto the model, so they never gouge it; links between nearby passes
+follow the surface too (`stay_down_distance`, default twice the diameter).
 
 Each strategy takes the tool types that suit it, and picks the first such tool when none is named:
 
 | Strategy | Tool types |
 | --- | --- |
-| contour, helical bore | flat, bull nose, ball |
-| face | face mill, flat, bull nose |
-| pocket, 3D rough, waterline | flat, bull nose |
-| raster | ball, flat, tapered ball, lollipop |
-| multi-axis finish | ball, tapered ball, lollipop |
+| contour, slot, helical bore | flat, bull nose, ball |
+| face, flat | face mill, flat, bull nose |
+| pocket, adaptive, 3D rough, waterline | flat, bull nose |
+| raster, scallop, steep and shallow, spiral, radial | ball, bull nose, flat, tapered ball, lollipop |
+| pencil, multi-axis finish | ball, tapered ball, lollipop |
+| chamfer | chamfer mills, engravers, spot drills, countersinks |
+| trace | engravers, chamfer mills, ball, tapered ball, flat, bull nose |
+| thread | thread mills |
 | drill | drills, spot and centre drills, reamers, taps, boring bars, counterbores, countersinks, flat end mills |
+
+### Templates, order and regenerating
+
+Save a toolpath's settings (not its geometry) as a template and start new toolpaths from it:
+in the explorer (right-click a toolpath, **Save as template…**) and in the toolpath panel
+(**Start from** on the Tool tab). Templates are kept with the machine library.
+
+```python
+cc.toolpath_template_save(id="toolpath.3", name="Aluminium adaptive")
+cc.toolpath_template_apply(name="Aluminium adaptive", tool=2)
+cc.toolpath_template_list(command="toolpath.adaptive")
+cc.toolpath_move(id="toolpath.5", to=0)        # or by=-1 / by=1
+cc.toolpath_regenerate()                       # after the model, stock or tools change
+```
 
 Drilling picks the cycle from the tool when none is given (tap for a tap, a dwell for spot and
 centre drills, countersinks and counterbores, feed out for reamers and boring bars), and a tap's

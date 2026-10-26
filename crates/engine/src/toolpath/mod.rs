@@ -2,12 +2,15 @@
 //! settings. Moves are kept in world millimetres with the feed each uses; the WCS they were
 //! programmed in travels with them for posting later.
 
+pub mod adaptive;
 pub mod bore;
 mod common;
 pub mod contour;
 pub mod drill;
+pub mod finish;
 pub mod multiaxis;
 pub mod strategies;
+pub mod twod;
 
 use std::sync::Arc;
 
@@ -25,7 +28,44 @@ pub fn strategy_label(strategy: &str) -> &'static str {
         "raster" => "Raster",
         "multiaxis" => "Multi-axis finish",
         "bore" => "Helical bore",
+        "adaptive" => "Adaptive clearing",
+        "scallop" => "Scallop",
+        "spiral" => "Spiral",
+        "radial" => "Radial",
+        "flat" => "Flat",
+        "pencil" => "Pencil",
+        "steep_shallow" => "Steep and shallow",
+        "chamfer" => "Chamfer",
+        "slot" => "Slot",
+        "trace" => "Trace",
+        "thread" => "Thread milling",
         _ => "2D contour",
+    }
+}
+
+/// The command that makes toolpaths of `strategy` (the id a toolpath records).
+pub fn strategy_command(strategy: &str) -> &'static str {
+    match strategy {
+        "face" => "toolpath.face",
+        "pocket2d" => "toolpath.pocket",
+        "drill" => "toolpath.drill",
+        "rough3d" => "toolpath.rough",
+        "waterline" => "toolpath.waterline",
+        "raster" => "toolpath.raster",
+        "multiaxis" => "toolpath.multiaxis",
+        "bore" => "toolpath.bore",
+        "adaptive" => "toolpath.adaptive",
+        "scallop" => "toolpath.scallop",
+        "spiral" => "toolpath.spiral",
+        "radial" => "toolpath.radial",
+        "flat" => "toolpath.flat",
+        "pencil" => "toolpath.pencil",
+        "steep_shallow" => "toolpath.steep_shallow",
+        "chamfer" => "toolpath.chamfer",
+        "slot" => "toolpath.slot",
+        "trace" => "toolpath.trace",
+        "thread" => "toolpath.thread",
+        _ => "toolpath.contour",
     }
 }
 

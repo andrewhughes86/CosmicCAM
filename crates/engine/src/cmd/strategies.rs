@@ -102,6 +102,33 @@ fn run_raster(s: &mut crate::session::Session, p: &Value) -> crate::error::Engin
     add_toolpath(s, p, strategies::raster)
 }
 
+fn run_adaptive(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, crate::toolpath::adaptive::adaptive)
+}
+
+fn run_scallop(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, crate::toolpath::finish::scallop)
+}
+fn run_spiral(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, crate::toolpath::finish::spiral)
+}
+fn run_radial(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, crate::toolpath::finish::radial)
+}
+fn run_flat(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, crate::toolpath::finish::flat)
+}
+fn run_pencil(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, crate::toolpath::finish::pencil)
+}
+fn run_steep_shallow(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, crate::toolpath::finish::steep_shallow)
+}
+
+fn run_thread(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, crate::toolpath::twod::thread)
+}
+
 fn run_bore(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
     add_toolpath(s, p, crate::toolpath::bore::bore)
 }
@@ -117,7 +144,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "toolpath.face",
         label: "Face",
         tooltip: "Rows across the top of the stock to bring it flat and down to height",
-        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "2D")),
         icon: None,
         shortcut: None,
         params: milling_params![
@@ -148,7 +175,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "toolpath.pocket",
         label: "Pocket",
         tooltip: "Clear the inside of selected floor faces or closed edges, around any islands",
-        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "2D")),
         icon: None,
         shortcut: None,
         params: milling_params![
@@ -164,10 +191,226 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         run: run_pocket,
     },
     CommandSpec {
+        id: "toolpath.adaptive",
+        label: "Adaptive",
+        tooltip: "Rough with a steady tool load: deep cuts at a light stepover that never bury the tool in corners; 3D around the model or 2D in selected pockets",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "3D")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![
+            Param::optional(
+                "boundary",
+                ParamKind::Choice(&["stock", "selection"]),
+                "What to clear: the stock around the model (3D, default) or the selected pockets (2D, `geometry`)"
+            ),
+            Param::optional(
+                "rest",
+                ParamKind::Choice(crate::toolpath::adaptive::REST),
+                "Rest machining: `previous` clears only what the toolpaths before this one leave (default none)"
+            ),
+            Param::optional(
+                "wall_pass",
+                ParamKind::Bool,
+                "Finish each level with a pass along the walls (default true)"
+            ),
+            Param::optional(
+                "keep_down",
+                ParamKind::Bool,
+                "Link between passes at depth where the way is clear, instead of lifting (default true)"
+            ),
+            Param::optional(
+                "stay_down_distance",
+                LENGTH,
+                "Longest link at depth, routed through cleared ground; farther, the tool lifts, mm (default 20 × Ø)"
+            ),
+            Param::optional(
+                "flat_levels",
+                ParamKind::Bool,
+                "Add levels at the model's flat areas so shelves are cleared at their height (default true)"
+            ),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_adaptive,
+    },
+    CommandSpec {
+        id: "toolpath.scallop",
+        label: "Scallop",
+        tooltip: "Finish with passes a constant stepover apart measured over the surface, so steep and shallow areas get the same finish",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "3D")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![
+            Param::optional(
+                "boundary",
+                ParamKind::Choice(BOUNDARIES),
+                "Area to finish: the stock, the model (default) or the selected faces (`geometry`)"
+            ),
+            Param::optional("boundary_offset", OFFSET, "Grow (or shrink, negative) the area, mm"),
+            Param::optional(
+                "sample_step",
+                LENGTH,
+                "Spacing of points dropped onto the model along each pass, mm (default Ø/8)"
+            ),
+            Param::optional(
+                "stay_down_distance",
+                LENGTH,
+                "Longest link along the surface between passes; farther, the tool lifts, mm (default 2 × Ø)"
+            ),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_scallop,
+    },
+    CommandSpec {
+        id: "toolpath.steep_shallow",
+        label: "Steep and shallow",
+        tooltip: "Finish steep walls with level passes and shallow areas with scallop passes, split at a slope angle",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "3D")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![
+            Param::optional(
+                "boundary",
+                ParamKind::Choice(BOUNDARIES),
+                "Area to finish: the stock, the model (default) or the selected faces (`geometry`)"
+            ),
+            Param::optional("boundary_offset", OFFSET, "Grow (or shrink, negative) the area, mm"),
+            Param::optional(
+                "sample_step",
+                LENGTH,
+                "Spacing of points dropped onto the model along each pass, mm (default Ø/8)"
+            ),
+            Param::optional(
+                "stay_down_distance",
+                LENGTH,
+                "Longest link along the surface between passes; farther, the tool lifts, mm (default 2 × Ø)"
+            ),
+            Param::optional(
+                "threshold_angle",
+                ParamKind::Number { min: 1.0, max: 89.0 },
+                "Slope from horizontal, degrees, that divides steep from shallow (default 40)"
+            ),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_steep_shallow,
+    },
+    CommandSpec {
+        id: "toolpath.pencil",
+        label: "Pencil",
+        tooltip: "Clean out concave corners with one pass of a ball-ended tool where it touches two faces at once",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "3D")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![
+            Param::optional(
+                "boundary",
+                ParamKind::Choice(BOUNDARIES),
+                "Area to finish: the stock, the model (default) or the selected faces (`geometry`)"
+            ),
+            Param::optional("boundary_offset", OFFSET, "Grow (or shrink, negative) the area, mm"),
+            Param::optional(
+                "sample_step",
+                LENGTH,
+                "Spacing of points dropped onto the model along each pass, mm (default Ø/8)"
+            ),
+            Param::optional(
+                "stay_down_distance",
+                LENGTH,
+                "Longest link along the surface between passes; farther, the tool lifts, mm (default 2 × Ø)"
+            ),
+            Param::optional("min_length", LENGTH, "Shortest corner worth a pass, mm (default the tool radius)"),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_pencil,
+    },
+    CommandSpec {
+        id: "toolpath.spiral",
+        label: "Spiral",
+        tooltip: "Finish round areas with one pass spiralling out from (or in to) a centre",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "3D")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![
+            Param::optional(
+                "boundary",
+                ParamKind::Choice(BOUNDARIES),
+                "Area to finish: the stock, the model (default) or the selected faces (`geometry`)"
+            ),
+            Param::optional("boundary_offset", OFFSET, "Grow (or shrink, negative) the area, mm"),
+            Param::optional(
+                "sample_step",
+                LENGTH,
+                "Spacing of points dropped onto the model along each pass, mm (default Ø/8)"
+            ),
+            Param::optional(
+                "stay_down_distance",
+                LENGTH,
+                "Longest link along the surface between passes; farther, the tool lifts, mm (default 2 × Ø)"
+            ),
+            Param::optional("center_x", OFFSET, "Spiral centre X in the WCS, mm (default the area's middle)"),
+            Param::optional("center_y", OFFSET, "Spiral centre Y in the WCS, mm (default the area's middle)"),
+            Param::optional(
+                "spiral_direction",
+                ParamKind::Choice(&["outward", "inward"]),
+                "From the centre out (default) or in to it"
+            ),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_spiral,
+    },
+    CommandSpec {
+        id: "toolpath.radial",
+        label: "Radial",
+        tooltip: "Finish with passes radiating from a centre, back and forth",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "3D")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![
+            Param::optional(
+                "boundary",
+                ParamKind::Choice(BOUNDARIES),
+                "Area to finish: the stock, the model (default) or the selected faces (`geometry`)"
+            ),
+            Param::optional("boundary_offset", OFFSET, "Grow (or shrink, negative) the area, mm"),
+            Param::optional(
+                "sample_step",
+                LENGTH,
+                "Spacing of points dropped onto the model along each pass, mm (default Ø/8)"
+            ),
+            Param::optional(
+                "stay_down_distance",
+                LENGTH,
+                "Longest link along the surface between passes; farther, the tool lifts, mm (default 2 × Ø)"
+            ),
+            Param::optional("center_x", OFFSET, "Centre X in the WCS, mm (default the area's middle)"),
+            Param::optional("center_y", OFFSET, "Centre Y in the WCS, mm (default the area's middle)"),
+            Param::optional("inner_radius", LENGTH, "Where the spokes start, mm (default the stepover)"),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_radial,
+    },
+    CommandSpec {
+        id: "toolpath.flat",
+        label: "Flat",
+        tooltip: "Finish the model's flat floors at their exact heights (all of them, or those of the picked faces)",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "3D")),
+        icon: None,
+        shortcut: None,
+        params: milling_params![],
+        returns: RETURNS,
+        enabled: always,
+        run: run_flat,
+    },
+    CommandSpec {
         id: "toolpath.drill",
         label: "Drill",
         tooltip: "Drill, spot, peck, tap or bore holes picked as cylinders, circular edges or points",
-        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Drilling")),
         icon: None,
         shortcut: None,
         params: strategy_params![
@@ -189,10 +432,50 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         run: run_drill,
     },
     CommandSpec {
+        id: "toolpath.thread",
+        label: "Thread",
+        tooltip: "Mill internal or external threads in holes or on bosses picked as cylinders or circular edges",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Drilling")),
+        icon: None,
+        shortcut: None,
+        params: strategy_params![
+            Param::optional(
+                "pitch",
+                ParamKind::Length { min: 0.0, max: 100.0 },
+                "Thread pitch, mm per turn (default: the thread mill's)"
+            ),
+            Param::optional(
+                "thread_type",
+                ParamKind::Choice(crate::toolpath::twod::THREAD_TYPES),
+                "Internal (in a hole, default) or external (on a boss)"
+            ),
+            Param::optional(
+                "hand",
+                ParamKind::Choice(crate::toolpath::twod::HANDS),
+                "Right-hand (default) or left-hand thread"
+            ),
+            Param::optional(
+                "major_diameter",
+                LENGTH,
+                "Thread major diameter, mm (default: a hole's diameter plus 1.0825 × pitch, a boss's diameter)"
+            ),
+            Param::optional(
+                "radial_passes",
+                ParamKind::Integer { min: 1, max: 20 },
+                "Passes to full depth (default 1)"
+            ),
+            Param::optional("spring_pass", ParamKind::Bool, "Repeat the last pass (default false)"),
+            Param::optional("direction", ParamKind::Choice(DIRECTIONS), "Climb (default) or conventional"),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_thread,
+    },
+    CommandSpec {
         id: "toolpath.bore",
         label: "Helical bore",
         tooltip: "Open up holes with an end mill spiralling down inside them, then a full circle at the bottom",
-        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Drilling")),
         icon: None,
         shortcut: None,
         params: strategy_params![
@@ -221,7 +504,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "toolpath.rough",
         label: "3D rough",
         tooltip: "Clear the stock around the part level by level, leaving stock for finishing",
-        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "3D")),
         icon: None,
         shortcut: None,
         params: milling_params![Param::optional(
@@ -237,7 +520,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "toolpath.waterline",
         label: "Waterline",
         tooltip: "Finish steep walls with passes around the part at constant heights",
-        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "3D")),
         icon: None,
         shortcut: None,
         params: milling_params![],
@@ -249,7 +532,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "toolpath.raster",
         label: "Raster",
         tooltip: "Finish shallow surfaces with parallel rows that follow the part",
-        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "3D")),
         icon: None,
         shortcut: None,
         params: milling_params![
@@ -279,7 +562,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "toolpath.multiaxis",
         label: "Multi-axis finish",
         tooltip: "Finish the part with a ball end mill that tilts as it follows the surface (simultaneous 4/5-axis)",
-        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Multi-axis")),
         icon: None,
         shortcut: None,
         params: milling_params![

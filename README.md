@@ -49,11 +49,17 @@ simulation yet, so **check its G-code before running it on a machine**.
 - **Setups and stock:** Create setup names a setup and picks its machine, WCS (or the origin) and
   stock: fitted to the model with margins, a fixed size, or two corners, rounded up if wanted, and
   shown see-through while it is defined.
-- **Toolpaths:** 2D contour, Face, Pocket (with islands), Drill (canned cycles: drill, spot,
-  peck, chip break, tap, bore), Helical bore, 3D rough, Waterline, Raster and Multi-axis finish,
-  each set up in the toolpath panel with a live preview and offering the tool types that suit it
-  (face mills for facing, bull noses for 2D and roughing, ball-ended tools for 3D and multi-axis
-  finishing, the holemaking tools for drilling), with speeds and feeds from a tool preset.
+- **Toolpaths:** twenty strategies, grouped on the ribbon as a job uses them:
+  - 2D: Face, 2D contour, Pocket (with islands), Slot, Chamfer, Trace.
+  - Drilling: Drill (canned cycles: drill, spot, peck, chip break, tap, bore), Helical bore,
+    Thread milling.
+  - 3D: Adaptive clearing (steady tool load, deep cuts, rest machining from earlier toolpaths),
+    3D rough, Flat, Waterline, Raster, Scallop (constant stepover over the surface), Steep and
+    shallow, Pencil, Spiral, Radial.
+  - Multi-axis finish.
+  Each is set up in the toolpath panel with a live preview worked out in the background,
+  offering the tool types that suit it, with speeds and feeds from a tool preset. Save settings
+  as templates and start new toolpaths from them; reorder and regenerate toolpaths.
 - **2D contour:** follow edges or a face outline at depth with radial and axial
   passes, stock to leave, leads, ramps, feed optimization, an entry point and a tolerance that
   follows true circles; set up in a panel with a live preview.
@@ -108,7 +114,7 @@ simulation yet, so **check its G-code before running it on a machine**.
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 170 commands. Each command has a typed parameter schema that the engine checks before
+  the same 187 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.

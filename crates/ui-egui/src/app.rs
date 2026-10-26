@@ -937,7 +937,10 @@ impl eframe::App for CosmicApp {
         if let Some((command, target, mut text)) = self.rename.take() {
             let mut open = true;
             let mut done: Option<bool> = None;
-            crate::ui_kit::Window::dialog("Rename").show(&ctx, tokens, &mut open, |ui| {
+            // The same name prompt saves toolpath templates.
+            let (title, button) =
+                if command == "toolpath.template.save" { ("Save as template", "Save") } else { ("Rename", "Rename") };
+            crate::ui_kit::Window::dialog(title).show(&ctx, tokens, &mut open, |ui| {
                 ui.set_min_width(280.0);
                 let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(260.0));
                 if !response.has_focus() && !response.lost_focus() {
@@ -946,7 +949,7 @@ impl eframe::App for CosmicApp {
                 let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if ui.button("Rename").clicked() || enter {
+                    if ui.button(button).clicked() || enter {
                         done = Some(true);
                     }
                     if ui.button("Cancel").clicked() {

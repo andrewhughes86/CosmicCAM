@@ -334,8 +334,22 @@ pub struct MachineLibrary {
     /// The machine new tools go to and the Tooling tab shows.
     pub active: Option<String>,
     pub(crate) next_machine: u64,
+    /// Saved toolpath settings to start new toolpaths from.
+    pub templates: Vec<Template>,
     /// Bumped on every change, so the app knows to save.
     pub revision: u64,
+}
+
+/// Most toolpath templates kept.
+pub const MAX_TEMPLATES: usize = 500;
+
+/// A toolpath's settings saved under a name: the strategy's command and its parameters
+/// (without geometry), to start new toolpaths from.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Template {
+    pub name: String,
+    pub command: String,
+    pub params: Value,
 }
 
 impl Default for MachineLibrary {
@@ -347,6 +361,7 @@ impl Default for MachineLibrary {
             next_holder: 1,
             active: Some("machine.1".into()),
             next_machine: 2,
+            templates: Vec::new(),
             revision: 0,
         }
     }
@@ -387,6 +402,7 @@ impl MachineLibrary {
             "machines": self.machines,
             "holders": self.holders,
             "next_holder": self.next_holder,
+            "templates": self.templates,
         })
     }
 
@@ -465,7 +481,24 @@ impl MachineLibrary {
             holders.iter().filter_map(|h| h.id.strip_prefix("holder.")?.parse::<u64>().ok()).max().unwrap_or(0);
         let next_holder =
             v.get("next_holder").and_then(Value::as_u64).unwrap_or(0).max(highest_holder.saturating_add(1));
-        Ok((Self { machines, holders, next_holder, active, next_machine, revision: 0 }, dropped))
+        let mut templates: Vec<Template> = Vec::new();
+        for raw in v.get("templates").and_then(Value::as_array).into_iter().flatten().take(MAX_TEMPLATES) {
+            match serde_json::from_value::<Template>(raw.clone()) {
+                Ok(mut t)
+                    if t.command.starts_with("toolpath.")
+                        && crate::cmd::find(&t.command).is_some()
+                        && t.params.is_object()
+                        && t.params.to_string().len() <= 64 * 1024 =>
+                {
+                    t.name = clip(&t.name);
+                    if !t.name.is_empty() && templates.iter().all(|o| o.name != t.name) {
+                        templates.push(t);
+                    }
+                }
+                _ => dropped.push("a toolpath template that could not be read".into()),
+            }
+        }
+        Ok((Self { machines, holders, next_holder, active, next_machine, templates, revision: 0 }, dropped))
     }
 }
 

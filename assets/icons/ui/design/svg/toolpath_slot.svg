@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#INK" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polygon points="3,12.5 16,19 16,23 3,16.5" fill="#SHADE" stroke="#INK"/>
+  <polygon points="16,19 29,12.5 29,16.5 16,23" fill="#SHADE" stroke="#INK"/>
+  <polygon points="16,6 29,12.5 16,19 3,12.5" fill="#FACE" stroke="#INK"/>
+  <polygon points="13.14,10.03 20.94,13.93 18.86,14.97 11.06,11.07" fill="#SHADE" stroke="#INK"/>
+  <polyline points="12.62,10.81 19.38,14.19" stroke="#ACCENT"/>
+</svg>

@@ -160,8 +160,17 @@ pub(super) fn pick_tool<'a>(s: &'a Session, p: &Value, kinds: &[&str]) -> Engine
     Ok((m, tool))
 }
 
-fn settings(s: &Session, p: &Value) -> EngineResult<(Settings, String)> {
-    let (machine, tool) = pick_tool(s, p, &["flat", "bull", "ball"])?;
+/// A strategy built on the contour: its id, default name and the tool types it takes.
+pub struct Variant {
+    pub strategy: &'static str,
+    pub name: &'static str,
+    pub kinds: &'static [&'static str],
+}
+
+pub const CONTOUR: Variant = Variant { strategy: "contour2d", name: "2D contour", kinds: &["flat", "bull", "ball"] };
+
+fn settings(s: &Session, p: &Value, kinds: &[&str]) -> EngineResult<(Settings, String)> {
+    let (machine, tool) = pick_tool(s, p, kinds)?;
     let num = |key: &str, lo: f64, hi: f64| params::opt_f64(p, key, lo, hi);
     let choice = |key: &str, default: &str| -> EngineResult<String> {
         Ok(params::opt_str(p, key)?.unwrap_or(default).to_owned())
@@ -702,7 +711,13 @@ fn nearest_on_loop(pts: &mut Vec<DVec2>, target: DVec2) -> DVec2 {
 }
 
 pub fn generate(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
-    let (set, machine_id) = settings(s, p)?;
+    generate_as(s, p, id, &CONTOUR, p)
+}
+
+/// The contour of variant `v` from the working parameters `p`, storing `stored` (what the
+/// user set) with the toolpath so it can be edited.
+pub(super) fn generate_as(s: &Session, p: &Value, id: String, v: &Variant, stored: &Value) -> EngineResult<Toolpath> {
+    let (set, machine_id) = settings(s, p, v.kinds)?;
     let (f, wcs) = frame(s, p)?;
     let mut warnings = Vec::new();
     let refs = params::str_list(p, "geometry")?;
@@ -933,14 +948,14 @@ pub fn generate(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
     }
     warnings.sort();
     warnings.dedup();
-    let name = if set.name.is_empty() { format!("2D contour T{}", set.tool.number) } else { set.name.clone() };
-    let mut stored = p.as_object().cloned().unwrap_or_else(Map::new);
+    let name = if set.name.is_empty() { format!("{} T{}", v.name, set.tool.number) } else { set.name.clone() };
+    let mut stored = stored.as_object().cloned().unwrap_or_else(Map::new);
     stored.insert("tool".into(), json!(set.tool.number));
     stored.remove("id");
     Ok(Toolpath {
         id,
         name,
-        strategy: "contour2d".into(),
+        strategy: v.strategy.into(),
         machine: machine_id,
         tool: set.tool.number,
         wcs,

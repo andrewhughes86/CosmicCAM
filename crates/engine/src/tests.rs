@@ -1640,6 +1640,224 @@ fn roughing_clears_around_the_part_without_touching_it() {
 }
 
 #[test]
+fn adaptive_clears_around_the_part_and_rest_clears_what_is_left() {
+    let mut s = sample_with_tool();
+    let (tp, mv) =
+        new_toolpath(&mut s, "toolpath.adaptive", json!({"stepdown": 10, "stepover": 0.6, "stock_radial": 0.5}));
+    assert_eq!(tp["strategy"], "adaptive");
+    let cuts = cut_points(&mv);
+    assert!(cuts.len() > 100);
+    for c in &cuts {
+        let (x, y, z) = (c[0], c[1], c[2]);
+        if z < 42.0 - 1e-6 {
+            let d = ((x - 28.0).powi(2) + y * y).sqrt();
+            assert!(d >= 15.5 - 0.05, "into the boss at {c:?}");
+        }
+        if z < 20.0 - 1e-6 {
+            let d = (x.abs() - 50.0).max(0.0).hypot((y.abs() - 30.0).max(0.0));
+            assert!(d >= 3.5 - 0.05, "into the base at {c:?}");
+        }
+        assert!(z >= -1e-6);
+    }
+    // A flat-area level lands on the block's top (35) even though the stepdown skips it.
+    assert!(cuts.iter().any(|c| (c[2] - 35.0).abs() < 1e-6), "a level at the block top");
+    // Rest machining after it has much less to do.
+    let full = tp["cut_length"].as_f64().unwrap_or_default();
+    let (rest, _) =
+        new_toolpath(&mut s, "toolpath.adaptive", json!({"stepdown": 10, "stepover": 0.6, "rest": "previous"}));
+    let left = rest["cut_length"].as_f64().unwrap_or(f64::MAX);
+    assert!(left < full * 0.5, "rest {left} vs full {full}");
+    // In 2D it clears a selected pocket.
+    let top = one_face(&mut s, "plane", plane_at([0.0, 0.0, 1.0], 2, 35.0));
+    let (tp, mv) = new_toolpath(
+        &mut s,
+        "toolpath.adaptive",
+        json!({"boundary": "selection", "geometry": [top], "top_from": "selection", "bottom_offset": -5, "stepdown": 5, "stepover": 0.6}),
+    );
+    assert_eq!(tp["strategy"], "adaptive");
+    for c in cut_points(&mv) {
+        assert!(c[0] >= -37.0 - 0.05 && c[0] <= 2.0 + 0.05 && c[1].abs() <= 17.0 + 0.05, "{c:?}");
+    }
+}
+
+/// The sample with a 6 mm ball end mill (T2) besides the flat one (T1).
+fn sample_with_ball() -> Session {
+    let mut s = sample_with_tool();
+    let t = s.execute("tool.create", &json!({"type": "ball", "diameter": 6, "feed": 1000, "spindle_rpm": 12000}));
+    assert!(t.is_ok(), "{t:?}");
+    s
+}
+
+#[test]
+fn surface_finishing_strategies_ride_the_part() {
+    let mut s = sample_with_ball();
+    for (command, extra) in [
+        ("toolpath.scallop", json!({"stepover": 2})),
+        ("toolpath.steep_shallow", json!({"stepover": 2})),
+        ("toolpath.spiral", json!({"stepover": 2})),
+        ("toolpath.radial", json!({"stepover": 3})),
+    ] {
+        let mut p = extra.clone();
+        p["tool"] = json!(2);
+        let (tp, mv) = new_toolpath(&mut s, command, p);
+        let cuts = cut_points(&mv);
+        assert!(cuts.len() > 20, "{command}: {} cuts", cuts.len());
+        // Nothing below the part's base, nothing above the boss top; some on the boss top.
+        assert!(cuts.iter().all(|c| c[2] >= -1e-6 && c[2] <= 42.0 + 1e-6), "{command}");
+        // (Straight runs keep only their ends: on the boss top those reach its edge.)
+        assert!(
+            cuts.iter().any(|c| (c[0] - 28.0).hypot(c[1]) < 12.5 && (c[2] - 42.0).abs() < 1e-3),
+            "{command} rides the boss top"
+        );
+        assert!(tp["warnings"].as_array().is_some_and(Vec::is_empty), "{command}: {}", tp["warnings"]);
+    }
+    // Scallop passes keep their stepover over the surface: where they cross y = 0 on the flat
+    // base top beside the block, they are the stepover apart.
+    let (_, mv) = new_toolpath(&mut s, "toolpath.scallop", json!({"tool": 2, "stepover": 2}));
+    let cuts = cut_points(&mv);
+    let mut xs: Vec<f64> = cuts
+        .windows(2)
+        .filter(|w| {
+            w[0][1].signum() != w[1][1].signum() && (w[0][2] - 20.0).abs() < 1e-3 && (w[1][2] - 20.0).abs() < 1e-3
+        })
+        .map(|w| w[0][0] + (w[1][0] - w[0][0]) * (-w[0][1]) / (w[1][1] - w[0][1]))
+        .filter(|x| *x < -45.0)
+        .collect();
+    xs.sort_by(f64::total_cmp);
+    xs.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+    assert!(xs.len() >= 2 && xs.windows(2).all(|w| (w[1] - w[0] - 2.0).abs() < 0.3), "{xs:?}");
+    // Pencil follows the concave corners (where the boss meets the block top).
+    let (_, mv) = new_toolpath(&mut s, "toolpath.pencil", json!({"tool": 2}));
+    let cuts = cut_points(&mv);
+    let foot: Vec<f64> = cuts
+        .iter()
+        .filter(|c| (c[2] - 20.0).abs() < 1e-3 && ((c[0] - 28.0).hypot(c[1]) - 15.0).abs() < 1.0)
+        .map(|c| (c[0] - 28.0).hypot(c[1]))
+        .collect();
+    assert!(
+        foot.len() > 10 && foot.iter().all(|d| (d - 15.0).abs() < 0.25),
+        "around the boss foot (on the base): {foot:?}"
+    );
+    // A flat tool refuses the pencil.
+    assert!(s.execute("toolpath.pencil", &json!({"tool": 1})).is_err());
+}
+
+#[test]
+fn flat_finishing_runs_on_every_floor() {
+    let mut s = sample_with_tool();
+    let (tp, mv) = new_toolpath(&mut s, "toolpath.flat", json!({"stepover": 3}));
+    assert_eq!(tp["strategy"], "flat");
+    let cuts = cut_points(&mv);
+    for z in [20.0, 35.0, 42.0] {
+        assert!(cuts.iter().any(|c| (c[2] - z).abs() < 1e-6), "a floor at {z}");
+    }
+    assert!(cuts.iter().all(|c| [20.0, 35.0, 42.0].iter().any(|z| (c[2] - z).abs() < 1e-6)));
+    // On the boss top the tool stays inside it (radius 12 - 3).
+    assert!(cuts.iter().filter(|c| (c[2] - 42.0).abs() < 1e-6).all(|c| (c[0] - 28.0).hypot(c[1]) <= 9.0 + 1e-3));
+}
+
+#[test]
+fn chamfer_slot_trace_and_thread_follow_the_boss() {
+    let mut s = sample_with_tool();
+    let rim = boss_rim(&mut s);
+    // A 90° chamfer mill with a 1 mm tip: the cone touches the rim 0.5 wide, its tip 0.25 below.
+    assert!(
+        s.execute(
+            "tool.create",
+            &json!({"type": "chamfer", "number": 5, "diameter": 10, "tip_angle": 90, "tip_diameter": 1, "feed": 800})
+        )
+        .is_ok()
+    );
+    let (tp, mv) = new_toolpath(
+        &mut s,
+        "toolpath.chamfer",
+        json!({"tool": 5, "geometry": [rim], "chamfer_width": 0.5, "tip_offset": 0.25}),
+    );
+    assert_eq!(tp["strategy"], "chamfer");
+    let cuts = cut_points(&mv);
+    assert!(!cuts.is_empty());
+    for c in &cuts {
+        assert!((c[2] - (42.0 - 0.75)).abs() < 1e-6, "{c:?}");
+        assert!(((c[0] - 28.0).hypot(c[1]) - (12.0 + 0.5 + 0.25)).abs() < 0.02, "{c:?}");
+    }
+    // Too wide a chamfer for the tool is refused.
+    assert!(s.execute("toolpath.chamfer", &json!({"tool": 5, "geometry": [rim], "chamfer_width": 6})).is_err());
+    // Slot and trace put the tool's centre on the rim.
+    for command in ["toolpath.slot", "toolpath.trace"] {
+        let (_, mv) = new_toolpath(&mut s, command, json!({"tool": 1, "geometry": [rim], "bottom_offset": -1}));
+        let cuts = cut_points(&mv);
+        assert!(!cuts.is_empty() && cuts.iter().all(|c| ((c[0] - 28.0).hypot(c[1]) - 12.0).abs() < 0.02), "{command}");
+    }
+    // An external M24 × 1.5 thread on the boss: the centre runs at the minor radius plus the tool's.
+    assert!(
+        s.execute(
+            "tool.create",
+            &json!({"type": "thread_mill", "number": 6, "diameter": 8, "thread_pitch": 1.5, "feed": 400})
+        )
+        .is_ok()
+    );
+    let (tp, mv) = new_toolpath(
+        &mut s,
+        "toolpath.thread",
+        json!({"tool": 6, "geometry": [rim], "thread_type": "external", "bottom_offset": -6}),
+    );
+    assert_eq!(tp["strategy"], "thread");
+    let cuts = cut_points(&mv);
+    let expect = 12.0 - 1.5 * 0.6134 + 4.0;
+    assert!(cuts.iter().all(|c| ((c[0] - 28.0).hypot(c[1]) - expect).abs() < 0.02), "external thread radius");
+    let (lo, hi) = cuts.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), c| (a.min(c[2]), b.max(c[2])));
+    assert!((lo - 36.0).abs() < 1e-3 && hi >= 42.0 - 0.1, "{lo}..{hi}");
+    // The helix advances one pitch per turn.
+    let turns = cuts
+        .windows(2)
+        .map(|w| {
+            ((w[1][1]).atan2(w[1][0] - 28.0) - (w[0][1]).atan2(w[0][0] - 28.0) + 3.0 * std::f64::consts::PI)
+                .rem_euclid(std::f64::consts::TAU)
+                - std::f64::consts::PI
+        })
+        .sum::<f64>()
+        .abs()
+        / std::f64::consts::TAU;
+    assert!(((hi - lo) / turns - 1.5).abs() < 0.01, "pitch {}", (hi - lo) / turns);
+}
+
+#[test]
+fn templates_reorder_and_regenerate_toolpaths() {
+    let mut s = sample_with_tool();
+    let (a, _) = new_toolpath(
+        &mut s,
+        "toolpath.adaptive",
+        json!({"stepdown": 10, "stepover": 2, "stock_radial": 0.3, "name": "Rough it"}),
+    );
+    let (b, _) = new_toolpath(&mut s, "toolpath.flat", json!({"stepover": 3}));
+    let (aid, bid) = (a["id"].as_str().unwrap_or_default().to_owned(), b["id"].as_str().unwrap_or_default().to_owned());
+    // Save the adaptive's settings and make another toolpath from them.
+    let saved = s.execute("toolpath.template.save", &json!({"id": aid, "name": "Steel roughing"})).unwrap_or_default();
+    assert_eq!(saved["command"], "toolpath.adaptive");
+    assert!(saved["params"].get("geometry").is_none() && saved["params"].get("id").is_none());
+    let list = s.execute("toolpath.template.list", &json!({"command": "toolpath.adaptive"})).unwrap_or_default();
+    assert_eq!(list.as_array().map(Vec::len), Some(1));
+    let made = s.execute("toolpath.template.apply", &json!({"name": "Steel roughing"})).unwrap_or_default();
+    assert_eq!(made["strategy"], "adaptive");
+    assert_eq!(made["params"]["stock_radial"], 0.3);
+    // The library keeps templates (it is what the app saves).
+    let lib = s.library_json();
+    assert_eq!(lib["templates"][0]["name"], "Steel roughing");
+    let (back, dropped) = crate::library::MachineLibrary::from_json(&lib).unwrap_or_default();
+    assert!(dropped.is_empty() && back.templates.len() == 1);
+    // Reorder: the flat finish first.
+    let r = s.execute("toolpath.move", &json!({"id": bid, "to": 0})).unwrap_or_default();
+    assert_eq!(r["index"], 0);
+    assert_eq!(s.job.toolpaths.first().map(|t| t.id.clone()), Some(bid.clone()));
+    // Regenerate keeps ids and names.
+    let r = s.execute("toolpath.regenerate", &Value::Null).unwrap_or_default();
+    assert_eq!(r["regenerated"].as_array().map(Vec::len), Some(3), "{r}");
+    assert!(s.job.toolpaths.iter().any(|t| t.id == aid && t.name == "Rough it"));
+    assert!(s.execute("toolpath.template.remove", &json!({"name": "Steel roughing"})).is_ok());
+    assert!(s.execute("toolpath.template.apply", &json!({"name": "Steel roughing"})).is_err());
+}
+
+#[test]
 fn waterline_and_raster_follow_the_part() {
     let mut s = sample_with_tool();
     let (tp, mv) = new_toolpath(&mut s, "toolpath.waterline", json!({"stepdown": 4, "top_offset": -2}));

@@ -27,6 +27,7 @@ pub(super) const MAX_LEVELS: usize = 2_000;
 pub(super) const MAX_PASSES: usize = 20_000;
 
 /// Settings every milling strategy reads, resolved to millimetres and mm/min.
+#[derive(Clone)]
 pub(super) struct Common {
     pub name: String,
     pub tool: Tool,
@@ -343,6 +344,18 @@ impl Emitter {
         }
         self.b.push(MoveKind::Link, center.extend(to), c.feed)?;
         Ok(true)
+    }
+
+    /// Whether the first move has been made.
+    pub fn started(&self) -> bool {
+        self.started
+    }
+
+    /// A helix of `radius` around `center` from `from` down to `to`, then back to the centre.
+    pub fn helix_at(&mut self, c: &Common, center: DVec2, from: f64, to: f64, radius: f64) -> EngineResult<bool> {
+        let Some((angle, _)) = c.helix else { return Ok(false) };
+        let own = Common { helix: Some((angle, radius)), ..c.clone() };
+        self.helix(&own, center, from, to, None)
     }
 
     /// Adds `pass`, linking from where the tool is.

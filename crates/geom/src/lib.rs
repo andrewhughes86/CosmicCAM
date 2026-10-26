@@ -12,12 +12,14 @@
 )]
 #![allow(non_snake_case)]
 
+pub mod adaptive;
 pub mod arcfit;
 pub mod brep;
 pub mod collide;
 pub mod cutter;
 pub mod edges;
 pub mod faces;
+pub mod field;
 pub mod kinematics;
 pub mod mesh;
 pub mod nurbs;

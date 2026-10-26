@@ -53,6 +53,17 @@ pub enum Strategy {
     Raster,
     MultiAxis,
     Bore,
+    Adaptive,
+    Scallop,
+    SteepShallow,
+    Pencil,
+    Spiral,
+    Radial,
+    Flat,
+    Chamfer,
+    Slot,
+    Trace,
+    Thread,
 }
 
 impl Strategy {
@@ -68,6 +79,17 @@ impl Strategy {
             "toolpath.raster" => Self::Raster,
             "toolpath.multiaxis" => Self::MultiAxis,
             "toolpath.bore" => Self::Bore,
+            "toolpath.adaptive" => Self::Adaptive,
+            "toolpath.scallop" => Self::Scallop,
+            "toolpath.steep_shallow" => Self::SteepShallow,
+            "toolpath.pencil" => Self::Pencil,
+            "toolpath.spiral" => Self::Spiral,
+            "toolpath.radial" => Self::Radial,
+            "toolpath.flat" => Self::Flat,
+            "toolpath.chamfer" => Self::Chamfer,
+            "toolpath.slot" => Self::Slot,
+            "toolpath.trace" => Self::Trace,
+            "toolpath.thread" => Self::Thread,
             _ => return None,
         })
     }
@@ -83,6 +105,17 @@ impl Strategy {
             "raster" => Self::Raster,
             "multiaxis" => Self::MultiAxis,
             "bore" => Self::Bore,
+            "adaptive" => Self::Adaptive,
+            "scallop" => Self::Scallop,
+            "steep_shallow" => Self::SteepShallow,
+            "pencil" => Self::Pencil,
+            "spiral" => Self::Spiral,
+            "radial" => Self::Radial,
+            "flat" => Self::Flat,
+            "chamfer" => Self::Chamfer,
+            "slot" => Self::Slot,
+            "trace" => Self::Trace,
+            "thread" => Self::Thread,
             _ => Self::Contour,
         }
     }
@@ -98,6 +131,17 @@ impl Strategy {
             Self::Raster => "toolpath.raster",
             Self::MultiAxis => "toolpath.multiaxis",
             Self::Bore => "toolpath.bore",
+            Self::Adaptive => "toolpath.adaptive",
+            Self::Scallop => "toolpath.scallop",
+            Self::SteepShallow => "toolpath.steep_shallow",
+            Self::Pencil => "toolpath.pencil",
+            Self::Spiral => "toolpath.spiral",
+            Self::Radial => "toolpath.radial",
+            Self::Flat => "toolpath.flat",
+            Self::Chamfer => "toolpath.chamfer",
+            Self::Slot => "toolpath.slot",
+            Self::Trace => "toolpath.trace",
+            Self::Thread => "toolpath.thread",
         }
     }
 
@@ -112,12 +156,25 @@ impl Strategy {
             Self::Raster => "raster",
             Self::MultiAxis => "multi-axis finish",
             Self::Bore => "helical bore",
+            Self::Adaptive => "adaptive clearing",
+            Self::Scallop => "scallop finish",
+            Self::SteepShallow => "steep and shallow finish",
+            Self::Pencil => "pencil finish",
+            Self::Spiral => "spiral finish",
+            Self::Radial => "radial finish",
+            Self::Flat => "flat finish",
+            Self::Chamfer => "chamfer",
+            Self::Slot => "slot",
+            Self::Trace => "trace",
+            Self::Thread => "thread milling",
         }
     }
 
     /// The engine's strategy id, for its height defaults.
     fn engine_id(self) -> &'static str {
+        use CosmicCAM_engine::toolpath::finish as fin;
         use CosmicCAM_engine::toolpath::strategies as st;
+        use CosmicCAM_engine::toolpath::twod as tw;
         match self {
             Self::Contour => "contour2d",
             Self::Face => st::FACE,
@@ -128,6 +185,17 @@ impl Strategy {
             Self::Raster => st::RASTER,
             Self::MultiAxis => CosmicCAM_engine::toolpath::multiaxis::MULTIAXIS,
             Self::Bore => CosmicCAM_engine::toolpath::bore::BORE,
+            Self::Adaptive => CosmicCAM_engine::toolpath::adaptive::ADAPTIVE,
+            Self::Scallop => fin::SCALLOP,
+            Self::SteepShallow => fin::STEEP_SHALLOW,
+            Self::Pencil => fin::PENCIL,
+            Self::Spiral => fin::SPIRAL,
+            Self::Radial => fin::RADIAL,
+            Self::Flat => fin::FLAT,
+            Self::Chamfer => tw::CHAMFER.strategy,
+            Self::Slot => tw::SLOT.strategy,
+            Self::Trace => tw::TRACE.strategy,
+            Self::Thread => tw::THREAD,
         }
     }
 
@@ -135,15 +203,35 @@ impl Strategy {
         TABS.iter()
             .copied()
             .filter(|(t, _)| match self {
-                Self::Drill | Self::MultiAxis | Self::Bore => *t != Tab::Linking,
+                Self::Drill | Self::MultiAxis | Self::Bore | Self::Thread => *t != Tab::Linking,
                 _ => true,
             })
             .collect()
     }
 
+    /// The contour and the strategies built on it share its tabs.
+    fn contour_family(self) -> bool {
+        matches!(self, Self::Contour | Self::Chamfer | Self::Slot | Self::Trace)
+    }
+
+    /// The finishing strategies that drop the tool onto the model over an area.
+    fn surface_finish(self) -> bool {
+        matches!(self, Self::Scallop | Self::SteepShallow | Self::Pencil | Self::Spiral | Self::Radial)
+    }
+
     /// Whether the strategy needs geometry picked before it can run.
     fn needs_geometry(self) -> bool {
-        matches!(self, Self::Contour | Self::Pocket | Self::Drill | Self::Bore)
+        matches!(
+            self,
+            Self::Contour
+                | Self::Pocket
+                | Self::Drill
+                | Self::Bore
+                | Self::Chamfer
+                | Self::Slot
+                | Self::Trace
+                | Self::Thread
+        )
     }
 
     /// The tool types the strategy takes, best first.
@@ -152,10 +240,18 @@ impl Strategy {
         match self {
             Self::Contour | Self::Bore => &["flat", "bull", "ball"],
             Self::Face => &["face_mill", "flat", "bull"],
-            Self::Pocket | Self::Rough | Self::Waterline => &["flat", "bull"],
+            Self::Pocket | Self::Rough | Self::Waterline | Self::Adaptive => &["flat", "bull"],
             Self::Drill => tl::HOLEMAKING,
             Self::Raster => &["ball", "flat", "tapered_ball", "lollipop"],
-            Self::MultiAxis => tl::BALL_ENDED,
+            Self::MultiAxis | Self::Pencil => tl::BALL_ENDED,
+            Self::Scallop | Self::SteepShallow | Self::Spiral | Self::Radial => {
+                CosmicCAM_engine::toolpath::finish::SURFACE_TOOLS
+            }
+            Self::Flat => &["flat", "bull", "face_mill"],
+            Self::Chamfer => CosmicCAM_engine::toolpath::twod::CHAMFER.kinds,
+            Self::Slot => CosmicCAM_engine::toolpath::twod::SLOT.kinds,
+            Self::Trace => CosmicCAM_engine::toolpath::twod::TRACE.kinds,
+            Self::Thread => &["thread_mill"],
         }
     }
 
@@ -163,13 +259,22 @@ impl Strategy {
     fn heights(self) -> Vec<(&'static str, &'static str, f64)> {
         use CosmicCAM_engine::toolpath::strategies as st;
         match self {
-            Self::Contour => HEIGHTS.to_vec(),
+            Self::Contour | Self::Chamfer | Self::Slot | Self::Trace => HEIGHTS.to_vec(),
+            Self::Thread => CosmicCAM_engine::toolpath::twod::THREAD_HEIGHTS.to_vec(),
             Self::Face => st::FACE_HEIGHTS.to_vec(),
             Self::Pocket => st::POCKET_HEIGHTS.to_vec(),
             Self::Drill => CosmicCAM_engine::toolpath::drill::DRILL_HEIGHTS.to_vec(),
             Self::Bore => CosmicCAM_engine::toolpath::bore::BORE_HEIGHTS.to_vec(),
-            Self::Rough => st::ROUGH_HEIGHTS.to_vec(),
-            Self::Waterline | Self::Raster | Self::MultiAxis => st::FINISH_HEIGHTS.to_vec(),
+            Self::Rough | Self::Adaptive => st::ROUGH_HEIGHTS.to_vec(),
+            Self::Waterline
+            | Self::Raster
+            | Self::MultiAxis
+            | Self::Scallop
+            | Self::SteepShallow
+            | Self::Pencil
+            | Self::Spiral
+            | Self::Radial
+            | Self::Flat => st::FINISH_HEIGHTS.to_vec(),
         }
     }
 }
@@ -198,6 +303,22 @@ const HEIGHT_ROWS: &[(&str, &str, &str, &str)] = &[
     ("bottom", "Bottom height", "toolpath_height_bottom", "The final depth of the contour"),
 ];
 
+/// A preview: the toolpath's start, moves and summary, or why it cannot be made.
+type Preview = Result<(Vec3, Arc<Vec<Move>>, Value), String>;
+
+/// Runs `command` on `trial` (a copy of the session) and takes the toolpath it makes.
+fn compute(mut trial: Session, command: &str, p: &Value) -> Preview {
+    let summary = trial.execute(command, p).map_err(|e| e.to_string())?;
+    let id = summary["id"].as_str().unwrap_or_default().to_owned();
+    trial
+        .job
+        .toolpaths
+        .iter()
+        .find(|t| t.id == id)
+        .map(|t| (t.start, Arc::clone(&t.moves), summary.clone()))
+        .ok_or_else(|| "no toolpath".to_owned())
+}
+
 pub struct ToolpathPanel {
     strategy: Strategy,
     /// The toolpath being edited, or None for a new one.
@@ -210,7 +331,9 @@ pub struct ToolpathPanel {
     /// Selected edges and faces.
     geometry: Vec<String>,
     /// The toolpath the settings make, or why they cannot.
-    preview: Result<(Vec3, Arc<Vec<Move>>, Value), String>,
+    preview: Preview,
+    /// A preview being worked out in the background for the latest settings.
+    pending: Option<std::sync::mpsc::Receiver<Preview>>,
     /// Heights as WCS Z values, for display next to each row.
     heights: Vec<(String, Option<f64>)>,
     dirty: bool,
@@ -255,6 +378,7 @@ impl ToolpathPanel {
             text: HashMap::new(),
             geometry,
             preview: Err(String::new()),
+            pending: None,
             heights: Vec::new(),
             dirty: true,
             error: None,
@@ -277,29 +401,52 @@ impl ToolpathPanel {
         Value::Object(p)
     }
 
-    /// Recomputes the preview by running the command on a copy of the session.
+    /// Recomputes the preview by running the command on a copy of the session: in the
+    /// background where threads exist, so slow strategies do not hold up the window.
     fn refresh(&mut self, session: &Session) {
         self.dirty = false;
         self.error = None;
-        let mut p = self.params();
-        if let Some(obj) = p.as_object_mut() {
-            obj.remove("id");
-        }
+        // Regenerating in place (with the id) keeps rest machining to the toolpaths before it.
+        let p = self.params();
         self.heights = match self.strategy {
-            Strategy::Contour => contour::preview_heights(session, &p),
+            s if s.contour_family() => contour::preview_heights(session, &p),
             other => CosmicCAM_engine::toolpath::strategies::preview_heights(other.engine_id(), session, &p),
         };
-        let mut trial = session.clone();
-        self.preview = trial.execute(self.strategy.command(), &p).map_err(|e| e.to_string()).and_then(|summary| {
-            let id = summary["id"].as_str().unwrap_or_default().to_owned();
-            trial
-                .job
-                .toolpaths
-                .iter()
-                .find(|t| t.id == id)
-                .map(|t| (t.start, Arc::clone(&t.moves), summary.clone()))
-                .ok_or_else(|| "no toolpath".to_owned())
-        });
+        let trial = session.clone();
+        let command = self.strategy.command();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let spawned = std::thread::Builder::new().name("toolpath-preview".into()).spawn(move || {
+                let _ = tx.send(compute(trial, command, &p));
+            });
+            match spawned {
+                Ok(_) => self.pending = Some(rx),
+                Err(e) => self.preview = Err(format!("could not start the preview: {e}")),
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.preview = compute(trial, command, &p);
+        }
+    }
+
+    /// Takes a finished background preview; true while one is still being worked out.
+    fn poll(&mut self) -> bool {
+        let Some(rx) = &self.pending else { return false };
+        match rx.try_recv() {
+            Ok(preview) => {
+                self.preview = preview;
+                self.pending = None;
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.pending = None;
+                self.preview = Err("the preview stopped unexpectedly".into());
+                false
+            }
+        }
     }
 
     /// What the viewport picks and draws while the panel is open.
@@ -358,6 +505,10 @@ impl ToolpathPanel {
         if self.dirty {
             self.refresh(session);
         }
+        let working = self.poll();
+        if working {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+        }
         let mut result = (None, true);
         let units = session.prefs.units;
         Panel::right("toolpath-panel", Surface::SidePanel, 360.0).show(ui, tokens, |ui| {
@@ -380,14 +531,14 @@ impl ToolpathPanel {
                     let changed = match self.tab {
                         Tab::Tool => self.tool_tab(ui, session, tokens, units),
                         Tab::MultiAxis => self.multi_axis_tab(ui, session, tokens, units),
-                        Tab::Geometry if self.strategy != Strategy::Contour => {
+                        Tab::Geometry if !self.strategy.contour_family() => {
                             self.strategy_geometry_tab(ui, session, tokens, units)
                         }
                         Tab::Geometry => self.geometry_tab(ui, session, tokens),
                         Tab::Heights => self.heights_tab(ui, session, tokens, units),
-                        Tab::Passes if self.strategy != Strategy::Contour => self.strategy_passes_tab(ui, units),
+                        Tab::Passes if !self.strategy.contour_family() => self.strategy_passes_tab(ui, units),
                         Tab::Passes => self.passes_tab(ui, units),
-                        Tab::Linking if self.strategy != Strategy::Contour => self.strategy_linking_tab(ui, units),
+                        Tab::Linking if !self.strategy.contour_family() => self.strategy_linking_tab(ui, units),
                         Tab::Linking => self.linking_tab(ui, units),
                         Tab::Post => self.post_tab(ui, tokens),
                     };
@@ -397,6 +548,12 @@ impl ToolpathPanel {
             ui.separator();
             // The summary and messages sit centred over the buttons.
             ui.vertical_centered(|ui| match (&self.error, &self.preview) {
+                _ if working => {
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Spinner::new());
+                        ui.label("Working out the toolpath…");
+                    });
+                }
                 (Some(e), _) => {
                     ui.label(RichText::new(e).color(tokens.error));
                 }
@@ -419,7 +576,7 @@ impl ToolpathPanel {
                 _ => {}
             });
             ui.add_space(8.0);
-            let (ok, cancel) = ok_cancel(ui, self.preview.is_ok());
+            let (ok, cancel) = ok_cancel(ui, self.preview.is_ok() && !working);
             if ok {
                 result.0 = Some((self.strategy.command().to_owned(), self.params()));
             }
@@ -554,16 +711,57 @@ impl ToolpathPanel {
     fn takes_geometry(&self) -> bool {
         match self.strategy {
             Strategy::Rough | Strategy::Waterline => false,
-            Strategy::Face | Strategy::Raster | Strategy::MultiAxis => {
-                self.values.get("boundary").and_then(Value::as_str) == Some("selection")
-            }
+            Strategy::Face
+            | Strategy::Raster
+            | Strategy::MultiAxis
+            | Strategy::Adaptive
+            | Strategy::Scallop
+            | Strategy::SteepShallow
+            | Strategy::Pencil
+            | Strategy::Spiral
+            | Strategy::Radial => self.values.get("boundary").and_then(Value::as_str) == Some("selection"),
             _ => true,
         }
     }
 
     // ---- tabs ----------------------------------------------------------------------------
 
+    /// "Start from" a saved template of this strategy: its settings replace the panel's.
+    fn template_row(&mut self, ui: &mut Ui, session: &Session) -> bool {
+        let command = self.strategy.command();
+        let templates: Vec<&CosmicCAM_engine::library::Template> =
+            session.library.templates.iter().filter(|t| t.command == command).collect();
+        if templates.is_empty() {
+            return false;
+        }
+        let mut picked: Option<Map<String, Value>> = None;
+        ui.horizontal(|ui| {
+            ui.label("Start from").on_hover_text(
+                "Fill in the settings from a saved template (save one from a toolpath's menu in the explorer)",
+            );
+            egui::ComboBox::from_id_salt("tp-template").selected_text("Template…").width(200.0).show_ui(ui, |ui| {
+                for t in &templates {
+                    if ui.selectable_label(false, t.name.as_str()).clicked() {
+                        picked = t.params.as_object().cloned();
+                    }
+                }
+            });
+        });
+        ui.add_space(4.0);
+        match picked {
+            Some(values) => {
+                self.values = values;
+                self.text.clear();
+                true
+            }
+            None => false,
+        }
+    }
+
     fn tool_tab(&mut self, ui: &mut Ui, session: &Session, tokens: &Tokens, u: DisplayUnits) -> bool {
+        if self.template_row(ui, session) {
+            self.dirty = true;
+        }
         let Some(machine) = session.library.active_machine() else {
             ui.label(RichText::new("There is no machine. Add one on the Machine tab.").color(tokens.error));
             return false;
@@ -627,7 +825,7 @@ impl ToolpathPanel {
                     c
                 });
                 let feeds: &[(&str, &str, f64)] = match self.strategy {
-                    Strategy::Contour => &[
+                    s if s.contour_family() => &[
                         ("feed", "Cutting feed", t.feed),
                         ("plunge_feed", "Plunge feed", t.plunge_feed),
                         ("lead_feed", "Lead-in / out feed", t.feed),
@@ -636,6 +834,7 @@ impl ToolpathPanel {
                     Strategy::Bore => {
                         &[("feed", "Cutting feed", t.feed), ("plunge_feed", "Feed down to the hole", t.plunge_feed)]
                     }
+                    Strategy::Thread => &[("feed", "Cutting feed", t.feed)],
                     _ => &[("feed", "Cutting feed", t.feed), ("plunge_feed", "Plunge feed", t.plunge_feed)],
                 };
                 for &(key, label, fallback) in feeds {
@@ -816,10 +1015,13 @@ impl ToolpathPanel {
         let mut changed = self.geometry_list(ui, session, tokens);
         ui.add_space(8.0);
         egui::Grid::new("tp-geometry").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-            let sides = [("outside", "Outside"), ("inside", "Inside"), ("on", "On the line")];
-            changed |= Self::row(ui, "Cut side", "Open contours: outside is the left of the edge's direction", |ui| {
-                self.choice(ui, "side", &sides, "outside")
-            });
+            if matches!(self.strategy, Strategy::Contour | Strategy::Chamfer) {
+                let sides = [("outside", "Outside"), ("inside", "Inside"), ("on", "On the line")];
+                changed |=
+                    Self::row(ui, "Cut side", "Open contours: outside is the left of the edge's direction", |ui| {
+                        self.choice(ui, "side", &sides, "outside")
+                    });
+            }
             changed |= Self::row(ui, "", "", |ui| self.check(ui, "reverse", "Reverse direction", false));
             changed |= self.wcs_row(ui, session);
         });
@@ -889,11 +1091,32 @@ impl ToolpathPanel {
             }
             Strategy::Bore => "Click the holes to bore: their walls (cylinders) or rims (circular edges).",
             Strategy::Rough | Strategy::Waterline => "Works on the whole model; there is nothing to pick.",
+            Strategy::Adaptive => {
+                "Clears the stock around the model, or with Selected pockets the floors or closed edges you click."
+            }
+            Strategy::Thread => {
+                "Click the holes or bosses to thread: their walls (cylinders) or rims (circular edges)."
+            }
+            Strategy::Flat => "Finishes every flat floor facing the tool; click faces to finish only their floors.",
             _ => "Choose the area below. With Selected faces, click faces or closed edges to work inside.",
         };
         ui.label(RichText::new(hint).color(tokens.accent));
         ui.add_space(4.0);
-        if matches!(self.strategy, Strategy::Face | Strategy::Raster | Strategy::MultiAxis) {
+        if self.strategy == Strategy::Adaptive {
+            egui::Grid::new("tp-adaptive-area").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                let areas = [("stock", "Stock around the model (3D)"), ("selection", "Selected pockets (2D)")];
+                changed |= Self::row(
+                    ui,
+                    "Clear",
+                    "3D clears the stock down around the model; 2D clears the pockets you pick",
+                    |ui| self.choice(ui, "boundary", &areas, "stock"),
+                );
+            });
+            ui.add_space(4.0);
+        }
+        if matches!(self.strategy, Strategy::Face | Strategy::Raster | Strategy::MultiAxis)
+            || self.strategy.surface_finish()
+        {
             egui::Grid::new("tp-boundary").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                 let areas = [("stock", "Stock"), ("model", "Model"), ("selection", "Selected faces")];
                 let default = if self.strategy == Strategy::Face { "stock" } else { "model" };
@@ -963,6 +1186,129 @@ impl ToolpathPanel {
                     Self::row(ui, "Thread pitch", "For tapping: the thread's pitch", |ui| len(ui, self, "pitch", "—"));
                 return;
             }
+            if strategy == Strategy::Thread {
+                changed |= Self::row(ui, "Pitch", "Thread pitch: advance per turn (blank: the thread mill's)", |ui| {
+                    len(ui, self, "pitch", "tool")
+                });
+                let types = [("internal", "Internal (in a hole)"), ("external", "External (on a boss)")];
+                changed |= Self::row(ui, "Thread", "", |ui| self.choice(ui, "thread_type", &types, "internal"));
+                let hands = [("right", "Right-hand"), ("left", "Left-hand")];
+                changed |= Self::row(ui, "Hand", "", |ui| self.choice(ui, "hand", &hands, "right"));
+                changed |= Self::row(
+                    ui,
+                    "Major diameter",
+                    "Blank: a hole's diameter plus 1.0825 × pitch, a boss's diameter",
+                    |ui| len(ui, self, "major_diameter", "auto"),
+                );
+                changed |= Self::row(ui, "Radial passes", "Passes to full thread depth", |ui| {
+                    self.number(ui, "radial_passes", "1", None, false)
+                });
+                changed |= Self::row(ui, "", "", |ui| self.check(ui, "spring_pass", "Spring pass", false));
+                let dirs = [("climb", "Climb"), ("conventional", "Conventional")];
+                changed |= Self::row(ui, "Direction", "", |ui| self.choice(ui, "direction", &dirs, "climb"));
+                return;
+            }
+            if strategy.surface_finish() || strategy == Strategy::Flat {
+                let (over, help) = match strategy {
+                    Strategy::Flat => ("60% Ø", "Distance between passes on each floor"),
+                    Strategy::Radial => ("10% Ø", "Distance between spokes where they end"),
+                    Strategy::Pencil => ("—", ""),
+                    _ => ("10% Ø", "Distance between passes, measured along the surface"),
+                };
+                if strategy != Strategy::Pencil {
+                    changed |= Self::row(ui, "Stepover", help, |ui| len(ui, self, "stepover", over));
+                }
+                if strategy == Strategy::SteepShallow {
+                    changed |= Self::row(
+                        ui,
+                        "Steep above",
+                        "Slope from horizontal that divides steep walls (level passes) from shallow areas",
+                        |ui| {
+                            let c = self.number(ui, "threshold_angle", "40", None, false);
+                            ui.label("°");
+                            c
+                        },
+                    );
+                }
+                if strategy == Strategy::Pencil {
+                    changed |= Self::row(ui, "Shortest corner", "Corners shorter than this get no pass", |ui| {
+                        len(ui, self, "min_length", "Ø/2")
+                    });
+                }
+                if matches!(strategy, Strategy::Spiral | Strategy::Radial) {
+                    changed |= Self::row(ui, "Centre X", "Blank: the middle of the area", |ui| {
+                        len(ui, self, "center_x", "auto")
+                    });
+                    changed |= Self::row(ui, "Centre Y", "Blank: the middle of the area", |ui| {
+                        len(ui, self, "center_y", "auto")
+                    });
+                }
+                if strategy == Strategy::Spiral {
+                    let dirs = [("outward", "Outward"), ("inward", "Inward")];
+                    changed |= Self::row(ui, "Spiral", "", |ui| self.choice(ui, "spiral_direction", &dirs, "outward"));
+                }
+                if strategy == Strategy::Radial {
+                    changed |= Self::row(ui, "Inner radius", "Where the spokes start", |ui| {
+                        len(ui, self, "inner_radius", "stepover")
+                    });
+                }
+                if strategy == Strategy::Flat {
+                    changed |= Self::row(ui, "Stock to leave (radial)", "On the walls", |ui| {
+                        len(ui, self, "stock_radial", "0")
+                    });
+                }
+                changed |= Self::row(ui, "Stock to leave", "On the surface (negative leaves it lower)", |ui| {
+                    len(ui, self, "stock_axial", "0")
+                });
+                if strategy != Strategy::Flat {
+                    changed |= Self::row(
+                        ui,
+                        "Point spacing",
+                        "Spacing of points dropped onto the model along each pass",
+                        |ui| len(ui, self, "sample_step", "Ø/8"),
+                    );
+                }
+                changed |= Self::row(ui, "Tolerance", "How far the toolpath may stray from the surface", |ui| {
+                    len(ui, self, "tolerance", &u.plain(0.01))
+                });
+                return;
+            }
+            if strategy == Strategy::Adaptive {
+                changed |= Self::row(
+                    ui,
+                    "Optimal load",
+                    "The width of cut the tool keeps to, all the way round: 8–25% of the diameter suits most cutters",
+                    |ui| len(ui, self, "stepover", "15% Ø"),
+                );
+                changed |=
+                    Self::row(ui, "Stepdown", "Depth per level: deep cuts at a light load use the whole flute", |ui| {
+                        len(ui, self, "stepdown", "tool")
+                    });
+                let dirs = [("climb", "Climb"), ("conventional", "Conventional")];
+                changed |=
+                    Self::row(ui, "Direction", "Climb keeps the material on the right of the tool's travel", |ui| {
+                        self.choice(ui, "direction", &dirs, "climb")
+                    });
+                changed |=
+                    Self::row(ui, "Stock to leave (radial)", "On the walls", |ui| len(ui, self, "stock_radial", "0"));
+                changed |=
+                    Self::row(ui, "Stock to leave (axial)", "On the floors", |ui| len(ui, self, "stock_axial", "0"));
+                let rests = [("none", "Everything"), ("previous", "What earlier toolpaths left")];
+                changed |= Self::row(
+                    ui,
+                    "Clear",
+                    "Rest machining: only the material the toolpaths before this one could not reach",
+                    |ui| self.choice(ui, "rest", &rests, "none"),
+                );
+                changed |=
+                    Self::row(ui, "", "", |ui| self.check(ui, "flat_levels", "Extra levels at flat areas", true));
+                changed |=
+                    Self::row(ui, "", "", |ui| self.check(ui, "wall_pass", "Pass along the walls at each level", true));
+                changed |= Self::row(ui, "Tolerance", "How far the toolpath may stray from true curves", |ui| {
+                    len(ui, self, "tolerance", &u.plain(0.01))
+                });
+                return;
+            }
             let tolerance_help = "How far the toolpath may stray from true curves. Smaller gives more, closer points.";
             changed |= Self::row(ui, "Tolerance", tolerance_help, |ui| len(ui, self, "tolerance", &u.plain(0.01)));
             let dirs = [("climb", "Climb"), ("conventional", "Conventional")];
@@ -1024,7 +1370,26 @@ impl ToolpathPanel {
     /// The Linking tab of the milling strategies other than the contour.
     fn strategy_linking_tab(&mut self, ui: &mut Ui, u: DisplayUnits) -> bool {
         let mut changed = false;
+        let ramps = !(self.strategy.surface_finish() || self.strategy == Strategy::Flat);
         egui::Grid::new("tp-strategy-linking").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+            if !ramps {
+                ui.label(RichText::new("Links").strong());
+                ui.end_row();
+                changed |= Self::row(ui, "", "", |ui| self.check(ui, "rapid_links", "Rapid links", true));
+                if self.strategy.surface_finish() {
+                    changed |= Self::row(
+                        ui,
+                        "Stay down within",
+                        "Longest link along the surface made without lifting the tool",
+                        |ui| {
+                            let c = self.number(ui, "stay_down_distance", "2 × Ø", Some(u), false);
+                            ui.label(u.length());
+                            c
+                        },
+                    );
+                }
+                return;
+            }
             ui.label(RichText::new("Entry").strong());
             ui.end_row();
             let entries = [("helix", "Helical ramp"), ("plunge", "Plunge")];
@@ -1044,13 +1409,29 @@ impl ToolpathPanel {
             ui.label(RichText::new("Links").strong());
             ui.end_row();
             changed |= Self::row(ui, "", "", |ui| self.check(ui, "rapid_links", "Rapid links", true));
+            if self.strategy == Strategy::Adaptive {
+                changed |= Self::row(ui, "", "", |ui| {
+                    self.check(ui, "keep_down", "Keep the tool down where the way is clear", true)
+                });
+            }
+            if self.strategy == Strategy::Adaptive {
+                changed |= Self::row(ui, "Stay down within", "Longest link made without lifting the tool", |ui| {
+                    let c = self.number(ui, "stay_down_distance", "20 × Ø", Some(u), false);
+                    ui.label(u.length());
+                    c
+                });
+            }
         });
         changed
     }
 
     fn heights_tab(&mut self, ui: &mut Ui, session: &Session, tokens: &Tokens, u: DisplayUnits) -> bool {
         let mut changed = false;
-        let defaults = self.strategy.heights();
+        let defaults = if self.strategy == Strategy::Adaptive && self.takes_geometry() {
+            CosmicCAM_engine::toolpath::strategies::POCKET_HEIGHTS.to_vec()
+        } else {
+            self.strategy.heights()
+        };
         for (prefix, label, icon, help) in HEIGHT_ROWS {
             let Some(&(_, default_ref, default_offset)) = defaults.iter().find(|(p, _, _)| p == prefix) else {
                 continue;
@@ -1093,6 +1474,22 @@ impl ToolpathPanel {
             c
         };
         egui::Grid::new("tp-passes").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+            if self.strategy == Strategy::Chamfer {
+                changed |= Self::row(ui, "Chamfer width", "Width of the chamfer across each face", |ui| {
+                    len(ui, self, "chamfer_width", &u.plain(0.5))
+                });
+                changed |= Self::row(
+                    ui,
+                    "Tip offset",
+                    "How far the tip goes below the chamfer, so the tip itself does not cut",
+                    |ui| len(ui, self, "tip_offset", &u.plain(0.25)),
+                );
+            }
+            if self.strategy == Strategy::Trace {
+                changed |= Self::row(ui, "Depth", "Below the picked edges (a bottom height overrides it)", |ui| {
+                    len(ui, self, "depth", &u.plain(0.2))
+                });
+            }
             let tolerance_help = "How far the toolpath may stray from the true curve: arcs, circles and rounded \
                                   corners get more, closer points as this gets smaller. Straight lines are unaffected.";
             changed |= Self::row(ui, "Tolerance", tolerance_help, |ui| len(ui, self, "tolerance", &u.plain(0.01)));

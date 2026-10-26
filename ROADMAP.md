@@ -7,7 +7,7 @@
 | 3 | Work coordinate system (WCS) creation | **Done** (2026-10-24) |
 | 4 | Tool library & management | **Done** (20 tool types, presets, holders, sample library, 4/5-axis kinematics 2026-10-25) |
 | 5 | Stock setup & material definition | **In progress** (setups, box stock options 2026-10-25) |
-| 6 | Toolpath creation engine | **In progress** (contour, face, pocket, drill, helical bore, 3D rough, waterline, raster, 3+2, multi-axis finish 2026-10-25) |
+| 6 | Toolpath creation engine | **In progress** (20 strategies incl. adaptive clearing with rest machining, scallop, steep and shallow, pencil, thread milling; templates 2026-10-26) |
 | 7 | Material removal simulation & verification | **In progress** (height-field and voxel stock simulation, gouges, collisions 2026-10-25) |
 | 8 | Post-processor & G-code export | **In progress** (Python posts, arc fitting, limits, 4/5-axis output 2026-10-25) |
 | 9 | MCP agent integration | Planned |
@@ -360,3 +360,24 @@ Crash reports, `CosmicCAM-cli`, job file format.
 
 40 original SVG icons in `assets/icons/ui/design/svg/` following the approved
 `assets/icons/ui/STYLE_GUIDE.md`; embedded at build time, coloured per theme and rasterised with resvg.
+
+## Toolpath strategies and workflow (2026-10-26)
+
+- Adaptive clearing (`toolpath.adaptive`, `geom::adaptive`): a steady radial load steered on a
+  material grid (bit rows counted with popcount), trochoidal loops in narrow channels, links at
+  depth routed through cleared ground (A*, string-pulled), gentle starts before helixing into
+  fresh material, a pass along the walls per level, extra levels at flat areas, 2D pockets or 3D
+  stock, and rest machining from a height map of the earlier toolpaths' cuts.
+- Finishing: scallop and steep-and-shallow passes spaced by distance measured over the tool-tip
+  height surface (fast marching, `geom::field`), iso-lines by marching squares; pencil passes
+  where a ball's contact jumps between faces, bisected onto the corner; spiral, radial, and flat
+  floors at their exact heights. Links between nearby passes follow the surface.
+- 2D: chamfer (width and tip offset from the tool's angle and tip), slot, trace (built on the
+  contour) and thread milling (internal or external, right or left hand, radial and spring
+  passes, half-circle leads).
+- Workflow: the toolpath panel works out its preview in the background with a spinner; the
+  ribbon groups strategies into 2D, Drilling, 3D and Multi-axis in workflow order, and each
+  gallery's third arrow lists every strategy; toolpath templates (save, apply, start from in the
+  panel), move up/down and regenerate (also in the explorer menu).
+- Still to come: morphed spiral and flowline finishing, rest finishing from a reference tool,
+  4th-axis wrapping, adaptive clearing with a variable load in corners.

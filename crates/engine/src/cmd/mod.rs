@@ -392,6 +392,30 @@ pub static EXTRA_PLACEMENTS: &[(&str, Placement)] = &[
 const PANEL_ORDER: &[(RibbonTab, &[&str])] = &[
     (RibbonTab::Home, &["Job", "Setup", "Display", "Settings"]),
     (RibbonTab::Setup, &["Setup", "Model", "Coordinates", "Stock"]),
+    (RibbonTab::Toolpaths, &["2D", "Drilling", "3D", "Multi-axis", "Output"]),
+];
+
+/// Ribbon buttons in the order a job uses them, within their panels.
+const BUTTON_ORDER: &[&str] = &[
+    "toolpath.face",
+    "toolpath.contour",
+    "toolpath.pocket",
+    "toolpath.slot",
+    "toolpath.chamfer",
+    "toolpath.trace",
+    "toolpath.drill",
+    "toolpath.bore",
+    "toolpath.thread",
+    "toolpath.adaptive",
+    "toolpath.rough",
+    "toolpath.flat",
+    "toolpath.waterline",
+    "toolpath.raster",
+    "toolpath.scallop",
+    "toolpath.steep_shallow",
+    "toolpath.pencil",
+    "toolpath.spiral",
+    "toolpath.radial",
 ];
 
 /// Every ribbon button: each command's own placement, then the extra ones.
@@ -412,6 +436,10 @@ pub fn ribbon(tab: RibbonTab) -> Vec<(&'static str, Vec<(&'static CommandSpec, P
     }
     if let Some((_, order)) = PANEL_ORDER.iter().find(|(t, _)| *t == tab) {
         panels.sort_by_key(|(name, _)| order.iter().position(|o| o == name).unwrap_or(order.len()));
+    }
+    // Buttons in their workflow order where one is given; the rest as registered.
+    for (_, list) in &mut panels {
+        list.sort_by_key(|(spec, _)| BUTTON_ORDER.iter().position(|id| *id == spec.id).unwrap_or(BUTTON_ORDER.len()));
     }
     panels
 }
