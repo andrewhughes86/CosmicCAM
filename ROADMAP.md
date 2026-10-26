@@ -3,7 +3,7 @@
 | Phase | Milestone | Status |
 | --- | --- | --- |
 | 1 | Desktop UI & theme engine | **Done** (2026-10-24) |
-| 2 | Model import & geometry ingestion | **Done except STEP/IGES** (2026-10-24) |
+| 2 | Model import & geometry ingestion | **Done** (STEP, IGES and 12 mesh formats 2026-10-25) |
 | 3 | Work coordinate system (WCS) creation | **Done** (2026-10-24) |
 | 4 | Tool library & management | **Done** (20 tool types, presets, holders, sample library, 4/5-axis kinematics 2026-10-25) |
 | 5 | Stock setup & material definition | **In progress** (setups, box stock options 2026-10-25) |
@@ -229,6 +229,27 @@ CAM practice; no product's behaviour, text or names copied):
   recognised on every mesh. Clicking in the viewport selects a vertex, edge or face and the
   inspector shows its geometry; `selection.set` takes face, edge and vertex references.
 - Still to do in Phase 2: the STEP/IGES B-Rep bridge (deferred). Shells are not modelled.
+
+## CAD and mesh import (2026-10-25)
+
+- STEP (AP203, AP214, AP242) and IGES read in pure Rust: a Part 21 parser and an IGES section
+  reader feed exact curves and surfaces (`geom::brep`: lines, circles, ellipses, B-splines;
+  planes, cylinders, cones, spheres, tori, revolution, extrusion, offset, ruled and B-spline
+  surfaces, `geom::nurbs`) to a trimmed-face tessellator (`geom::trim`): loops mapped to the
+  surface's parameters, seams and poles handled, constrained Delaunay triangulation (spade)
+  refined to the chord tolerance. Edges are sampled once and shared, so solids come in
+  watertight. STEP assemblies (transformed representation relationships, mapped items), units,
+  AP242 tessellated shapes; IGES trimmed and bounded surfaces, B-rep solids, subfigures,
+  transformation matrices, units, and faces turned outward by a parity test.
+- Mesh formats: 3MF (components, build transforms, units), PLY (ASCII and binary), OFF, AMF
+  (constellations), glTF/GLB (node tree, external and embedded buffers), COLLADA, VRML 1/2,
+  X3D, 3DS, DXF (3D faces, polyface and polygon meshes, MESH, blocks); gzipped files too.
+- `model.import` reads the file's unit unless `units` says otherwise, takes a `tolerance` for
+  CAD surfaces and returns `warnings`; `model.formats` lists the formats. The import dialog
+  offers every format; warnings show in the notice bar.
+- Tested against the NIST PMI test models (all import; AP203 and AP242 solids watertight).
+- Not yet: STEP/IGES wireframes, IGES parametric spline surfaces (114), compressed IGES, Draco
+  glTF, binary DXF and ACIS solids, Parasolid and other native formats.
 
 ## Phase 3 — work coordinate systems (2026-10-24)
 

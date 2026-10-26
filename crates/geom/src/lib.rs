@@ -13,20 +13,23 @@
 #![allow(non_snake_case)]
 
 pub mod arcfit;
+pub mod brep;
 pub mod collide;
 pub mod cutter;
 pub mod edges;
 pub mod faces;
 pub mod kinematics;
 pub mod mesh;
+pub mod nurbs;
 pub mod offset;
 pub mod region;
+pub mod trim;
 pub mod voxel;
 pub mod zmap;
 
 pub use edges::{Edge, EdgeKind, EdgeMap};
 pub use faces::{Face, FaceKind, FaceMap};
-pub use glam::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
+pub use glam::{DMat3, DMat4, DVec2, DVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
 pub use mesh::{Mesh, MeshError};
 
 /// World up axis. CosmicCAM is Z-up everywhere.

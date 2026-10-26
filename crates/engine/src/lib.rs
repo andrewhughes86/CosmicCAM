@@ -24,6 +24,7 @@ pub mod tooling;
 pub mod toolpath;
 pub mod units;
 
+pub use CosmicCAM_io::ModelFormat;
 pub use cmd::{ButtonSize, CommandSpec, Param, ParamKind, Placement, RibbonTab};
 pub use error::{EngineError, EngineResult, error_json};
 pub use session::{Display, Model, Pane, Session, Theme, UiRequest};

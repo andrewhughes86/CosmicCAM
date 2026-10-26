@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use CosmicCAM_io::{Units, import_mesh, import_mesh_bytes};
+use CosmicCAM_io::{DEFAULT_TOLERANCE, ModelFormat, Options, Units, import_mesh, import_mesh_bytes};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, Param, ParamKind, Placement, RibbonTab, always};
@@ -18,7 +18,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.import",
         label: "Import model",
-        tooltip: "Import STL or OBJ geometry",
+        tooltip: "Import a CAD model (STEP, IGES) or mesh (STL, OBJ, 3MF, PLY, glTF and more)",
         placement: Some(Placement::large(RibbonTab::Setup, "Model")),
         icon: None,
         shortcut: Some("Ctrl+I"),
@@ -26,18 +26,44 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             Param::required(
                 "path",
                 ParamKind::Str,
-                "Model file (.stl or .obj), or upload://<name> for a file staged by the browser app",
+                "Model file (any format `model.formats` lists, optionally gzipped), or upload://<name> for a file staged by the browser app",
             ),
             Param::optional(
                 "units",
                 ParamKind::Choice(Units::IDS),
-                "Unit the file was authored in (default mm); STL and OBJ store none",
+                "Unit the file was authored in; files that record theirs (STEP, IGES, 3MF, AMF, glTF, COLLADA, DXF) use it, others default to mm",
+            ),
+            Param::optional(
+                "tolerance",
+                ParamKind::Length { min: 0.0001, max: 10.0 },
+                "Most a tessellated CAD surface (STEP, IGES) may stray from the exact one, mm (default 0.01)",
             ),
             Param::optional("name", ParamKind::Str, "Name in the job outline (default: the file name)"),
         ],
-        returns: "the model {id, name, source, format, units, triangles, vertices, faces, bounds}",
+        returns: "the model {id, name, source, format, units, triangles, vertices, faces, bounds, warnings}",
         enabled: always,
         run: import,
+    },
+    CommandSpec {
+        id: "model.formats",
+        label: "Model formats",
+        tooltip: "The file formats model.import reads",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[],
+        returns: "list of {id, label, extensions, cad} (cad: exact geometry, tessellated on import)",
+        enabled: always,
+        run: |_, _| {
+            Ok(json!(
+                ModelFormat::ALL
+                    .iter()
+                    .map(
+                        |f| json!({ "id": f.id(), "label": f.label(), "extensions": f.extensions(), "cad": f.is_cad() })
+                    )
+                    .collect::<Vec<_>>()
+            ))
+        },
     },
     CommandSpec {
         id: "model.list",
@@ -344,19 +370,22 @@ const MAX_LISTED_FACES: usize = 5000;
 fn import(s: &mut Session, p: &Value) -> EngineResult<Value> {
     let path = params::req_str(p, "path")?;
     let units = match params::opt_str(p, "units")? {
-        Some(u) => Units::from_id(u).ok_or_else(|| EngineError::InvalidParams(format!("unknown units `{u}`")))?,
-        None => Units::Millimetres,
+        Some(u) => Some(Units::from_id(u).ok_or_else(|| EngineError::InvalidParams(format!("unknown units `{u}`")))?),
+        None => None,
     };
+    let options = Options { tolerance: params::opt_f64(p, "tolerance", 0.0001, 10.0)?.unwrap_or(DEFAULT_TOLERANCE) };
     if s.job.models.len() >= MAX_MODELS {
         return Err(EngineError::InvalidParams(format!("a job holds at most {MAX_MODELS} models")));
     }
     let staged = s.take_upload(path);
     let path = Path::new(path);
-    let (mesh, format) = match &staged {
-        Some((name, bytes)) => import_mesh_bytes(name, bytes, units),
-        None => import_mesh(path, units),
+    let (imported, format) = match &staged {
+        Some((name, bytes)) => import_mesh_bytes(name, bytes, units, options),
+        None => import_mesh(path, units, options),
     }
     .map_err(|e| EngineError::Import(e.to_string()))?;
+    let units = imported.units.unwrap_or(Units::Millimetres);
+    let (mesh, warnings) = (imported.mesh, imported.warnings);
     let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let name = match params::opt_str(p, "name")? {
         Some(n) if !n.trim().is_empty() => n.trim().to_owned(),
@@ -385,7 +414,10 @@ fn import(s: &mut Session, p: &Value) -> EngineResult<Value> {
     if s.view.selection.as_deref() == Some(SAMPLE_MODEL_ID) {
         s.view.selection = None;
     }
-    let result = model.to_json();
+    let mut result = model.to_json();
+    if let Some(o) = result.as_object_mut() {
+        o.insert("warnings".into(), json!(warnings));
+    }
     s.job.models.push(model);
     s.job.geometry_changed();
     Ok(result)

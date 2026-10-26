@@ -318,6 +318,7 @@ impl CosmicApp {
                     "tool.library.export" => {
                         Some(format!("Wrote the tool library to {}", result["path"].as_str().unwrap_or_default()))
                     }
+                    "model.import" => import_notice(&result),
                     _ => self.notice.take().filter(|_| id.ends_with(".get") || id == "selection.set"),
                 };
             }
@@ -1033,7 +1034,13 @@ impl eframe::App for CosmicApp {
             }
         }
         if let Some((id, params)) = self.tools.show(&ctx, tokens, &self.session) {
-            let outcome = self.session.execute(&id, &params).map(|_| ()).map_err(|e| e.to_string());
+            let outcome = self.session.execute(&id, &params);
+            if id == "model.import"
+                && let Ok(result) = &outcome
+            {
+                self.notice = import_notice(result);
+            }
+            let outcome = outcome.map(|_| ()).map_err(|e| e.to_string());
             self.status = outcome.as_ref().err().cloned();
             self.tools.finished(outcome);
         }
@@ -1081,6 +1088,17 @@ fn open_folder(dir: &std::path::Path) {
         "xdg-open"
     };
     let _ = std::process::Command::new(program).arg(dir).spawn();
+}
+
+/// What an import had to skip or approximate, for the notice bar; None when it went cleanly.
+fn import_notice(result: &Value) -> Option<String> {
+    let warnings: Vec<&str> = result["warnings"].as_array()?.iter().filter_map(Value::as_str).collect();
+    let (first, rest) = warnings.split_first()?;
+    Some(format!(
+        "Imported {} with {}: {first}",
+        result["name"].as_str().unwrap_or("the model"),
+        if rest.is_empty() { "a warning".to_owned() } else { format!("{} warnings", warnings.len()) }
+    ))
 }
 
 #[cfg(test)]

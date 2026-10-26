@@ -259,8 +259,9 @@ class GeneratedApiTests(unittest.TestCase):
 
     def test_model_import_signature(self):
         sig = inspect.signature(Commands.model_import)
-        self.assertEqual(list(sig.parameters)[1:], ["path", "units", "name"])
+        self.assertEqual(list(sig.parameters)[1:], ["path", "units", "tolerance", "name"])
         self.assertIs(sig.parameters["path"].default, inspect.Parameter.empty)
+        self.assertTrue(hasattr(Commands, "model_formats"))
 
     def test_public_names(self):
         for name in ("launch", "connect", "CosmicCAM", "CosmicCAMError"):

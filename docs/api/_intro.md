@@ -61,11 +61,23 @@ values raise `CosmicCAMError(kind="invalid_params")` without changing anything.
 
 ## Importing models
 
-CosmicCAM imports STL (binary and ASCII) and Wavefront OBJ meshes. Neither format stores units,
-so say which unit the file was drawn in (`mm` by default); the job is always in millimetres.
+CosmicCAM imports exact CAD models and meshes; `cc.model_formats()` lists them all:
+
+| Kind | Formats |
+| --- | --- |
+| CAD (exact surfaces, tessellated on import) | STEP (`.step`, `.stp`, `.p21`; AP203, AP214, AP242 including assemblies and AP242 meshes), IGES (`.iges`, `.igs`) |
+| Meshes | STL, Wavefront OBJ, 3MF, PLY, OFF, AMF, glTF (`.gltf`, `.glb`), COLLADA (`.dae`), VRML (`.wrl`), X3D, 3DS, DXF (3D faces and meshes) |
+
+Any of them may also be gzipped (`part.stl.gz`, `.stpz`, `.x3dz`, `.wrz`). STEP and IGES curved
+surfaces become triangles within `tolerance` of the exact surface (0.01 mm by default); every
+edge is shared by its two faces, so a solid comes in watertight. Files that record their unit
+(STEP, IGES, 3MF, AMF, glTF, COLLADA, DXF) are read in it; for the rest say which unit the file
+was drawn in (`mm` by default). `units` overrides what the file says. The job is always in
+millimetres. glTF and COLLADA models drawn Y-up are turned to CosmicCAM's Z-up.
 
 ```python
-part = cc.model_import(path="parts/bracket.stl")              # {'id': 'model.1', 'triangles': ..., 'bounds': ...}
+part = cc.model_import(path="parts/bracket.step")             # {'id': 'model.1', 'units': 'in', 'warnings': [], ...}
+cc.model_import(path="parts/housing.igs", tolerance=0.005)    # finer facets on curved faces
 cc.model_import(path="parts/fixture.obj", units="in", name="Vice jaws")
 for m in cc.model_list():
     print(m["id"], m["name"], m["bounds"])
@@ -73,9 +85,12 @@ cc.selection_set(id=part["id"])     # models appear under Models in the job outl
 cc.model_remove(id="model.2")
 ```
 
-The first import replaces the built-in sample part. A file that cannot be read raises
-`CosmicCAMError(kind="import")` and leaves the job unchanged. `cc.start("model.import")` opens
-the file dialog instead, as the ribbon button does; files dropped on the window are imported too.
+`warnings` says what an import skipped or approximated: faces drawn flat because their surface
+could not be trimmed, geometry kinds not supported yet, construction surfaces left beside a
+solid, ACIS solids in DXF files. The first import replaces the built-in sample part. A file
+that cannot be read raises `CosmicCAMError(kind="import")` and leaves the job unchanged.
+`cc.start("model.import")` opens the file dialog instead, as the ribbon button does; files
+dropped on the window are imported too.
 
 ## Work coordinate systems
 

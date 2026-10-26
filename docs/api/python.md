@@ -63,11 +63,23 @@ values raise `CosmicCAMError(kind="invalid_params")` without changing anything.
 
 ## Importing models
 
-CosmicCAM imports STL (binary and ASCII) and Wavefront OBJ meshes. Neither format stores units,
-so say which unit the file was drawn in (`mm` by default); the job is always in millimetres.
+CosmicCAM imports exact CAD models and meshes; `cc.model_formats()` lists them all:
+
+| Kind | Formats |
+| --- | --- |
+| CAD (exact surfaces, tessellated on import) | STEP (`.step`, `.stp`, `.p21`; AP203, AP214, AP242 including assemblies and AP242 meshes), IGES (`.iges`, `.igs`) |
+| Meshes | STL, Wavefront OBJ, 3MF, PLY, OFF, AMF, glTF (`.gltf`, `.glb`), COLLADA (`.dae`), VRML (`.wrl`), X3D, 3DS, DXF (3D faces and meshes) |
+
+Any of them may also be gzipped (`part.stl.gz`, `.stpz`, `.x3dz`, `.wrz`). STEP and IGES curved
+surfaces become triangles within `tolerance` of the exact surface (0.01 mm by default); every
+edge is shared by its two faces, so a solid comes in watertight. Files that record their unit
+(STEP, IGES, 3MF, AMF, glTF, COLLADA, DXF) are read in it; for the rest say which unit the file
+was drawn in (`mm` by default). `units` overrides what the file says. The job is always in
+millimetres. glTF and COLLADA models drawn Y-up are turned to CosmicCAM's Z-up.
 
 ```python
-part = cc.model_import(path="parts/bracket.stl")              # {'id': 'model.1', 'triangles': ..., 'bounds': ...}
+part = cc.model_import(path="parts/bracket.step")             # {'id': 'model.1', 'units': 'in', 'warnings': [], ...}
+cc.model_import(path="parts/housing.igs", tolerance=0.005)    # finer facets on curved faces
 cc.model_import(path="parts/fixture.obj", units="in", name="Vice jaws")
 for m in cc.model_list():
     print(m["id"], m["name"], m["bounds"])
@@ -75,9 +87,12 @@ cc.selection_set(id=part["id"])     # models appear under Models in the job outl
 cc.model_remove(id="model.2")
 ```
 
-The first import replaces the built-in sample part. A file that cannot be read raises
-`CosmicCAMError(kind="import")` and leaves the job unchanged. `cc.start("model.import")` opens
-the file dialog instead, as the ribbon button does; files dropped on the window are imported too.
+`warnings` says what an import skipped or approximated: faces drawn flat because their surface
+could not be trimmed, geometry kinds not supported yet, construction surfaces left beside a
+solid, ACIS solids in DXF files. The first import replaces the built-in sample part. A file
+that cannot be read raises `CosmicCAMError(kind="import")` and leaves the job unchanged.
+`cc.start("model.import")` opens the file dialog instead, as the ribbon button does; files
+dropped on the window are imported too.
 
 ## Work coordinate systems
 
@@ -530,14 +545,14 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-169 commands in 17 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+170 commands in 17 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.demo.open`](#jobdemoopen), [`job.clipboard.copy`](#jobclipboardcopy), [`job.clipboard.paste`](#jobclipboardpaste), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
 - **session**: [`session.state.get`](#sessionstateget)
 - **command**: [`command.list`](#commandlist), [`command.describe`](#commanddescribe)
 - **console**: [`console.clear`](#consoleclear), [`console.log.get`](#consolelogget)
-- **model**: [`model.import`](#modelimport), [`model.list`](#modellist), [`model.visibility.set`](#modelvisibilityset), [`model.rename`](#modelrename), [`model.remove`](#modelremove), [`model.faces.list`](#modelfaceslist), [`model.face.get`](#modelfaceget), [`model.pick`](#modelpick), [`model.edges.list`](#modeledgeslist), [`model.edge.get`](#modeledgeget), [`model.edge.pick`](#modeledgepick), [`model.vertices.list`](#modelverticeslist), [`model.vertex.pick`](#modelvertexpick)
+- **model**: [`model.import`](#modelimport), [`model.formats`](#modelformats), [`model.list`](#modellist), [`model.visibility.set`](#modelvisibilityset), [`model.rename`](#modelrename), [`model.remove`](#modelremove), [`model.faces.list`](#modelfaceslist), [`model.face.get`](#modelfaceget), [`model.pick`](#modelpick), [`model.edges.list`](#modeledgeslist), [`model.edge.get`](#modeledgeget), [`model.edge.pick`](#modeledgepick), [`model.vertices.list`](#modelverticeslist), [`model.vertex.pick`](#modelvertexpick)
 - **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.wcs.rotate`](#setupwcsrotate), [`setup.wcs.rename`](#setupwcsrename), [`setup.wcs.activate`](#setupwcsactivate), [`setup.wcs.remove`](#setupwcsremove), [`setup.wcs.list`](#setupwcslist), [`setup.wcs.get`](#setupwcsget), [`setup.create`](#setupcreate), [`setup.edit`](#setupedit), [`setup.activate`](#setupactivate), [`setup.remove`](#setupremove), [`setup.list`](#setuplist), [`setup.get`](#setupget), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.margins`](#setupstockmargins), [`setup.stock.fit`](#setupstockfit), [`setup.stock.get`](#setupstockget)
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
@@ -830,21 +845,33 @@ Returns: list of {seq, command, params, ok, result \| error}
 #### `model.import`
 
 ```python
-cc.model_import(path=…, units=None, name=None)
+cc.model_import(path=…, units=None, tolerance=None, name=None)
 ```
 
-Import STL or OBJ geometry.
+Import a CAD model (STEP, IGES) or mesh (STL, OBJ, 3MF, PLY, glTF and more).
 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string | yes | Model file (.stl or .obj), or upload://<name> for a file staged by the browser app |
-| `units` | choice | no | Unit the file was authored in (default mm); STL and OBJ store none — one of mm, cm, m, in |
+| `path` | string | yes | Model file (any format `model.formats` lists, optionally gzipped), or upload://<name> for a file staged by the browser app |
+| `units` | choice | no | Unit the file was authored in; files that record theirs (STEP, IGES, 3MF, AMF, glTF, COLLADA, DXF) use it, others default to mm — one of mm, cm, m, in |
+| `tolerance` | number | no | Most a tessellated CAD surface (STEP, IGES) may stray from the exact one, mm (default 0.01) (0.0001 to 10 mm) |
 | `name` | string | no | Name in the job outline (default: the file name) |
 
-Returns: the model {id, name, source, format, units, triangles, vertices, faces, bounds}
+Returns: the model {id, name, source, format, units, triangles, vertices, faces, bounds, warnings}
 
 <sub>shortcut `Ctrl+I` · ribbon: Setup › Model</sub>
+
+#### `model.formats`
+
+```python
+cc.model_formats()
+```
+
+The file formats model.import reads.
+
+
+Returns: list of {id, label, extensions, cad} (cad: exact geometry, tessellated on import)
 
 #### `model.list`
 

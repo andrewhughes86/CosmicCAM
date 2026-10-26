@@ -335,6 +335,53 @@ fn import_scales_by_units_and_takes_a_name() {
     assert!((r["bounds"]["max"][0].as_f64().unwrap_or_default() - 1016.0).abs() < 1e-3);
 }
 
+/// A 2 × 1 × 1 inch box as a faceted STEP solid, in inches.
+fn faceted_box_step() -> String {
+    let c = |i: usize| [if i & 1 == 0 { 0 } else { 2 }, if i & 2 == 0 { 0 } else { 1 }, if i & 4 == 0 { 0 } else { 1 }];
+    let mut d = String::new();
+    for i in 0..8 {
+        let p = c(i);
+        d += &format!("#{}=CARTESIAN_POINT('',({}.,{}.,{}.));\n", i + 1, p[0], p[1], p[2]);
+    }
+    let rings = [[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]];
+    let mut faces = Vec::new();
+    for (k, r) in rings.iter().enumerate() {
+        let (lp, b, f) = (20 + 3 * k, 21 + 3 * k, 22 + 3 * k);
+        d += &format!("#{lp}=POLY_LOOP('',(#{},#{},#{},#{}));\n", r[0] + 1, r[1] + 1, r[2] + 1, r[3] + 1);
+        d += &format!("#{b}=FACE_OUTER_BOUND('',#{lp},.T.);\n#{f}=FACE('',(#{b}));\n");
+        faces.push(format!("#{f}"));
+    }
+    d += &format!("#50=CLOSED_SHELL('',({}));\n#51=FACETED_BREP('',#50);\n", faces.join(","));
+    d += "#52=( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n";
+    d += "#53=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#52);\n";
+    d += "#54=( CONVERSION_BASED_UNIT('INCH',#53) LENGTH_UNIT() NAMED_UNIT(*) );\n";
+    d += "#55=( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#54)) REPRESENTATION_CONTEXT('','') );\n";
+    d += "#56=FACETED_BREP_SHAPE_REPRESENTATION('',(#51),#55);\n";
+    format!("ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\n{d}ENDSEC;\nEND-ISO-10303-21;\n")
+}
+
+#[test]
+fn step_imports_in_the_units_the_file_states() {
+    let file = TempFile::new("Box.stp", faceted_box_step().as_bytes());
+    let mut s = Session::new();
+    let r = s.execute("model.import", &json!({"path": file.path(), "tolerance": 0.05})).unwrap_or_default();
+    assert_eq!(r["format"], "step");
+    assert_eq!(r["units"], "in");
+    assert_eq!(r["triangles"], 12);
+    assert_eq!(r["warnings"], json!([]));
+    assert!((r["bounds"]["max"][0].as_f64().unwrap_or_default() - 50.8).abs() < 1e-3, "{r}");
+    // A stated unit can still be overridden.
+    let r = s.execute("model.import", &json!({"path": file.path(), "units": "mm"})).unwrap_or_default();
+    assert!((r["bounds"]["max"][0].as_f64().unwrap_or_default() - 2.0).abs() < 1e-6);
+    assert!(s.execute("model.import", &json!({"path": file.path(), "tolerance": 0.0})).is_err());
+    let formats = s.execute("model.formats", &Value::Null).unwrap_or_default();
+    let ids: Vec<&str> =
+        formats.as_array().map(|f| f.iter().filter_map(|x| x["id"].as_str()).collect()).unwrap_or_default();
+    for id in ["step", "iges", "stl", "obj", "3mf", "ply", "gltf"] {
+        assert!(ids.contains(&id), "{id}");
+    }
+}
+
 #[test]
 fn ids_are_not_reused_after_removal() {
     let file = TempFile::new("p.obj", PYRAMID_OBJ);

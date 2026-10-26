@@ -51,12 +51,24 @@ const FORM_COMMANDS: &[&str] = &[
     "machine.remove",
 ];
 
-/// File types offered by the model import dialog: (label, extensions).
-const MODEL_FILTERS: &[(&str, &[&str])] = &[
-    ("Models (STL, OBJ)", &["stl", "STL", "obj", "OBJ"]),
-    ("STL", &["stl", "STL"]),
-    ("Wavefront OBJ", &["obj", "OBJ"]),
-];
+/// File types offered by the model import dialog: (label, extensions), every model first.
+fn model_filters() -> Vec<(String, Vec<String>)> {
+    use CosmicCAM_engine::ModelFormat;
+    let both =
+        |exts: &[&str]| -> Vec<String> { exts.iter().flat_map(|e| [e.to_string(), e.to_ascii_uppercase()]).collect() };
+    let group = |label: &str, pick: &dyn Fn(&ModelFormat) -> bool| {
+        let exts: Vec<&str> =
+            ModelFormat::ALL.iter().filter(|f| pick(f)).flat_map(|f| f.extensions().iter().copied()).collect();
+        (label.to_owned(), both(&exts))
+    };
+    let mut out = vec![
+        group("All models", &|_| true),
+        group("CAD (STEP, IGES)", &|f| f.is_cad()),
+        group("Meshes", &|f| !f.is_cad()),
+    ];
+    out.extend(ModelFormat::ALL.iter().map(|f| (f.label().to_owned(), both(f.extensions()))));
+    out
+}
 
 /// A model file the user chose: a path on the desktop, the bytes themselves in the browser.
 pub enum ImportChoice {
@@ -286,9 +298,9 @@ fn open_request(path: &str) -> Request {
 #[cfg(not(target_arch = "wasm32"))]
 fn pick_model_file() -> Result<Receiver<Option<ImportChoice>>, String> {
     let (tx, rx) = channel();
-    let dialog = MODEL_FILTERS
+    let dialog = model_filters()
         .iter()
-        .fold(rfd::FileDialog::new().set_title("Import model"), |d, (label, exts)| d.add_filter(*label, exts));
+        .fold(rfd::FileDialog::new().set_title("Import model"), |d, (label, exts)| d.add_filter(label.as_str(), exts));
     // macOS dialogs must run on the main thread; elsewhere the dialog gets its own so the
     // window keeps drawing and the control channel keeps answering.
     #[cfg(target_os = "macos")]
@@ -407,9 +419,10 @@ pub fn download(name: &str, text: &str) -> Result<(), String> {
 #[cfg(target_arch = "wasm32")]
 fn pick_model_file() -> Result<Receiver<Option<ImportChoice>>, String> {
     let (tx, rx) = channel();
-    let dialog = MODEL_FILTERS
-        .iter()
-        .fold(rfd::AsyncFileDialog::new().set_title("Import model"), |d, (label, exts)| d.add_filter(*label, exts));
+    let dialog =
+        model_filters().iter().fold(rfd::AsyncFileDialog::new().set_title("Import model"), |d, (label, exts)| {
+            d.add_filter(label.as_str(), exts)
+        });
     wasm_bindgen_futures::spawn_local(async move {
         let choice = match dialog.pick_file().await {
             Some(file) => Some(ImportChoice::Upload { name: file.file_name(), bytes: file.read().await }),

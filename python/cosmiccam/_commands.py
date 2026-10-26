@@ -238,21 +238,32 @@ class Commands:
         params = {"since": since, "limit": limit}
         return self.execute("console.log.get", {k: v for k, v in params.items() if v is not None})
 
-    def model_import(self, *, path: str, units: Optional[Literal["mm", "cm", "m", "in"]] = None, name: Optional[str] = None) -> Any:
-        """Import STL or OBJ geometry.
+    def model_import(self, *, path: str, units: Optional[Literal["mm", "cm", "m", "in"]] = None, tolerance: Optional[float] = None, name: Optional[str] = None) -> Any:
+        """Import a CAD model (STEP, IGES) or mesh (STL, OBJ, 3MF, PLY, glTF and more).
 
         Args:
-            path: Model file (.stl or .obj), or upload://<name> for a file staged by the browser app.
-            units: Unit the file was authored in (default mm); STL and OBJ store none — one of mm, cm, m, in.
+            path: Model file (any format `model.formats` lists, optionally gzipped), or upload://<name> for a file staged by the browser app.
+            units: Unit the file was authored in; files that record theirs (STEP, IGES, 3MF, AMF, glTF, COLLADA, DXF) use it, others default to mm — one of mm, cm, m, in.
+            tolerance: Most a tessellated CAD surface (STEP, IGES) may stray from the exact one, mm (default 0.01) (0.0001 to 10 mm).
             name: Name in the job outline (default: the file name).
 
         Returns:
-            the model {id, name, source, format, units, triangles, vertices, faces, bounds}
+            the model {id, name, source, format, units, triangles, vertices, faces, bounds, warnings}
 
         Command: ``model.import``
         """
-        params = {"path": path, "units": units, "name": name}
+        params = {"path": path, "units": units, "tolerance": tolerance, "name": name}
         return self.execute("model.import", {k: v for k, v in params.items() if v is not None})
+
+    def model_formats(self) -> Any:
+        """The file formats model.import reads.
+
+        Returns:
+            list of {id, label, extensions, cad} (cad: exact geometry, tessellated on import)
+
+        Command: ``model.formats``
+        """
+        return self.execute("model.formats")
 
     def model_list(self) -> Any:
         """The job's imported models.
