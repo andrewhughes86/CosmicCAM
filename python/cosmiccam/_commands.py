@@ -308,15 +308,15 @@ class Commands:
         params = {"id": id}
         return self.execute("model.remove", {k: v for k, v in params.items() if v is not None})
 
-    def model_faces_list(self, *, id: str, kind: Optional[Literal["plane", "cylinder", "freeform"]] = None) -> Any:
+    def model_faces_list(self, *, id: str, kind: Optional[Literal["plane", "cylinder", "sphere", "freeform"]] = None) -> Any:
         """The planes, cylinders and freeform patches recognised on a model.
 
         Args:
             id: Model id, e.g. model.1.
-            kind: Only faces of this kind — one of plane, cylinder, freeform.
+            kind: Only faces of this kind — one of plane, cylinder, sphere, freeform.
 
         Returns:
-            list of faces {face, model, kind, area, centroid, triangles, ...}: planes add normal and point; cylinders add base, axis, radius, diameter, length and hole (at most 5000)
+            list of faces {face, model, kind, area, centroid, triangles, ...}: planes add normal and point; cylinders add base, axis, radius, diameter, length and hole; spheres add center, radius, diameter and convex (at most 5000)
 
         Command: ``model.faces.list``
         """
@@ -1002,7 +1002,7 @@ class Commands:
         """
         return self.execute("app.quit")
 
-    def toolpath_contour(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, lead_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, tool_axis: Optional[Literal["wcs_z"]] = None, geometry: Optional[Sequence[str]] = None, side: Optional[Literal["outside", "inside", "on"]] = None, reverse: Optional[bool] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, both_ways: Optional[bool] = None, radial_passes: Optional[int] = None, radial_stepover: Optional[float] = None, spring_passes: Optional[int] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, multiple_depths: Optional[bool] = None, max_stepdown: Optional[float] = None, feed_optimization: Optional[bool] = None, optimization_angle: Optional[float] = None, optimization_feed: Optional[float] = None, optimization_distance: Optional[float] = None, tolerance: Optional[float] = None, entry_from: Optional[Literal["auto", "origin", "wcs", "selection"]] = None, entry_point: Optional[Sequence[float]] = None, lead_in: Optional[Literal["arc", "line", "none"]] = None, lead_in_radius: Optional[float] = None, lead_in_sweep: Optional[float] = None, lead_in_length: Optional[float] = None, lead_out_same: Optional[bool] = None, lead_out: Optional[Literal["arc", "line", "none"]] = None, lead_out_radius: Optional[float] = None, lead_out_sweep: Optional[float] = None, lead_out_length: Optional[float] = None, ramp: Optional[Literal["ramp", "plunge"]] = None, ramp_angle: Optional[float] = None, retract: Optional[Literal["minimum", "full", "stay_down"]] = None, stay_down_distance: Optional[float] = None, rapid_links: Optional[bool] = None, link_feed: Optional[float] = None) -> Any:
+    def toolpath_contour(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, preset: Optional[str] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, lead_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, tool_axis: Optional[Literal["wcs_z"]] = None, geometry: Optional[Sequence[str]] = None, side: Optional[Literal["outside", "inside", "on"]] = None, reverse: Optional[bool] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, both_ways: Optional[bool] = None, radial_passes: Optional[int] = None, radial_stepover: Optional[float] = None, spring_passes: Optional[int] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, multiple_depths: Optional[bool] = None, max_stepdown: Optional[float] = None, feed_optimization: Optional[bool] = None, optimization_angle: Optional[float] = None, optimization_feed: Optional[float] = None, optimization_distance: Optional[float] = None, tolerance: Optional[float] = None, entry_from: Optional[Literal["auto", "origin", "wcs", "selection"]] = None, entry_point: Optional[Sequence[float]] = None, lead_in: Optional[Literal["arc", "line", "none"]] = None, lead_in_radius: Optional[float] = None, lead_in_sweep: Optional[float] = None, lead_in_length: Optional[float] = None, lead_out_same: Optional[bool] = None, lead_out: Optional[Literal["arc", "line", "none"]] = None, lead_out_radius: Optional[float] = None, lead_out_sweep: Optional[float] = None, lead_out_length: Optional[float] = None, ramp: Optional[Literal["ramp", "plunge"]] = None, ramp_angle: Optional[float] = None, retract: Optional[Literal["minimum", "full", "stay_down"]] = None, stay_down_distance: Optional[float] = None, rapid_links: Optional[bool] = None, link_feed: Optional[float] = None) -> Any:
         """Follow selected edges or a face outline at depth, offset by the tool radius.
 
         Args:
@@ -1010,6 +1010,7 @@ class Commands:
             name: Name in the job outline (default: 2D contour T<n>).
             tool: Tool number in the active machine's library (default: the first) (1 to 9999).
             spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            preset: One of the tool's cutting presets to take speed and feeds from (default: the tool's own).
             feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             lead_feed: Lead-in and lead-out feed, mm/min (default: the cutting feed) (0 to 1e6 mm/min).
@@ -1071,7 +1072,7 @@ class Commands:
 
         Command: ``toolpath.contour``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "lead_feed": lead_feed, "coolant": coolant, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "tool_axis": tool_axis, "geometry": geometry, "side": side, "reverse": reverse, "wcs": wcs, "orientation": orientation, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "direction": direction, "both_ways": both_ways, "radial_passes": radial_passes, "radial_stepover": radial_stepover, "spring_passes": spring_passes, "stock_radial": stock_radial, "stock_axial": stock_axial, "multiple_depths": multiple_depths, "max_stepdown": max_stepdown, "feed_optimization": feed_optimization, "optimization_angle": optimization_angle, "optimization_feed": optimization_feed, "optimization_distance": optimization_distance, "tolerance": tolerance, "entry_from": entry_from, "entry_point": entry_point, "lead_in": lead_in, "lead_in_radius": lead_in_radius, "lead_in_sweep": lead_in_sweep, "lead_in_length": lead_in_length, "lead_out_same": lead_out_same, "lead_out": lead_out, "lead_out_radius": lead_out_radius, "lead_out_sweep": lead_out_sweep, "lead_out_length": lead_out_length, "ramp": ramp, "ramp_angle": ramp_angle, "retract": retract, "stay_down_distance": stay_down_distance, "rapid_links": rapid_links, "link_feed": link_feed}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "preset": preset, "feed": feed, "plunge_feed": plunge_feed, "lead_feed": lead_feed, "coolant": coolant, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "tool_axis": tool_axis, "geometry": geometry, "side": side, "reverse": reverse, "wcs": wcs, "orientation": orientation, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "direction": direction, "both_ways": both_ways, "radial_passes": radial_passes, "radial_stepover": radial_stepover, "spring_passes": spring_passes, "stock_radial": stock_radial, "stock_axial": stock_axial, "multiple_depths": multiple_depths, "max_stepdown": max_stepdown, "feed_optimization": feed_optimization, "optimization_angle": optimization_angle, "optimization_feed": optimization_feed, "optimization_distance": optimization_distance, "tolerance": tolerance, "entry_from": entry_from, "entry_point": entry_point, "lead_in": lead_in, "lead_in_radius": lead_in_radius, "lead_in_sweep": lead_in_sweep, "lead_in_length": lead_in_length, "lead_out_same": lead_out_same, "lead_out": lead_out, "lead_out_radius": lead_out_radius, "lead_out_sweep": lead_out_sweep, "lead_out_length": lead_out_length, "ramp": ramp, "ramp_angle": ramp_angle, "retract": retract, "stay_down_distance": stay_down_distance, "rapid_links": rapid_links, "link_feed": link_feed}
         return self.execute("toolpath.contour", {k: v for k, v in params.items() if v is not None})
 
     def toolpath_list(self) -> Any:
@@ -1172,7 +1173,7 @@ class Commands:
         params = {"id": id}
         return self.execute("toolpath.remove", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_face(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, overrun: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, multiple_depths: Optional[bool] = None) -> Any:
+    def toolpath_face(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, preset: Optional[str] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, overrun: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, multiple_depths: Optional[bool] = None) -> Any:
         """Rows across the top of the stock to bring it flat and down to height.
 
         Args:
@@ -1180,6 +1181,7 @@ class Commands:
             name: Name in the job outline (default: the strategy and tool).
             tool: Tool number in the active machine's library (default: the first) (1 to 9999).
             spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            preset: One of the tool's cutting presets to take speed and feeds from (default: the tool's own).
             feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
@@ -1222,10 +1224,10 @@ class Commands:
 
         Command: ``toolpath.face``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "overrun": overrun, "angle": angle, "pattern": pattern, "multiple_depths": multiple_depths}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "preset": preset, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "overrun": overrun, "angle": angle, "pattern": pattern, "multiple_depths": multiple_depths}
         return self.execute("toolpath.face", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_pocket(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, multiple_depths: Optional[bool] = None, finishing_pass: Optional[bool] = None) -> Any:
+    def toolpath_pocket(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, preset: Optional[str] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, multiple_depths: Optional[bool] = None, finishing_pass: Optional[bool] = None) -> Any:
         """Clear the inside of selected floor faces or closed edges, around any islands.
 
         Args:
@@ -1233,6 +1235,7 @@ class Commands:
             name: Name in the job outline (default: the strategy and tool).
             tool: Tool number in the active machine's library (default: the first) (1 to 9999).
             spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            preset: One of the tool's cutting presets to take speed and feeds from (default: the tool's own).
             feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
@@ -1271,10 +1274,10 @@ class Commands:
 
         Command: ``toolpath.pocket``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "multiple_depths": multiple_depths, "finishing_pass": finishing_pass}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "preset": preset, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "multiple_depths": multiple_depths, "finishing_pass": finishing_pass}
         return self.execute("toolpath.pocket", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_drill(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, cycle: Optional[Literal["drill", "spot", "peck", "chip_break", "tap", "bore"]] = None, peck_depth: Optional[float] = None, dwell: Optional[float] = None, pitch: Optional[float] = None) -> Any:
+    def toolpath_drill(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, preset: Optional[str] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, cycle: Optional[Literal["drill", "spot", "peck", "chip_break", "tap", "bore"]] = None, peck_depth: Optional[float] = None, dwell: Optional[float] = None, pitch: Optional[float] = None) -> Any:
         """Drill, spot, peck, tap or bore holes picked as cylinders, circular edges or points.
 
         Args:
@@ -1282,6 +1285,7 @@ class Commands:
             name: Name in the job outline (default: the strategy and tool).
             tool: Tool number in the active machine's library (default: the first) (1 to 9999).
             spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            preset: One of the tool's cutting presets to take speed and feeds from (default: the tool's own).
             feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
@@ -1313,10 +1317,53 @@ class Commands:
 
         Command: ``toolpath.drill``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "cycle": cycle, "peck_depth": peck_depth, "dwell": dwell, "pitch": pitch}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "preset": preset, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "cycle": cycle, "peck_depth": peck_depth, "dwell": dwell, "pitch": pitch}
         return self.execute("toolpath.drill", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_rough(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, angle: Optional[float] = None) -> Any:
+    def toolpath_bore(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, preset: Optional[str] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, pitch: Optional[float] = None, stepover: Optional[float] = None, stock_radial: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None) -> Any:
+        """Open up holes with an end mill spiralling down inside them, then a full circle at the bottom.
+
+        Args:
+            id: Regenerate this toolpath with these settings instead of adding one.
+            name: Name in the job outline (default: the strategy and tool).
+            tool: Tool number in the active machine's library (default: the first) (1 to 9999).
+            spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            preset: One of the tool's cutting presets to take speed and feeds from (default: the tool's own).
+            feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
+            plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
+            coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
+            wcs: WCS to program in (default: the active one).
+            orientation: 3+2: a WCS whose Z is the tool axis and whose XY is the work plane; the program stays in `wcs` (needs a 4- or 5-axis machine).
+            post_stop: Stop the machine (M0) before this operation.
+            post_comment: Note for the operator, written in the program.
+            post_code_before: G-code written as given before the operation.
+            post_code_after: G-code written as given after the operation.
+            geometry: Faces, edges or points the strategy works on (model.N/face.N, model.N/edge.N, model.N/vertex.N).
+            clearance_from: Clearance height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            clearance_offset: Clearance height above its reference, mm (-1e5 to 1e5 mm).
+            retract_from: Retract height reference — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            retract_offset: Retract height above its reference, mm (-1e5 to 1e5 mm).
+            feed_height_from: Feed height reference: where rapids stop — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            feed_height_offset: Feed height above its reference, mm (-1e5 to 1e5 mm).
+            top_from: Top height reference: where cutting starts — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            top_offset: Top height offset, mm (-1e5 to 1e5 mm).
+            bottom_from: Bottom height reference: the final depth — one of selection, model_top, model_bottom, stock_top, stock_bottom, origin.
+            bottom_offset: Bottom height offset, mm (negative goes deeper) (-1e5 to 1e5 mm).
+            tolerance: How far the path may stray from true curves, mm (default 0.01) (0 to 1 mm).
+            pitch: Depth per turn of the helix, mm (default 15% of the tool diameter) (0 to 1000 mm).
+            stepover: Widest step between helices in a hole wider than one clears, mm (default the tool's, else 40% Ø) (0 to 10000 mm).
+            stock_radial: Stock to leave on the wall, mm (default 0) (-1000 to 1000 mm).
+            direction: Climb or conventional milling (default climb) — one of climb, conventional.
+
+        Returns:
+            the toolpath {id, name, strategy, machine, tool, wcs, moves, cut_length, rapid_length, time, bounds, warnings, params}
+
+        Command: ``toolpath.bore``
+        """
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "preset": preset, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "pitch": pitch, "stepover": stepover, "stock_radial": stock_radial, "direction": direction}
+        return self.execute("toolpath.bore", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_rough(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, preset: Optional[str] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, angle: Optional[float] = None) -> Any:
         """Clear the stock around the part level by level, leaving stock for finishing.
 
         Args:
@@ -1324,6 +1371,7 @@ class Commands:
             name: Name in the job outline (default: the strategy and tool).
             tool: Tool number in the active machine's library (default: the first) (1 to 9999).
             spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            preset: One of the tool's cutting presets to take speed and feeds from (default: the tool's own).
             feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
@@ -1361,10 +1409,10 @@ class Commands:
 
         Command: ``toolpath.rough``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "angle": angle}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "preset": preset, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "angle": angle}
         return self.execute("toolpath.rough", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_waterline(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None) -> Any:
+    def toolpath_waterline(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, preset: Optional[str] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None) -> Any:
         """Finish steep walls with passes around the part at constant heights.
 
         Args:
@@ -1372,6 +1420,7 @@ class Commands:
             name: Name in the job outline (default: the strategy and tool).
             tool: Tool number in the active machine's library (default: the first) (1 to 9999).
             spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            preset: One of the tool's cutting presets to take speed and feeds from (default: the tool's own).
             feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
@@ -1408,10 +1457,10 @@ class Commands:
 
         Command: ``toolpath.waterline``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "preset": preset, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links}
         return self.execute("toolpath.waterline", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_raster(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, sample_step: Optional[float] = None) -> Any:
+    def toolpath_raster(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, preset: Optional[str] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, sample_step: Optional[float] = None) -> Any:
         """Finish shallow surfaces with parallel rows that follow the part.
 
         Args:
@@ -1419,6 +1468,7 @@ class Commands:
             name: Name in the job outline (default: the strategy and tool).
             tool: Tool number in the active machine's library (default: the first) (1 to 9999).
             spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            preset: One of the tool's cutting presets to take speed and feeds from (default: the tool's own).
             feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
@@ -1460,10 +1510,10 @@ class Commands:
 
         Command: ``toolpath.raster``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "angle": angle, "pattern": pattern, "sample_step": sample_step}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "preset": preset, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "angle": angle, "pattern": pattern, "sample_step": sample_step}
         return self.execute("toolpath.raster", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_multiaxis(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, sample_step: Optional[float] = None, tool_axis: Optional[Literal["tilt", "normal", "toward_point", "away_from_point", "toward_line", "away_from_line", "fixed"]] = None, tilt_angle: Optional[float] = None, lead_angle: Optional[float] = None, axis_point: Optional[Sequence[float]] = None, axis_direction: Optional[Sequence[float]] = None, max_tilt: Optional[float] = None, max_axis_rate: Optional[float] = None, avoid_collisions: Optional[bool] = None, shank_clearance: Optional[float] = None) -> Any:
+    def toolpath_multiaxis(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, preset: Optional[str] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, sample_step: Optional[float] = None, tool_axis: Optional[Literal["tilt", "normal", "toward_point", "away_from_point", "toward_line", "away_from_line", "fixed"]] = None, tilt_angle: Optional[float] = None, lead_angle: Optional[float] = None, axis_point: Optional[Sequence[float]] = None, axis_direction: Optional[Sequence[float]] = None, max_tilt: Optional[float] = None, max_axis_rate: Optional[float] = None, avoid_collisions: Optional[bool] = None, shank_clearance: Optional[float] = None) -> Any:
         """Finish the part with a ball end mill that tilts as it follows the surface (simultaneous 4/5-axis).
 
         Args:
@@ -1471,6 +1521,7 @@ class Commands:
             name: Name in the job outline (default: the strategy and tool).
             tool: Tool number in the active machine's library (default: the first) (1 to 9999).
             spindle_rpm: Spindle speed, rpm (default: the tool's) (0 to 5e5).
+            preset: One of the tool's cutting presets to take speed and feeds from (default: the tool's own).
             feed: Cutting feed, mm/min (default: the tool's) (0 to 1e6 mm/min).
             plunge_feed: Plunge and ramp feed, mm/min (default: the tool's, else half the feed) (0 to 1e6 mm/min).
             coolant: Coolant (default flood) — one of off, flood, mist, air, through_tool.
@@ -1521,7 +1572,7 @@ class Commands:
 
         Command: ``toolpath.multiaxis``
         """
-        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "angle": angle, "pattern": pattern, "sample_step": sample_step, "tool_axis": tool_axis, "tilt_angle": tilt_angle, "lead_angle": lead_angle, "axis_point": axis_point, "axis_direction": axis_direction, "max_tilt": max_tilt, "max_axis_rate": max_axis_rate, "avoid_collisions": avoid_collisions, "shank_clearance": shank_clearance}
+        params = {"id": id, "name": name, "tool": tool, "spindle_rpm": spindle_rpm, "preset": preset, "feed": feed, "plunge_feed": plunge_feed, "coolant": coolant, "wcs": wcs, "orientation": orientation, "post_stop": post_stop, "post_comment": post_comment, "post_code_before": post_code_before, "post_code_after": post_code_after, "geometry": geometry, "clearance_from": clearance_from, "clearance_offset": clearance_offset, "retract_from": retract_from, "retract_offset": retract_offset, "feed_height_from": feed_height_from, "feed_height_offset": feed_height_offset, "top_from": top_from, "top_offset": top_offset, "bottom_from": bottom_from, "bottom_offset": bottom_offset, "tolerance": tolerance, "stepover": stepover, "stepdown": stepdown, "direction": direction, "stock_radial": stock_radial, "stock_axial": stock_axial, "entry": entry, "ramp_angle": ramp_angle, "helix_radius": helix_radius, "rapid_links": rapid_links, "boundary": boundary, "boundary_offset": boundary_offset, "angle": angle, "pattern": pattern, "sample_step": sample_step, "tool_axis": tool_axis, "tilt_angle": tilt_angle, "lead_angle": lead_angle, "axis_point": axis_point, "axis_direction": axis_direction, "max_tilt": max_tilt, "max_axis_rate": max_axis_rate, "avoid_collisions": avoid_collisions, "shank_clearance": shank_clearance}
         return self.execute("toolpath.multiaxis", {k: v for k, v in params.items() if v is not None})
 
     def setup_create(self, *, name: str, machine: Optional[str] = None, wcs: Optional[str] = None, activate: Optional[bool] = None, stock: Optional[Literal["fit", "size", "box", "none"]] = None, stock_margin_sides: Optional[float] = None, stock_margin_top: Optional[float] = None, stock_margin_bottom: Optional[float] = None, stock_size: Optional[Sequence[float]] = None, stock_align: Optional[Literal["top", "center", "bottom"]] = None, stock_min: Optional[Sequence[float]] = None, stock_max: Optional[Sequence[float]] = None, stock_round: Optional[float] = None) -> Any:
@@ -1700,20 +1751,33 @@ class Commands:
         """
         return self.execute("setup.stock.get")
 
-    def tool_create(self, *, type: Optional[Literal["flat", "ball", "bull", "chamfer", "drill", "spot_drill", "face_mill", "tap", "thread_mill"]] = None, number: Optional[int] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond"]] = None, coating: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+    def tool_create(self, *, type: Optional[Literal["flat", "ball", "bull", "tapered_ball", "lollipop", "chamfer", "engraving", "dovetail", "slot_mill", "radius_mill", "face_mill", "thread_mill", "drill", "spot_drill", "center_drill", "reamer", "tap", "boring_bar", "counterbore", "countersink"]] = None, number: Optional[int] = None, corner_radius: Optional[float] = None, tip_angle: Optional[float] = None, tip_diameter: Optional[float] = None, tip_length: Optional[float] = None, taper_angle: Optional[float] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, thread_pitch: Optional[float] = None, hand: Optional[Literal["right", "left"]] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
         """Add a cutting tool to the active machine's library.
 
         Args:
-            type: Tool type (default flat; flat and ball end mills so far) — one of flat, ball, bull, chamfer, drill, spot_drill, face_mill, tap, thread_mill.
+            type: Tool type (default flat) — one of flat, ball, bull, tapered_ball, lollipop, chamfer, engraving, dovetail, slot_mill, radius_mill, face_mill, thread_mill, drill, spot_drill, center_drill, reamer, tap, boring_bar, counterbore, countersink.
             number: Tool number (default: the lowest free one) (1 to 9999).
-            name: Description shown in the library (default: Ø<d> flat or ball end mill).
-            diameter: Cutting diameter, mm (0.001 to 2000 mm).
-            flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
-            flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
+            corner_radius: Corner radius, mm (bull nose, face and slot mill inserts, dovetail; a corner rounding mill's form radius) (0 to 2000 mm).
+            tip_angle: Included point angle, degrees (drills, spot and centre drills, chamfer mills, countersinks, engravers) or a face mill's cutting edge angle (0 to 179).
+            tip_diameter: Flat at the tip (chamfer mill, engraver, countersink) or pilot diameter (centre drill, counterbore, corner rounding mill), mm (0 to 2000 mm).
+            tip_length: Pilot length (centre drill, counterbore), mm (0 to 2000 mm).
+            taper_angle: Side angle of a tapered tool, or a dovetail's angle from the axis, degrees (0 to 80).
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            thread_pitch: Thread pitch, mm (0 to 2000 mm).
+            hand: Right or left hand (default right) — one of right, left.
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
             overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
-            shank_diameter: Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm).
-            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond.
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
             coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
             spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
             feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
             plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
@@ -1725,26 +1789,32 @@ class Commands:
             machine: Machine id (default: the active machine).
 
         Returns:
-            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.create``
         """
-        params = {"type": type, "number": number, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        params = {"type": type, "number": number, "corner_radius": corner_radius, "tip_angle": tip_angle, "tip_diameter": tip_diameter, "tip_length": tip_length, "taper_angle": taper_angle, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "thread_pitch": thread_pitch, "hand": hand, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
         return self.execute("tool.create", {k: v for k, v in params.items() if v is not None})
 
-    def tool_create_flat(self, *, number: Optional[int] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond"]] = None, coating: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
-        """Add a flat (square corner) end mill to the active machine's library.
+    def tool_create_flat(self, *, number: Optional[int] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a flat (square) end mill.
 
         Args:
             number: Tool number (default: the lowest free one) (1 to 9999).
-            name: Description shown in the library (default: Ø<d> flat or ball end mill).
-            diameter: Cutting diameter, mm (0.001 to 2000 mm).
-            flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
-            flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
             overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
-            shank_diameter: Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm).
-            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond.
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
             coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
             spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
             feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
             plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
@@ -1756,26 +1826,32 @@ class Commands:
             machine: Machine id (default: the active machine).
 
         Returns:
-            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.create.flat``
         """
-        params = {"number": number, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        params = {"number": number, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
         return self.execute("tool.create.flat", {k: v for k, v in params.items() if v is not None})
 
-    def tool_create_ball(self, *, number: Optional[int] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond"]] = None, coating: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
-        """Add a ball nose end mill to the active machine's library (for 3D and multi-axis finishing).
+    def tool_create_ball(self, *, number: Optional[int] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a ball nose end mill (3D and multi-axis finishing).
 
         Args:
             number: Tool number (default: the lowest free one) (1 to 9999).
-            name: Description shown in the library (default: Ø<d> flat or ball end mill).
-            diameter: Cutting diameter, mm (0.001 to 2000 mm).
-            flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
-            flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
             overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
-            shank_diameter: Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm).
-            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond.
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
             coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
             spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
             feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
             plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
@@ -1787,111 +1863,711 @@ class Commands:
             machine: Machine id (default: the active machine).
 
         Returns:
-            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.create.ball``
         """
-        params = {"number": number, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        params = {"number": number, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
         return self.execute("tool.create.ball", {k: v for k, v in params.items() if v is not None})
 
-    def tool_create_bull(self) -> Any:
-        """Bull nose tools are not supported yet.
+    def tool_create_bull(self, *, number: Optional[int] = None, corner_radius: Optional[float] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add an end mill with a corner radius.
 
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            corner_radius: Corner radius, mm (bull nose, face and slot mill inserts, dovetail; a corner rounding mill's form radius) (0 to 2000 mm).
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
 
         Returns:
-            not defined yet
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.create.bull``
         """
-        return self.execute("tool.create.bull")
+        params = {"number": number, "corner_radius": corner_radius, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.bull", {k: v for k, v in params.items() if v is not None})
 
-    def tool_create_chamfer(self) -> Any:
-        """Chamfer mill tools are not supported yet.
+    def tool_create_tapered_ball(self, *, number: Optional[int] = None, taper_angle: Optional[float] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a tapered ball mill: a small ball on a stiff, tapered body.
 
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            taper_angle: Side angle of a tapered tool, or a dovetail's angle from the axis, degrees (0 to 80).
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
 
         Returns:
-            not defined yet
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.tapered_ball``
+        """
+        params = {"number": number, "taper_angle": taper_angle, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.tapered_ball", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_lollipop(self, *, number: Optional[int] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a lollipop (undercut) cutter: a ball on a narrow neck.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.lollipop``
+        """
+        params = {"number": number, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.lollipop", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_chamfer(self, *, number: Optional[int] = None, tip_angle: Optional[float] = None, tip_diameter: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a chamfer mill.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            tip_angle: Included point angle, degrees (drills, spot and centre drills, chamfer mills, countersinks, engravers) or a face mill's cutting edge angle (0 to 179).
+            tip_diameter: Flat at the tip (chamfer mill, engraver, countersink) or pilot diameter (centre drill, counterbore, corner rounding mill), mm (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.create.chamfer``
         """
-        return self.execute("tool.create.chamfer")
+        params = {"number": number, "tip_angle": tip_angle, "tip_diameter": tip_diameter, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.chamfer", {k: v for k, v in params.items() if v is not None})
 
-    def tool_create_drill(self) -> Any:
-        """Drill tools are not supported yet.
+    def tool_create_engraving(self, *, number: Optional[int] = None, tip_angle: Optional[float] = None, tip_diameter: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a V engraving tool.
 
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            tip_angle: Included point angle, degrees (drills, spot and centre drills, chamfer mills, countersinks, engravers) or a face mill's cutting edge angle (0 to 179).
+            tip_diameter: Flat at the tip (chamfer mill, engraver, countersink) or pilot diameter (centre drill, counterbore, corner rounding mill), mm (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
 
         Returns:
-            not defined yet
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
-        Command: ``tool.create.drill``
+        Command: ``tool.create.engraving``
         """
-        return self.execute("tool.create.drill")
+        params = {"number": number, "tip_angle": tip_angle, "tip_diameter": tip_diameter, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.engraving", {k: v for k, v in params.items() if v is not None})
 
-    def tool_create_spot_drill(self) -> Any:
-        """Spot drill tools are not supported yet.
+    def tool_create_dovetail(self, *, number: Optional[int] = None, taper_angle: Optional[float] = None, corner_radius: Optional[float] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a dovetail cutter.
 
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            taper_angle: Side angle of a tapered tool, or a dovetail's angle from the axis, degrees (0 to 80).
+            corner_radius: Corner radius, mm (bull nose, face and slot mill inserts, dovetail; a corner rounding mill's form radius) (0 to 2000 mm).
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
 
         Returns:
-            not defined yet
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
-        Command: ``tool.create.spot_drill``
+        Command: ``tool.create.dovetail``
         """
-        return self.execute("tool.create.spot_drill")
+        params = {"number": number, "taper_angle": taper_angle, "corner_radius": corner_radius, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.dovetail", {k: v for k, v in params.items() if v is not None})
 
-    def tool_create_face_mill(self) -> Any:
-        """Face mill tools are not supported yet.
+    def tool_create_slot_mill(self, *, number: Optional[int] = None, corner_radius: Optional[float] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a slot (keyseat, T-slot) mill.
 
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            corner_radius: Corner radius, mm (bull nose, face and slot mill inserts, dovetail; a corner rounding mill's form radius) (0 to 2000 mm).
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
 
         Returns:
-            not defined yet
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.slot_mill``
+        """
+        params = {"number": number, "corner_radius": corner_radius, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.slot_mill", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_radius_mill(self, *, number: Optional[int] = None, corner_radius: Optional[float] = None, tip_diameter: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a corner rounding mill.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            corner_radius: Corner radius, mm (bull nose, face and slot mill inserts, dovetail; a corner rounding mill's form radius) (0 to 2000 mm).
+            tip_diameter: Flat at the tip (chamfer mill, engraver, countersink) or pilot diameter (centre drill, counterbore, corner rounding mill), mm (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.radius_mill``
+        """
+        params = {"number": number, "corner_radius": corner_radius, "tip_diameter": tip_diameter, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.radius_mill", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_face_mill(self, *, number: Optional[int] = None, corner_radius: Optional[float] = None, tip_angle: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a face mill (insert cutter).
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            corner_radius: Corner radius, mm (bull nose, face and slot mill inserts, dovetail; a corner rounding mill's form radius) (0 to 2000 mm).
+            tip_angle: Included point angle, degrees (drills, spot and centre drills, chamfer mills, countersinks, engravers) or a face mill's cutting edge angle (0 to 179).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.create.face_mill``
         """
-        return self.execute("tool.create.face_mill")
+        params = {"number": number, "corner_radius": corner_radius, "tip_angle": tip_angle, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.face_mill", {k: v for k, v in params.items() if v is not None})
 
-    def tool_create_tap(self) -> Any:
-        """Tap tools are not supported yet.
+    def tool_create_thread_mill(self, *, number: Optional[int] = None, thread_pitch: Optional[float] = None, hand: Optional[Literal["right", "left"]] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a thread mill.
 
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            thread_pitch: Thread pitch, mm (0 to 2000 mm).
+            hand: Right or left hand (default right) — one of right, left.
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
 
         Returns:
-            not defined yet
-
-        Command: ``tool.create.tap``
-        """
-        return self.execute("tool.create.tap")
-
-    def tool_create_thread_mill(self) -> Any:
-        """Thread mill tools are not supported yet.
-
-        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
-
-        Returns:
-            not defined yet
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.create.thread_mill``
         """
-        return self.execute("tool.create.thread_mill")
+        params = {"number": number, "thread_pitch": thread_pitch, "hand": hand, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.thread_mill", {k: v for k, v in params.items() if v is not None})
 
-    def tool_edit(self, *, number: int, new_number: Optional[int] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond"]] = None, coating: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
-        """Change a tool's geometry, cutting data or number.
+    def tool_create_drill(self, *, number: Optional[int] = None, tip_angle: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a twist drill.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            tip_angle: Included point angle, degrees (drills, spot and centre drills, chamfer mills, countersinks, engravers) or a face mill's cutting edge angle (0 to 179).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.drill``
+        """
+        params = {"number": number, "tip_angle": tip_angle, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.drill", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_spot_drill(self, *, number: Optional[int] = None, tip_angle: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a spot drill.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            tip_angle: Included point angle, degrees (drills, spot and centre drills, chamfer mills, countersinks, engravers) or a face mill's cutting edge angle (0 to 179).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.spot_drill``
+        """
+        params = {"number": number, "tip_angle": tip_angle, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.spot_drill", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_center_drill(self, *, number: Optional[int] = None, tip_angle: Optional[float] = None, tip_diameter: Optional[float] = None, tip_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a centre drill.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            tip_angle: Included point angle, degrees (drills, spot and centre drills, chamfer mills, countersinks, engravers) or a face mill's cutting edge angle (0 to 179).
+            tip_diameter: Flat at the tip (chamfer mill, engraver, countersink) or pilot diameter (centre drill, counterbore, corner rounding mill), mm (0 to 2000 mm).
+            tip_length: Pilot length (centre drill, counterbore), mm (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.center_drill``
+        """
+        params = {"number": number, "tip_angle": tip_angle, "tip_diameter": tip_diameter, "tip_length": tip_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.center_drill", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_reamer(self, *, number: Optional[int] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a reamer.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.reamer``
+        """
+        params = {"number": number, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.reamer", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_tap(self, *, number: Optional[int] = None, thread_pitch: Optional[float] = None, hand: Optional[Literal["right", "left"]] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a tap.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            thread_pitch: Thread pitch, mm (0 to 2000 mm).
+            hand: Right or left hand (default right) — one of right, left.
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.tap``
+        """
+        params = {"number": number, "thread_pitch": thread_pitch, "hand": hand, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.tap", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_boring_bar(self, *, number: Optional[int] = None, corner_radius: Optional[float] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a boring bar.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            corner_radius: Corner radius, mm (bull nose, face and slot mill inserts, dovetail; a corner rounding mill's form radius) (0 to 2000 mm).
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.boring_bar``
+        """
+        params = {"number": number, "corner_radius": corner_radius, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.boring_bar", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_counterbore(self, *, number: Optional[int] = None, tip_diameter: Optional[float] = None, tip_length: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a counterbore with a pilot.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            tip_diameter: Flat at the tip (chamfer mill, engraver, countersink) or pilot diameter (centre drill, counterbore, corner rounding mill), mm (0 to 2000 mm).
+            tip_length: Pilot length (centre drill, counterbore), mm (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.counterbore``
+        """
+        params = {"number": number, "tip_diameter": tip_diameter, "tip_length": tip_length, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.counterbore", {k: v for k, v in params.items() if v is not None})
+
+    def tool_create_countersink(self, *, number: Optional[int] = None, tip_angle: Optional[float] = None, tip_diameter: Optional[float] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Add a countersink.
+
+        Args:
+            number: Tool number (default: the lowest free one) (1 to 9999).
+            tip_angle: Included point angle, degrees (drills, spot and centre drills, chamfer mills, countersinks, engravers) or a face mill's cutting edge angle (0 to 179).
+            tip_diameter: Flat at the tip (chamfer mill, engraver, countersink) or pilot diameter (centre drill, counterbore, corner rounding mill), mm (0 to 2000 mm).
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
+            overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
+            coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
+            spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
+            feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 = not set) (0 to 2000 mm).
+            length_offset: Length offset register (default: the tool number) (0 to 9999).
+            diameter_offset: Diameter offset register (default: the tool number) (0 to 9999).
+            notes: Free notes.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.create.countersink``
+        """
+        params = {"number": number, "tip_angle": tip_angle, "tip_diameter": tip_diameter, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        return self.execute("tool.create.countersink", {k: v for k, v in params.items() if v is not None})
+
+    def tool_edit(self, *, number: int, new_number: Optional[int] = None, corner_radius: Optional[float] = None, tip_angle: Optional[float] = None, tip_diameter: Optional[float] = None, tip_length: Optional[float] = None, taper_angle: Optional[float] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, thread_pitch: Optional[float] = None, hand: Optional[Literal["right", "left"]] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
+        """Change a tool's geometry, cutting data, holder or number.
 
         Args:
             number: The tool to change (1 to 9999).
             new_number: Renumber the tool (1 to 9999).
-            name: Description shown in the library (default: Ø<d> flat or ball end mill).
-            diameter: Cutting diameter, mm (0.001 to 2000 mm).
-            flutes: Number of flutes (default 3, 2 below Ø3) (1 to 32).
-            flute_length: Length of cut, mm (default 3 × diameter) (0.001 to 2000 mm).
+            corner_radius: Corner radius, mm (bull nose, face and slot mill inserts, dovetail; a corner rounding mill's form radius) (0 to 2000 mm).
+            tip_angle: Included point angle, degrees (drills, spot and centre drills, chamfer mills, countersinks, engravers) or a face mill's cutting edge angle (0 to 179).
+            tip_diameter: Flat at the tip (chamfer mill, engraver, countersink) or pilot diameter (centre drill, counterbore, corner rounding mill), mm (0 to 2000 mm).
+            tip_length: Pilot length (centre drill, counterbore), mm (0 to 2000 mm).
+            taper_angle: Side angle of a tapered tool, or a dovetail's angle from the axis, degrees (0 to 80).
+            neck_diameter: Reduced neck behind the flutes, mm (0: none) (0 to 2000 mm).
+            shoulder_length: Reach: tip to where the shank starts, mm (0: the flute length) (0 to 2000 mm).
+            thread_pitch: Thread pitch, mm (0 to 2000 mm).
+            hand: Right or left hand (default right) — one of right, left.
+            name: Description shown in the library (default: Ø<d> <type>).
+            diameter: Cutting diameter, mm (a ball's ball diameter; a boring bar's bore) (0.001 to 2000 mm).
+            flutes: Number of flutes (inserts, for face mills) (1 to 64).
+            flute_length: Length of cut, mm (0.001 to 2000 mm).
             overall_length: Stick-out from the holder to the tip, mm (0.001 to 2000 mm).
-            shank_diameter: Shank diameter, mm (default: the cutting diameter) (0.001 to 2000 mm).
-            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond.
+            shank_diameter: Shank diameter, mm (0.001 to 2000 mm).
+            material: Tool material (default carbide) — one of carbide, hss, cobalt, ceramic, diamond, cbn.
             coating: Coating, e.g. TiAlN.
+            coolant_through: Coolant through the tool.
+            vendor: Maker.
+            product_id: Maker's product number.
+            holder: Holder it sits in (holder.N; empty for none).
             spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
             feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
             plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
@@ -1903,18 +2579,20 @@ class Commands:
             machine: Machine id (default: the active machine).
 
         Returns:
-            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.edit``
         """
-        params = {"number": number, "new_number": new_number, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
+        params = {"number": number, "new_number": new_number, "corner_radius": corner_radius, "tip_angle": tip_angle, "tip_diameter": tip_diameter, "tip_length": tip_length, "taper_angle": taper_angle, "neck_diameter": neck_diameter, "shoulder_length": shoulder_length, "thread_pitch": thread_pitch, "hand": hand, "name": name, "diameter": diameter, "flutes": flutes, "flute_length": flute_length, "overall_length": overall_length, "shank_diameter": shank_diameter, "material": material, "coating": coating, "coolant_through": coolant_through, "vendor": vendor, "product_id": product_id, "holder": holder, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "length_offset": length_offset, "diameter_offset": diameter_offset, "notes": notes, "machine": machine}
         return self.execute("tool.edit", {k: v for k, v in params.items() if v is not None})
 
-    def tool_feeds(self, *, number: int, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, machine: Optional[str] = None) -> Any:
-        """Set a tool's spindle speed, feeds and depths of cut.
+    def tool_feeds(self, *, number: int, surface_speed: Optional[float] = None, feed_per_tooth: Optional[float] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, machine: Optional[str] = None) -> Any:
+        """Set a tool's spindle speed, feeds and depths of cut, or work them out from surface speed and chip load.
 
         Args:
             number: The tool (1 to 9999).
+            surface_speed: Cutting speed, m/min: works out the spindle speed (0 to 10000).
+            feed_per_tooth: Chip load, mm per tooth: works out the feed (0 to 10).
             spindle_rpm: Spindle speed, rpm (0 = not set) (0 to 5e5).
             feed: Cutting feed, mm/min (0 = not set) (0 to 1e6 mm/min).
             plunge_feed: Plunge feed, mm/min (0 = not set) (0 to 1e6 mm/min).
@@ -1923,12 +2601,70 @@ class Commands:
             machine: Machine id (default: the active machine).
 
         Returns:
-            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.feeds``
         """
-        params = {"number": number, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "machine": machine}
+        params = {"number": number, "surface_speed": surface_speed, "feed_per_tooth": feed_per_tooth, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "stepover": stepover, "stepdown": stepdown, "machine": machine}
         return self.execute("tool.feeds", {k: v for k, v in params.items() if v is not None})
+
+    def tool_preset_set(self, *, number: int, name: str, workpiece: Optional[Literal["aluminium", "steel", "stainless", "cast_iron", "titanium", "brass", "copper", "plastic", "wood", "composite", "other"]] = None, surface_speed: Optional[float] = None, feed_per_tooth: Optional[float] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, ramp_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, coolant: Optional[Literal["flood", "mist", "air", "through_tool", "off"]] = None, machine: Optional[str] = None) -> Any:
+        """Add or change one of a tool's cutting data presets (per workpiece material).
+
+        Args:
+            number: The tool (1 to 9999).
+            name: Preset name, e.g. Aluminium roughing.
+            workpiece: Workpiece material — one of aluminium, steel, stainless, cast_iron, titanium, brass, copper, plastic, wood, composite, other.
+            surface_speed: Cutting speed, m/min (works out the spindle speed) (0 to 10000).
+            feed_per_tooth: Chip load, mm per tooth (works out the feed) (0 to 10).
+            spindle_rpm: Spindle speed, rpm (0 to 5e5).
+            feed: Cutting feed, mm/min (0 to 1e6 mm/min).
+            plunge_feed: Plunge feed, mm/min (default a third of the feed) (0 to 1e6 mm/min).
+            ramp_feed: Ramp feed, mm/min (default half the feed) (0 to 1e6 mm/min).
+            stepover: Radial depth of cut, mm (0 to 2000 mm).
+            stepdown: Axial depth of cut, mm (0 to 2000 mm).
+            coolant: Coolant — one of flood, mist, air, through_tool, off.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.preset.set``
+        """
+        params = {"number": number, "name": name, "workpiece": workpiece, "surface_speed": surface_speed, "feed_per_tooth": feed_per_tooth, "spindle_rpm": spindle_rpm, "feed": feed, "plunge_feed": plunge_feed, "ramp_feed": ramp_feed, "stepover": stepover, "stepdown": stepdown, "coolant": coolant, "machine": machine}
+        return self.execute("tool.preset.set", {k: v for k, v in params.items() if v is not None})
+
+    def tool_preset_remove(self, *, number: int, name: str, machine: Optional[str] = None) -> Any:
+        """Delete one of a tool's cutting presets.
+
+        Args:
+            number: The tool (1 to 9999).
+            name: Preset name.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.preset.remove``
+        """
+        params = {"number": number, "name": name, "machine": machine}
+        return self.execute("tool.preset.remove", {k: v for k, v in params.items() if v is not None})
+
+    def tool_preset_apply(self, *, number: int, name: str, machine: Optional[str] = None) -> Any:
+        """Make one of a tool's presets its own cutting data.
+
+        Args:
+            number: The tool (1 to 9999).
+            name: Preset name.
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
+
+        Command: ``tool.preset.apply``
+        """
+        params = {"number": number, "name": name, "machine": machine}
+        return self.execute("tool.preset.apply", {k: v for k, v in params.items() if v is not None})
 
     def tool_duplicate(self, *, number: int, new_number: Optional[int] = None, machine: Optional[str] = None) -> Any:
         """Copy a tool under a new number.
@@ -1939,7 +2675,7 @@ class Commands:
             machine: Machine id (default: the active machine).
 
         Returns:
-            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.duplicate``
         """
@@ -1961,18 +2697,20 @@ class Commands:
         params = {"number": number, "machine": machine}
         return self.execute("tool.remove", {k: v for k, v in params.items() if v is not None})
 
-    def tool_list(self, *, machine: Optional[str] = None) -> Any:
-        """The tools in a machine's library.
+    def tool_list(self, *, machine: Optional[str] = None, type: Optional[Literal["flat", "ball", "bull", "tapered_ball", "lollipop", "chamfer", "engraving", "dovetail", "slot_mill", "radius_mill", "face_mill", "thread_mill", "drill", "spot_drill", "center_drill", "reamer", "tap", "boring_bar", "counterbore", "countersink"]] = None, search: Optional[str] = None) -> Any:
+        """The tools in a machine's library, optionally of one type or matching a search.
 
         Args:
             machine: Machine id (default: the active machine).
+            type: Only tools of this type — one of flat, ball, bull, tapered_ball, lollipop, chamfer, engraving, dovetail, slot_mill, radius_mill, face_mill, thread_mill, drill, spot_drill, center_drill, reamer, tap, boring_bar, counterbore, countersink.
+            search: Only tools whose name, type, vendor, product number or notes contain this.
 
         Returns:
             list of tools, as tool.get returns them, by number
 
         Command: ``tool.list``
         """
-        params = {"machine": machine}
+        params = {"machine": machine, "type": type, "search": search}
         return self.execute("tool.list", {k: v for k, v in params.items() if v is not None})
 
     def tool_get(self, *, number: int, machine: Optional[str] = None) -> Any:
@@ -1983,12 +2721,27 @@ class Commands:
             machine: Machine id (default: the active machine).
 
         Returns:
-            the tool {id, machine, number, name, type, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, material, coating, spindle_rpm, feed, plunge_feed, stepover, stepdown, length_offset, diameter_offset, notes}
+            the tool {id, machine, number, name, type, type_label, diameter, corner_radius, flutes, flute_length, overall_length, shank_diameter, tip_angle, tip_diameter, tip_length, taper_angle, neck_diameter, shoulder_length, thread_pitch, hand, coolant_through, material, coating, vendor, product_id, holder, spindle_rpm, feed, plunge_feed, stepover, stepdown, presets, length_offset, diameter_offset, notes}
 
         Command: ``tool.get``
         """
         params = {"number": number, "machine": machine}
         return self.execute("tool.get", {k: v for k, v in params.items() if v is not None})
+
+    def tool_profile_get(self, *, number: int, machine: Optional[str] = None) -> Any:
+        """A tool's outline as the preview and the simulation draw it, with its holder's.
+
+        Args:
+            number: Tool number (1 to 9999).
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            {"points": [[radius, height], ...] from the tip, "flute_top": mm, "holder": [[radius, height above the holder face], ...] or null}
+
+        Command: ``tool.profile.get``
+        """
+        params = {"number": number, "machine": machine}
+        return self.execute("tool.profile.get", {k: v for k, v in params.items() if v is not None})
 
     def tool_library_open(self) -> Any:
         """Show the active machine's tool library.
@@ -2000,8 +2753,23 @@ class Commands:
         """
         return self.execute("tool.library.open")
 
+    def tool_library_sample(self, *, replace: Optional[bool] = None, machine: Optional[str] = None) -> Any:
+        """Add the sample tool library to a machine: two tools of every type, with presets and holders.
+
+        Args:
+            replace: Overwrite tools with the same numbers (default false: they are skipped).
+            machine: Machine id (default: the active machine).
+
+        Returns:
+            {"imported": count, "skipped": [numbers], "holders": count, "machine": id}
+
+        Command: ``tool.library.sample``
+        """
+        params = {"replace": replace, "machine": machine}
+        return self.execute("tool.library.sample", {k: v for k, v in params.items() if v is not None})
+
     def tool_library_import(self, *, path: str, replace: Optional[bool] = None, machine: Optional[str] = None) -> Any:
-        """Add tools from a tool library file (.json) to the active machine.
+        """Add tools (and their holders) from a tool library file (.json) to the active machine.
 
         Args:
             path: Tool library file written by tool.library.export.
@@ -2009,7 +2777,7 @@ class Commands:
             machine: Machine id (default: the active machine).
 
         Returns:
-            {"imported": count, "machine": id}
+            {"imported": count, "skipped": [], "holders": count, "machine": id}
 
         Command: ``tool.library.import``
         """
@@ -2017,7 +2785,7 @@ class Commands:
         return self.execute("tool.library.import", {k: v for k, v in params.items() if v is not None})
 
     def tool_library_export(self, *, path: str, machine: Optional[str] = None) -> Any:
-        """Write the active machine's tool library to a file (.json).
+        """Write the active machine's tool library, with the holders it uses, to a file (.json).
 
         Args:
             path: File to write.
@@ -2030,6 +2798,79 @@ class Commands:
         """
         params = {"path": path, "machine": machine}
         return self.execute("tool.library.export", {k: v for k, v in params.items() if v is not None})
+
+    def holder_create(self, *, name: Optional[str] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, segment_a: Optional[Sequence[float]] = None, segment_b: Optional[Sequence[float]] = None, segment_c: Optional[Sequence[float]] = None, segment_d: Optional[Sequence[float]] = None, segment_e: Optional[Sequence[float]] = None, segment_f: Optional[Sequence[float]] = None, segment_g: Optional[Sequence[float]] = None, segment_h: Optional[Sequence[float]] = None) -> Any:
+        """Add a tool holder: its outline as up to eight stacked cones or cylinders from the holder face up.
+
+        Args:
+            name: Name, e.g. ER32 collet chuck.
+            vendor: Maker.
+            product_id: Maker's product number.
+            segment_a: First segment from the holder face: [lower diameter, upper diameter, height] mm — [x, y, z] in mm.
+            segment_b: Second segment up — [x, y, z] in mm.
+            segment_c: Third segment up — [x, y, z] in mm.
+            segment_d: Fourth segment up — [x, y, z] in mm.
+            segment_e: Fifth segment up — [x, y, z] in mm.
+            segment_f: Sixth segment up — [x, y, z] in mm.
+            segment_g: Seventh segment up — [x, y, z] in mm.
+            segment_h: Eighth segment up — [x, y, z] in mm.
+
+        Returns:
+            the holder {id, name, vendor, product_id, segments: [{lower_diameter, upper_diameter, height}], height}
+
+        Command: ``holder.create``
+        """
+        params = {"name": name, "vendor": vendor, "product_id": product_id, "segment_a": segment_a, "segment_b": segment_b, "segment_c": segment_c, "segment_d": segment_d, "segment_e": segment_e, "segment_f": segment_f, "segment_g": segment_g, "segment_h": segment_h}
+        return self.execute("holder.create", {k: v for k, v in params.items() if v is not None})
+
+    def holder_edit(self, *, id: str, name: Optional[str] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, segment_a: Optional[Sequence[float]] = None, segment_b: Optional[Sequence[float]] = None, segment_c: Optional[Sequence[float]] = None, segment_d: Optional[Sequence[float]] = None, segment_e: Optional[Sequence[float]] = None, segment_f: Optional[Sequence[float]] = None, segment_g: Optional[Sequence[float]] = None, segment_h: Optional[Sequence[float]] = None) -> Any:
+        """Change a holder's name or outline (segments given replace them all).
+
+        Args:
+            id: Holder id, e.g. holder.2.
+            name: Name, e.g. ER32 collet chuck.
+            vendor: Maker.
+            product_id: Maker's product number.
+            segment_a: First segment from the holder face: [lower diameter, upper diameter, height] mm — [x, y, z] in mm.
+            segment_b: Second segment up — [x, y, z] in mm.
+            segment_c: Third segment up — [x, y, z] in mm.
+            segment_d: Fourth segment up — [x, y, z] in mm.
+            segment_e: Fifth segment up — [x, y, z] in mm.
+            segment_f: Sixth segment up — [x, y, z] in mm.
+            segment_g: Seventh segment up — [x, y, z] in mm.
+            segment_h: Eighth segment up — [x, y, z] in mm.
+
+        Returns:
+            the holder {id, name, vendor, product_id, segments: [{lower_diameter, upper_diameter, height}], height}
+
+        Command: ``holder.edit``
+        """
+        params = {"id": id, "name": name, "vendor": vendor, "product_id": product_id, "segment_a": segment_a, "segment_b": segment_b, "segment_c": segment_c, "segment_d": segment_d, "segment_e": segment_e, "segment_f": segment_f, "segment_g": segment_g, "segment_h": segment_h}
+        return self.execute("holder.edit", {k: v for k, v in params.items() if v is not None})
+
+    def holder_remove(self, *, id: str) -> Any:
+        """Delete a holder; tools in it are left without one.
+
+        Args:
+            id: Holder id.
+
+        Returns:
+            {"removed": id, "tools": count left without a holder}
+
+        Command: ``holder.remove``
+        """
+        params = {"id": id}
+        return self.execute("holder.remove", {k: v for k, v in params.items() if v is not None})
+
+    def holder_list(self) -> Any:
+        """Every tool holder in the library.
+
+        Returns:
+            list of holders, as holder.create returns them
+
+        Command: ``holder.list``
+        """
+        return self.execute("holder.list")
 
     def machine_create(self, *, activate: Optional[bool] = None, name: Optional[str] = None, description: Optional[str] = None, kind: Optional[Literal["mill_3axis", "mill_4axis", "mill_5axis"]] = None, travel_x: Optional[float] = None, travel_y: Optional[float] = None, travel_z: Optional[float] = None, max_spindle_rpm: Optional[float] = None, max_feed: Optional[float] = None, tool_capacity: Optional[int] = None, post: Optional[str] = None, layout: Optional[Literal["table_table", "head_table", "head_head"]] = None, primary_axis: Optional[Literal["A", "B", "C"]] = None, primary_min: Optional[float] = None, primary_max: Optional[float] = None, primary_reversed: Optional[bool] = None, secondary_axis: Optional[Literal["A", "B", "C"]] = None, secondary_min: Optional[float] = None, secondary_max: Optional[float] = None, secondary_reversed: Optional[bool] = None, primary_centre: Optional[Sequence[float]] = None, secondary_centre: Optional[Sequence[float]] = None, pivot_length: Optional[float] = None) -> Any:
         """Add a machine configuration with its own, empty tool library.

@@ -126,7 +126,9 @@ fn geom(s: &Session, key: &str, reference: &str) -> EngineResult<Geom> {
         return match face.kind {
             FaceKind::Plane { normal, point } => Ok(Geom::Plane { normal, point, centre: face.centroid }),
             FaceKind::Cylinder { base, axis, length, .. } => Ok(Geom::Cylinder { base, axis, length }),
-            FaceKind::Freeform => Err(bad(format!("`{key}`: {reference} is freeform; pick a plane, cylinder or edge"))),
+            FaceKind::Sphere { .. } | FaceKind::Freeform => {
+                Err(bad(format!("`{key}`: {reference} is curved both ways; pick a plane, cylinder or edge")))
+            }
         };
     }
     if let Some((m, e)) = s.job.edge(reference) {

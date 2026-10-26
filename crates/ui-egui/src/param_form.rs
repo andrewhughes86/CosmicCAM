@@ -9,11 +9,13 @@ use serde_json::{Map, Value, json};
 
 use crate::Request;
 use crate::theme::Tokens;
-use crate::tool_view::{self, ToolShape};
+use crate::tool_view;
 use crate::ui_kit::Window;
 
-/// Forms that draw the tool being defined.
-const TOOL_FORMS: &[&str] = &["tool.create", "tool.create.flat", "tool.create.ball", "tool.edit"];
+/// Whether a form defines a tool (and so draws it).
+fn is_tool_form(id: &str) -> bool {
+    id == "tool.create" || id.starts_with("tool.create.") || id == "tool.edit"
+}
 
 /// Shown in choice boxes for an optional parameter left unset.
 const DEFAULT_LABEL: &str = "(default)";
@@ -30,8 +32,8 @@ enum Field {
 
 pub struct ParamForm {
     spec: &'static CommandSpec,
-    /// The tool drawn is a ball end mill (a new ball, or an edited one).
-    ball: bool,
+    /// The type of the tool being edited (`tool.edit`).
+    editing_kind: Option<String>,
     fields: Vec<(&'static Param, Field)>,
     /// (id, name) of what pickers choose from: the job's WCS or the machines.
     options: Vec<(String, String)>,
@@ -75,15 +77,12 @@ impl ParamForm {
                 (p, field)
             })
             .collect();
-        let ball = spec.id == "tool.create.ball"
-            || (spec.id == "tool.edit"
-                && session
-                    .view
-                    .selection
-                    .as_deref()
-                    .and_then(|id| session.tool_by_ref(id))
-                    .is_some_and(|(_, t)| t.kind == "ball"));
-        Self { spec, ball, fields, options, units, error: None, open: true }
+        let editing_kind = (spec.id == "tool.edit")
+            .then(|| {
+                session.view.selection.as_deref().and_then(|id| session.tool_by_ref(id)).map(|(_, t)| t.kind.clone())
+            })
+            .flatten();
+        Self { spec, editing_kind, fields, options, units, error: None, open: true }
     }
 
     /// The command failed with these values; keep the form open and say why.
@@ -96,7 +95,7 @@ impl ParamForm {
     }
 
     /// Draws the form. Returns the command to run when the user confirms.
-    pub fn show(&mut self, ctx: &egui::Context, tokens: &Tokens) -> Option<Request> {
+    pub fn show(&mut self, ctx: &egui::Context, tokens: &Tokens, session: &Session) -> Option<Request> {
         let mut open = self.open;
         let mut cancel = false;
         let confirmed = Window::dialog(self.spec.label)
@@ -124,10 +123,19 @@ impl ParamForm {
                             );
                         });
                     });
-                    if TOOL_FORMS.contains(&self.spec.id) {
+                    if is_tool_form(self.spec.id) {
                         // Spacing, not a separator: a vertical separator would stretch the window.
                         ui.add_space(12.0);
-                        tool_view::draw(ui, self.tool_shape(), units, tokens, egui::vec2(260.0, max_height.min(380.0)));
+                        let tool = self.preview_tool(session);
+                        let holder = tool.as_ref().and_then(|t| session.library.holder_of(t));
+                        tool_view::draw(
+                            ui,
+                            tool.as_ref(),
+                            holder,
+                            units,
+                            tokens,
+                            egui::vec2(280.0, max_height.min(400.0)),
+                        );
                     }
                 });
                 if let Some(e) = &self.error {
@@ -160,25 +168,16 @@ impl ParamForm {
         }
     }
 
-    /// The tool the fields describe, in millimetres, filling blanks as the engine would.
-    fn tool_shape(&self) -> Option<ToolShape> {
-        let value = |name: &str| -> Option<f64> {
-            self.fields.iter().find(|(p, _)| p.name == name).and_then(|(_, f)| match f {
-                Field::Text(t) => t.trim().parse::<f64>().ok(),
-                _ => None,
-            })
+    /// The tool the fields describe, built by the engine as the command would build it.
+    fn preview_tool(&self, session: &Session) -> Option<CosmicCAM_engine::library::Tool> {
+        let mut p = self.params().ok()?;
+        let kind = match self.spec.id {
+            "tool.edit" => self.editing_kind.clone()?,
+            "tool.create" => p.get("type").and_then(Value::as_str).unwrap_or("flat").to_owned(),
+            id => id.strip_prefix("tool.create.")?.to_owned(),
         };
-        let len = |name: &str| value(name).map(|v| self.units.to_mm(v));
-        let diameter = len("diameter")?;
-        let flute_length = len("flute_length").unwrap_or(3.0 * diameter);
-        Some(ToolShape {
-            diameter,
-            shank_diameter: len("shank_diameter").unwrap_or(diameter),
-            flute_length,
-            overall_length: len("overall_length").unwrap_or(flute_length + (2.0 * diameter).max(15.0)),
-            flutes: value("flutes").map_or(if diameter < 3.0 { 2 } else { 3 }, |f| f.clamp(1.0, 32.0) as u32),
-            ball: self.ball,
-        })
+        p.as_object_mut()?.insert("type".into(), json!(kind));
+        CosmicCAM_engine::cmd::tool_preview(session, &p).ok()
     }
 
     /// The command's parameters from the fields; unset optional fields are left out.
@@ -239,10 +238,63 @@ impl ParamForm {
 fn prefill(spec: &CommandSpec, session: &Session) -> Map<String, Value> {
     let selected_tool = session.view.selection.as_deref().and_then(|id| session.tool_by_ref(id));
     let source: Option<Value> = match spec.id {
-        "tool.edit" | "tool.feeds" | "tool.duplicate" | "tool.remove" => selected_tool.map(|(m, t)| t.to_json(&m.id)),
+        "tool.edit" | "tool.feeds" | "tool.duplicate" | "tool.remove" | "tool.preset.set" | "tool.preset.remove"
+        | "tool.preset.apply" => selected_tool.map(|(m, t)| {
+            let mut v = t.to_json(&m.id);
+            // A preset form starts a new preset, not from the tool's name.
+            if let Some(o) = v.as_object_mut().filter(|_| spec.id.starts_with("tool.preset")) {
+                o.remove("name");
+            }
+            v
+        }),
         // A common size in the user's units: 1/4 in or 6 mm.
-        "tool.create" | "tool.create.flat" | "tool.create.ball" => session.library.active_machine().map(|m| {
-            let diameter = if session.prefs.units == DisplayUnits::Inches { 6.35 } else { 6.0 };
+        id if id == "tool.create" || id.starts_with("tool.create.") => session.library.active_machine().map(|m| {
+            // A common size for the type, in the user's units.
+            let inches = session.prefs.units == DisplayUnits::Inches;
+            let diameter = match id.strip_prefix("tool.create.").unwrap_or("flat") {
+                "face_mill" => {
+                    if inches {
+                        50.8
+                    } else {
+                        50.0
+                    }
+                }
+                "slot_mill" => {
+                    if inches {
+                        25.4
+                    } else {
+                        25.0
+                    }
+                }
+                "boring_bar" | "counterbore" | "countersink" => {
+                    if inches {
+                        12.7
+                    } else {
+                        12.0
+                    }
+                }
+                "chamfer" | "dovetail" | "radius_mill" | "spot_drill" => {
+                    if inches {
+                        9.525
+                    } else {
+                        10.0
+                    }
+                }
+                "tap" | "reamer" | "drill" | "thread_mill" => {
+                    if inches {
+                        6.35
+                    } else {
+                        6.0
+                    }
+                }
+                _ => {
+                    if inches {
+                        6.35
+                    } else {
+                        6.0
+                    }
+                }
+            };
             json!({ "number": m.next_tool_number(), "diameter": diameter, "type": "flat" })
         }),
         "machine.edit" => session.library.active_machine().map(|m| {

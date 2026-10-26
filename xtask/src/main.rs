@@ -9,6 +9,7 @@
 )]
 
 mod api;
+mod demo;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -23,7 +24,8 @@ const USAGE: &str = "usage: cargo xtask <command>
   assets          check that every asset file has a row in ATTRIBUTION.md
   wasm            build everything below the apps for wasm32-unknown-unknown
   api [--check]   regenerate the Python API and its guide from the command registry
-  python          run the Python API tests";
+  python          run the Python API tests
+  demo            rebuild the demo part and project (samples/) and the sample tool library file";
 
 fn main() -> ExitCode {
     let task = std::env::args().nth(1).unwrap_or_default();
@@ -34,6 +36,7 @@ fn main() -> ExitCode {
         "assets" => assets(),
         "wasm" => wasm(),
         "api" => api::run(std::env::args().any(|a| a == "--check")),
+        "demo" => demo::run_demo(),
         "python" => python_tests(),
         _ => {
             eprintln!("{USAGE}");

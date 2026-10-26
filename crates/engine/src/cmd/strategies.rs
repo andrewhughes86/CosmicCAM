@@ -34,6 +34,7 @@ macro_rules! strategy_params {
                 ParamKind::Number { min: 0.0, max: 500_000.0 },
                 "Spindle speed, rpm (default: the tool's)",
             ),
+            Param::optional("preset", ParamKind::Str, "One of the tool's cutting presets to take speed and feeds from (default: the tool's own)"),
             Param::optional("feed", RATE, "Cutting feed, mm/min (default: the tool's)"),
             Param::optional("plunge_feed", RATE, "Plunge and ramp feed, mm/min (default: the tool's, else half the feed)"),
             Param::optional("coolant", ParamKind::Choice(COOLANTS), "Coolant (default flood)"),
@@ -99,6 +100,10 @@ fn run_waterline(s: &mut crate::session::Session, p: &Value) -> crate::error::En
 }
 fn run_raster(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
     add_toolpath(s, p, strategies::raster)
+}
+
+fn run_bore(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
+    add_toolpath(s, p, crate::toolpath::bore::bore)
 }
 
 fn run_multiaxis(s: &mut crate::session::Session, p: &Value) -> crate::error::EngineResult<Value> {
@@ -182,6 +187,35 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         returns: RETURNS,
         enabled: always,
         run: run_drill,
+    },
+    CommandSpec {
+        id: "toolpath.bore",
+        label: "Helical bore",
+        tooltip: "Open up holes with an end mill spiralling down inside them, then a full circle at the bottom",
+        placement: Some(Placement::gallery(RibbonTab::Toolpaths, "Strategies")),
+        icon: None,
+        shortcut: None,
+        params: strategy_params![
+            Param::optional(
+                "pitch",
+                ParamKind::Length { min: 0.0, max: 1000.0 },
+                "Depth per turn of the helix, mm (default 15% of the tool diameter)"
+            ),
+            Param::optional(
+                "stepover",
+                LENGTH,
+                "Widest step between helices in a hole wider than one clears, mm (default the tool's, else 40% Ø)"
+            ),
+            Param::optional("stock_radial", STOCK, "Stock to leave on the wall, mm (default 0)"),
+            Param::optional(
+                "direction",
+                ParamKind::Choice(DIRECTIONS),
+                "Climb or conventional milling (default climb)"
+            ),
+        ],
+        returns: RETURNS,
+        enabled: always,
+        run: run_bore,
     },
     CommandSpec {
         id: "toolpath.rough",

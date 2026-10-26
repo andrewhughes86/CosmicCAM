@@ -78,16 +78,47 @@ pub struct SimTool {
     pub length: f64,
     pub shank_radius: f64,
     pub ball: bool,
+    /// The tool's outline ((radius, height) from the tip) and where its flutes end, for drawing.
+    pub profile: Vec<[f64; 2]>,
+    pub flute_top: f64,
+    /// The holder's outline ((radius, height above the holder face)); empty for none.
+    pub holder: Vec<[f64; 2]>,
 }
 
 impl SimTool {
+    fn new(t: &crate::library::Tool, holder: Option<&crate::library::Holder>) -> Self {
+        let profile = t.profile();
+        // Above the flutes the tool is as wide as its widest part there (shank or neck).
+        let shank =
+            profile.points.iter().filter(|p| p[1] > profile.flute_top + 1.0e-9).map(|p| p[0]).fold(0.0, f64::max);
+        Self {
+            number: t.number,
+            radius: t.diameter / 2.0,
+            flute_length: t.flute_length,
+            length: t.overall_length,
+            shank_radius: if shank > 0.0 { shank } else { t.shank_diameter / 2.0 },
+            ball: t.ball_ended(),
+            profile: profile.points,
+            flute_top: profile.flute_top,
+            holder: holder.map(crate::library::Holder::profile).unwrap_or_default(),
+        }
+    }
+
     fn shape(&self) -> ToolShape {
+        // Each holder segment as a cylinder of its wider end.
+        let holder = self
+            .holder
+            .windows(2)
+            .filter(|w| w[1][1] > w[0][1] + 1.0e-9)
+            .map(|w| (w[0][1], w[1][1], w[0][0].max(w[1][0])))
+            .collect();
         ToolShape {
             radius: self.radius,
             ball: self.ball,
             flute_length: self.flute_length,
             shank_radius: self.shank_radius,
             length: self.length,
+            holder,
         }
     }
 }
@@ -110,7 +141,7 @@ pub struct SimMove {
 /// Something wrong found while cutting.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SimEvent {
-    /// `rapid_in_material` or `shank_contact`.
+    /// `rapid_in_material`, `shank_contact` or `holder_contact`.
     pub kind: &'static str,
     pub toolpath: usize,
     pub move_index: usize,
@@ -227,14 +258,7 @@ impl Sim {
                 Some(i) => i,
                 None => {
                     tool_keys.push(key);
-                    tools.push(SimTool {
-                        number: t.number,
-                        radius: t.diameter / 2.0,
-                        flute_length: t.flute_length,
-                        length: t.overall_length,
-                        shank_radius: t.shank_diameter / 2.0,
-                        ball: t.kind == "ball",
-                    });
+                    tools.push(SimTool::new(t, s.library.holder_of(t)));
                     tools.len() - 1
                 }
             };
@@ -397,6 +421,8 @@ impl Sim {
                     let tol = self.zmap.cell() * 0.5;
                     let kind = if m.kind == MoveKind::Rapid && cut.core_depth > tol {
                         Some("rapid_in_material")
+                    } else if !tool.holder.is_empty() && cut.core_depth > tool.length + tol {
+                        Some("holder_contact")
                     } else if cut.core_depth > tool.flute_length + tol {
                         Some("shank_contact")
                     } else {
@@ -438,6 +464,7 @@ impl Sim {
         let mut removed = 0usize;
         let mut deep = 0usize;
         let mut shank: Option<(usize, DVec3)> = None;
+        let mut holder: Option<DVec3> = None;
         for k in 0..pieces {
             let (t0, t1) = (fa + (fb - fa) * k as f64 / pieces as f64, fa + (fb - fa) * (k + 1) as f64 / pieces as f64);
             let axis = crate::toolpath::multiaxis::slerp(m.axis_from, m.axis_to, (t0 + t1) / 2.0);
@@ -447,10 +474,15 @@ impl Sim {
             if let (Some(at), None) = (cut.shank_at, shank) {
                 shank = Some((cut.deep_shank, at));
             }
+            if holder.is_none() {
+                holder = cut.holder_at;
+            }
         }
         self.removed += removed as f64 * v.cell().powi(3);
         // Cells the tool's surface only grazed (within a cell) are not collisions.
-        let kind = if m.kind == MoveKind::Rapid && deep > 0 {
+        let kind = if let Some(at) = holder {
+            Some(("holder_contact", at))
+        } else if m.kind == MoveKind::Rapid && deep > 0 {
             Some(("rapid_in_material", m.from.lerp(m.to, fb)))
         } else {
             shank.map(|(_, at)| ("shank_contact", at))

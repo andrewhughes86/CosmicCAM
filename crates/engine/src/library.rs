@@ -23,13 +23,7 @@ pub const MAX_TOOL_NUMBER: u32 = 9999;
 /// Longest name or note kept.
 pub const MAX_TEXT_CHARS: usize = 128;
 
-/// Tool shapes. Only flat end mills can be created so far; the rest are listed so the
-/// ribbon, the API and saved files already know them.
-pub const TOOL_TYPES: &[&str] =
-    &["flat", "ball", "bull", "chamfer", "drill", "spot_drill", "face_mill", "tap", "thread_mill"];
-/// Tool types that can be created now.
-pub const SUPPORTED_TOOL_TYPES: &[&str] = &["flat", "ball"];
-pub const TOOL_MATERIALS: &[&str] = &["carbide", "hss", "cobalt", "ceramic", "diamond"];
+pub use crate::tooling::{Holder, HolderSegment, Preset, TOOL_MATERIALS, TOOL_TYPES, Tool};
 pub const MACHINE_KINDS: &[&str] = &["mill_3axis", "mill_4axis", "mill_5axis"];
 /// Which units carry a 4- or 5-axis machine's rotary axes.
 pub const LAYOUTS: &[&str] = &["table_table", "head_table", "head_head"];
@@ -202,101 +196,6 @@ impl Kinematics {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Tool {
-    /// Tool number (T word); unique within its machine.
-    pub number: u32,
-    pub name: String,
-    /// One of [`TOOL_TYPES`].
-    #[serde(rename = "type")]
-    pub kind: String,
-    /// Cutting diameter, mm.
-    pub diameter: f64,
-    /// Corner radius, mm (0 for a flat end mill).
-    pub corner_radius: f64,
-    pub flutes: u32,
-    /// Length of cut, mm.
-    pub flute_length: f64,
-    /// Stick-out from the holder face to the tip, mm.
-    pub overall_length: f64,
-    pub shank_diameter: f64,
-    /// One of [`TOOL_MATERIALS`].
-    pub material: String,
-    pub coating: String,
-    /// Cutting data; 0 means not set.
-    pub spindle_rpm: f64,
-    /// Cutting feed, mm/min.
-    pub feed: f64,
-    /// Plunge feed, mm/min.
-    pub plunge_feed: f64,
-    /// Radial depth of cut, mm.
-    pub stepover: f64,
-    /// Axial depth of cut, mm.
-    pub stepdown: f64,
-    /// Length and diameter offset registers on the controller.
-    pub length_offset: u32,
-    pub diameter_offset: u32,
-    pub notes: String,
-}
-
-impl Tool {
-    pub fn to_json(&self, machine: &str) -> Value {
-        let mut v = serde_json::to_value(self).unwrap_or(Value::Null);
-        if let Some(m) = v.as_object_mut() {
-            m.insert("id".into(), json!(tool_ref(machine, self.number)));
-            m.insert("machine".into(), json!(machine));
-        }
-        v
-    }
-
-    /// Checks every value; returns what is wrong with the first bad one.
-    pub fn validate(&self) -> Result<(), String> {
-        let positive = |name: &str, v: f64, max: f64| {
-            if v.is_finite() && v > 0.0 && v <= max {
-                Ok(())
-            } else {
-                Err(format!("`{name}` must be above 0 and at most {max}"))
-            }
-        };
-        let non_negative = |name: &str, v: f64, max: f64| {
-            if v.is_finite() && (0.0..=max).contains(&v) {
-                Ok(())
-            } else {
-                Err(format!("`{name}` must be between 0 and {max}"))
-            }
-        };
-        if !(1..=MAX_TOOL_NUMBER).contains(&self.number) {
-            return Err(format!("`number` must be between 1 and {MAX_TOOL_NUMBER}"));
-        }
-        if !TOOL_TYPES.contains(&self.kind.as_str()) {
-            return Err(format!("unknown tool type `{}`", self.kind));
-        }
-        if !TOOL_MATERIALS.contains(&self.material.as_str()) {
-            return Err(format!("unknown material `{}`", self.material));
-        }
-        positive("diameter", self.diameter, 1000.0)?;
-        non_negative("corner_radius", self.corner_radius, self.diameter / 2.0)?;
-        if !(1..=32).contains(&self.flutes) {
-            return Err("`flutes` must be between 1 and 32".into());
-        }
-        positive("flute_length", self.flute_length, 2000.0)?;
-        positive("overall_length", self.overall_length, 2000.0)?;
-        positive("shank_diameter", self.shank_diameter, 1000.0)?;
-        if self.overall_length < self.flute_length {
-            return Err("`overall_length` must be at least `flute_length`".into());
-        }
-        non_negative("spindle_rpm", self.spindle_rpm, 500_000.0)?;
-        non_negative("feed", self.feed, 1.0e6)?;
-        non_negative("plunge_feed", self.plunge_feed, 1.0e6)?;
-        non_negative("stepover", self.stepover, self.diameter)?;
-        non_negative("stepdown", self.stepdown, self.flute_length)?;
-        if self.length_offset > MAX_TOOL_NUMBER || self.diameter_offset > MAX_TOOL_NUMBER {
-            return Err(format!("offset registers must be at most {MAX_TOOL_NUMBER}"));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Machine {
     /// `machine.<n>`.
     pub id: String,
@@ -429,6 +328,9 @@ pub fn tool_ref(machine: &str, number: u32) -> String {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MachineLibrary {
     pub machines: Vec<Machine>,
+    /// Tool holders, shared by every machine's tools.
+    pub holders: Vec<Holder>,
+    pub(crate) next_holder: u64,
     /// The machine new tools go to and the Tooling tab shows.
     pub active: Option<String>,
     pub(crate) next_machine: u64,
@@ -441,6 +343,8 @@ impl Default for MachineLibrary {
     fn default() -> Self {
         Self {
             machines: vec![Machine::generic("machine.1".into())],
+            holders: Vec::new(),
+            next_holder: 1,
             active: Some("machine.1".into()),
             next_machine: 2,
             revision: 0,
@@ -455,6 +359,15 @@ impl MachineLibrary {
 
     pub(crate) fn machine_mut(&mut self, id: &str) -> Option<&mut Machine> {
         self.machines.iter_mut().find(|m| m.id == id)
+    }
+
+    pub fn holder(&self, id: &str) -> Option<&Holder> {
+        self.holders.iter().find(|h| h.id == id)
+    }
+
+    /// The holder `tool` sits in, if any.
+    pub fn holder_of(&self, tool: &Tool) -> Option<&Holder> {
+        tool.holder.as_deref().and_then(|id| self.holder(id))
     }
 
     pub fn active_machine(&self) -> Option<&Machine> {
@@ -472,6 +385,8 @@ impl MachineLibrary {
             "active": self.active,
             "next_machine": self.next_machine,
             "machines": self.machines,
+            "holders": self.holders,
+            "next_holder": self.next_holder,
         })
     }
 
@@ -501,9 +416,7 @@ impl MachineLibrary {
             }
             let mut tools: Vec<Tool> = Vec::new();
             for mut t in std::mem::take(&mut m.tools).into_iter().take(MAX_TOOLS) {
-                t.name = clip(&t.name);
-                t.coating = clip(&t.coating);
-                t.notes = clip(&t.notes);
+                t.clip_text();
                 match t.validate() {
                     Ok(()) if tools.iter().all(|o| o.number != t.number) => tools.push(t),
                     Ok(()) => dropped.push(format!("{}: duplicate tool number T{}", m.name, t.number)),
@@ -525,8 +438,39 @@ impl MachineLibrary {
         let highest =
             machines.iter().filter_map(|m| m.id.strip_prefix("machine.")?.parse::<u64>().ok()).max().unwrap_or(0);
         let next_machine = v.get("next_machine").and_then(Value::as_u64).unwrap_or(0).max(highest.saturating_add(1));
-        Ok((Self { machines, active, next_machine, revision: 0 }, dropped))
+        let mut holders: Vec<Holder> = Vec::new();
+        for raw in v.get("holders").and_then(Value::as_array).into_iter().flatten().take(crate::tooling::MAX_HOLDERS) {
+            let Ok(mut h) = serde_json::from_value::<Holder>(raw.clone()) else {
+                dropped.push("a holder that could not be read".into());
+                continue;
+            };
+            h.name = clip(&h.name);
+            h.vendor = clip(&h.vendor);
+            h.product_id = clip(&h.product_id);
+            match h.validate() {
+                Ok(()) if holders.iter().all(|o| o.id != h.id) && valid_holder_id(&h.id) => holders.push(h),
+                Ok(()) => dropped.push(format!("holder {}: duplicate or malformed id", clip(&h.id))),
+                Err(e) => dropped.push(format!("holder {}: {e}", h.name)),
+            }
+        }
+        // Tools keep only holders that exist.
+        for m in &mut machines {
+            for t in &mut m.tools {
+                if t.holder.as_ref().is_some_and(|id| holders.iter().all(|h| &h.id != id)) {
+                    t.holder = None;
+                }
+            }
+        }
+        let highest_holder =
+            holders.iter().filter_map(|h| h.id.strip_prefix("holder.")?.parse::<u64>().ok()).max().unwrap_or(0);
+        let next_holder =
+            v.get("next_holder").and_then(Value::as_u64).unwrap_or(0).max(highest_holder.saturating_add(1));
+        Ok((Self { machines, holders, next_holder, active, next_machine, revision: 0 }, dropped))
     }
+}
+
+pub(crate) fn valid_holder_id(id: &str) -> bool {
+    id.strip_prefix("holder.").is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
 }
 
 fn valid_machine_id(id: &str) -> bool {
@@ -546,25 +490,13 @@ mod tests {
     fn libraries_round_trip_and_bad_entries_are_dropped() {
         let mut lib = MachineLibrary::default();
         let mut tool = Tool {
-            number: 1,
             name: "Ø6 flat".into(),
-            kind: "flat".into(),
-            diameter: 6.0,
-            corner_radius: 0.0,
-            flutes: 3,
-            flute_length: 18.0,
-            overall_length: 50.0,
-            shank_diameter: 6.0,
-            material: "carbide".into(),
-            coating: String::new(),
             spindle_rpm: 12_000.0,
             feed: 1200.0,
             plunge_feed: 300.0,
             stepover: 2.0,
             stepdown: 6.0,
-            length_offset: 1,
-            diameter_offset: 1,
-            notes: String::new(),
+            ..Tool::typical(1, "flat", 6.0)
         };
         if let Some(m) = lib.machines.first_mut() {
             m.tools.push(tool.clone());

@@ -87,7 +87,10 @@ pub(super) fn boundary(
     let grow = params::opt_f64(p, "boundary_offset", -1.0e4, 1.0e4)?.unwrap_or(0.0);
     let (shapes, selection) = match params::opt_str(p, "boundary")?.unwrap_or(default) {
         "selection" => {
-            let (shapes, sel) = selected_shapes(s, p, f, c.tolerance, warnings)?;
+            // A curved face as an area is meant to be seen from above: no warning for that.
+            let mut own = Vec::new();
+            let (shapes, sel) = selected_shapes(s, p, f, c.tolerance, &mut own)?;
+            warnings.extend(own.into_iter().filter(|w| !w.contains("is not flat")));
             if shapes.is_empty() {
                 return Err(bad("select the faces or closed edges to work inside (`geometry`)"));
             }
@@ -121,7 +124,7 @@ pub(super) fn zigzag(p: &Value) -> EngineResult<bool> {
 // ---- Face --------------------------------------------------------------------------------
 
 pub fn face(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
-    let c = common(s, p, 0.7, 1.0)?;
+    let c = super::common::common_for(s, p, 0.7, 1.0, &["face_mill", "flat", "bull"])?;
     let mut warnings = Vec::new();
     let (area, selection) = boundary(s, p, &c, "stock", &mut warnings)?;
     let [clearance, retract, feed_height, top, bottom] = heights(s, p, &c.frame, selection, &FACE_HEIGHTS)?;
@@ -504,14 +507,14 @@ fn simplify(pts: &[DVec3], tolerance: f64) -> Vec<DVec3> {
 }
 
 pub fn raster(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
-    let c = super::common::common_for(s, p, 0.1, 1.0, &["flat", "ball"])?;
+    let c = super::common::common_for(s, p, 0.1, 1.0, &["ball", "flat", "tapered_ball", "lollipop"])?;
     let mut warnings = Vec::new();
     let tris = part_triangles(s, &c.frame);
     require_model(&tris)?;
     let (area, selection) = boundary(s, p, &c, "model", &mut warnings)?;
     let [clearance, retract, feed_height, top, bottom] = heights(s, p, &c.frame, selection, &FINISH_HEIGHTS)?;
     let r = c.radius();
-    let cutter = if c.tool.kind == "ball" { DropCutter::ball(tris, r) } else { DropCutter::new(tris, r) };
+    let cutter = if c.tool.ball_ended() { DropCutter::ball(tris, r) } else { DropCutter::new(tris, r) };
     let step =
         params::opt_f64(p, "sample_step", 0.0, 1.0e3)?.filter(|v| *v > 0.0).unwrap_or((r * 0.25).clamp(0.05, 1.0));
     let a = angle(p)?;
@@ -561,6 +564,7 @@ pub fn preview_heights(strategy: &str, s: &Session, p: &Value) -> Vec<(String, O
         POCKET => &POCKET_HEIGHTS,
         ROUGH => &ROUGH_HEIGHTS,
         super::drill::DRILL => &super::drill::DRILL_HEIGHTS,
+        super::bore::BORE => &super::bore::BORE_HEIGHTS,
         _ => &FINISH_HEIGHTS,
     };
     let Ok((f, _)) = super::contour::frame(s, p) else {

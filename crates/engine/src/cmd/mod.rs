@@ -15,13 +15,14 @@ mod setup;
 mod sim;
 mod stock;
 mod strategies;
-mod tool;
+pub(crate) mod tool;
 mod toolpath;
 mod ui;
 mod view;
 mod wcs;
 pub(crate) mod wcs_define;
 
+pub use tool::preview as tool_preview;
 pub use view::VIEWPORT_TOOLS;
 pub use wcs_define::{BOX_POINTS as WCS_BOX_POINTS, ORIENTATIONS as WCS_ORIENTATIONS, ORIGINS as WCS_ORIGINS};
 

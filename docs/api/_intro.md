@@ -175,9 +175,76 @@ cc.machine_activate(id="machine.1")
 cc.tool_library_import(path="router-tools.json", replace=True)
 ```
 
-Flat and ball end mills can be created (`tool.create.flat`, `tool.create.ball`; a ball's corner
-radius is half its diameter). Bull nose, chamfer, drill, spot drill, face mill, tap and thread
-mill are listed (`tool.create.bull`, …) and report "not supported yet".
+### Tool types
+
+Twenty tool types, each created with its own command that takes the values its geometry needs:
+
+| Type | Command | Values beyond diameter, flutes and lengths |
+| --- | --- | --- |
+| Flat, ball end mill | `tool_create_flat`, `tool_create_ball` | neck and reach |
+| Bull nose end mill | `tool_create_bull` | corner radius, neck and reach |
+| Tapered ball mill | `tool_create_tapered_ball` | taper angle (the diameter is the ball's) |
+| Lollipop cutter | `tool_create_lollipop` | neck (narrower than the ball) and reach |
+| Chamfer mill, engraving tool, countersink | `tool_create_chamfer`, `…_engraving`, `…_countersink` | included angle, tip flat |
+| Dovetail cutter | `tool_create_dovetail` | angle from the axis, corner radius, neck |
+| Slot mill | `tool_create_slot_mill` | corner radius, neck and reach (flute length = width) |
+| Corner rounding mill | `tool_create_radius_mill` | form radius, pilot diameter |
+| Face mill | `tool_create_face_mill` | insert corner radius, cutting edge angle |
+| Thread mill, tap | `tool_create_thread_mill`, `tool_create_tap` | pitch, hand |
+| Drill, spot drill | `tool_create_drill`, `tool_create_spot_drill` | point angle |
+| Centre drill, counterbore | `tool_create_center_drill`, `tool_create_counterbore` | pilot diameter and length |
+| Reamer | `tool_create_reamer` | — |
+| Boring bar | `tool_create_boring_bar` | insert radius, bar (neck) and reach |
+
+Every tool also keeps its material, coating, coolant through the tool, vendor and product number,
+offsets, the holder it sits in, cutting data and presets. Values left out start from what is
+typical for the type and diameter (a 140° point on a drill, ISO coarse pitch on a tap, a 0.8 mm
+insert radius on a face mill). `tool_profile_get` returns the outline the preview draws, the
+simulation shows and the multi-axis collision check uses, with the holder's.
+
+```python
+cc.tool_create_bull(diameter=10, corner_radius=1, flute_length=22, overall_length=72)
+cc.tool_create_lollipop(diameter=6, neck_diameter=3.5, shoulder_length=20)
+cc.tool_create_drill(diameter=8.5, tip_angle=140, coolant_through=True, vendor="Acme", product_id="D-085")
+cc.tool_create_tap(diameter=10)                      # "M10×1.5 tap"
+cc.tool_list(type="drill")
+cc.tool_list(search="lollipop")
+```
+
+### Cutting presets
+
+A tool keeps cutting data per workpiece material. Give the surface speed and chip load and the
+spindle speed, feed, plunge and ramp feeds are worked out (rpm = vc × 1000 / πD, feed = rpm × fz × z);
+any of them can be given instead. A toolpath's `preset` takes its speed and feeds from one.
+
+```python
+cc.tool_preset_set(number=1, name="Aluminium", workpiece="aluminium", surface_speed=300, feed_per_tooth=0.05,
+                   stepover=4, stepdown=6)
+cc.tool_preset_apply(number=1, name="Aluminium")     # make it the tool's own data
+cc.toolpath_pocket(geometry=[floor], tool=1, preset="Aluminium")
+cc.tool_feeds(number=1, surface_speed=120, feed_per_tooth=0.04)   # work out the tool's own
+```
+
+### Holders
+
+Holders are stacks of cones and cylinders from the holder face up, shared by every machine's
+tools. A tool's holder is drawn in the preview and the simulation, checked for collisions by the
+multi-axis finish and reported when it touches the stock (`holder_contact`).
+
+```python
+h = cc.holder_create(name="ER32 collet chuck", segment_a=[50, 50, 22], segment_b=[45, 45, 30],
+                     segment_c=[63.5, 63.5, 16])
+cc.tool_edit(number=1, holder=h["id"])
+cc.holder_list()
+```
+
+### The sample library
+
+`tool_library_sample()` adds the sample library to a machine: two tools of every type with
+typical geometry and cutting data, aluminium and steel presets on the milling tools, and six
+holders. Numbers the machine already has are skipped (or overwritten with `replace=True`).
+The same library is `samples/tools.json`, for `tool_library_import`.
+
 Tools are checked against their machine: a spindle speed or feed above the machine's limits
 is refused, and so is lowering a machine's limits below a tool in its library. Tools are named
 `<machine id>/tool.<number>` for `selection.set`, so the inspector can show one.
@@ -230,8 +297,12 @@ print(cc.setup_list())
 
 ## The demo project
 
-`cc.job_demo_open()` opens the built-in demo project (also on the Home tab): a part, WCS, setup,
-stock, tools and toolpaths, ready to change and post. `cosmiccam.launch(demo=True)` starts the app
+`cc.job_demo_open()` opens the built-in demo project (also on the Home tab): a part with a dome,
+a 45° slope with a hole drilled square to it and a Ø24 bore, on its own 5-axis trunnion ("Demo
+5-axis trunnion", added to the library with the sample tools if missing, and made active). Its
+toolpaths face, rough, finish the walls, helically bore the Ø24 hole, finish the dome with the
+multi-axis finish, spot and drill the angled hole on the tilted plane (3+2) and profile the
+outline; the whole program simulates without gouges and posts with Fanuc. `cosmiccam.launch(demo=True)` starts the app
 with it open; `launch()` starts with an empty job.
 
 ## Job files and tabs
@@ -264,6 +335,8 @@ share the tool, feeds, coolant, WCS and the five heights (`clearance`, `retract`
 | `toolpath_rough` | Z-level clearing of the stock around the whole part | none |
 | `toolpath_waterline` | Z-level passes around the part, for steep walls | none |
 | `toolpath_raster` | parallel rows following the surface, for shallow areas | none (or faces with `boundary="selection"`) |
+| `toolpath_bore` | helical boring: the tool spirals down inside each hole, then circles the floor | hole walls or rims |
+| `toolpath_multiaxis` | a ball tilting as it follows the surface (see "4- and 5-axis machining") | none (or faces with `boundary="selection"`) |
 
 ```python
 cc.toolpath_face(stepover=4, multiple_depths=True, stepdown=1)
@@ -272,10 +345,23 @@ cc.toolpath_drill(geometry=["model.1/edge.12"], cycle="peck", peck_depth=3, bott
 cc.toolpath_rough(stepdown=3, stock_radial=0.5, stock_axial=0.3)
 cc.toolpath_waterline(stepdown=0.5)
 cc.toolpath_raster(stepover=0.5, angle=45)
+cc.toolpath_bore(geometry=["model.1/face.1"], tool=1, pitch=1.5)   # a Ø24 hole with a Ø12 end mill
 ```
 
-Rough and waterline use flat end mills; raster takes flat or ball end mills, and the multi-axis
-finish a ball (see "4- and 5-axis machining").
+Each strategy takes the tool types that suit it, and picks the first such tool when none is named:
+
+| Strategy | Tool types |
+| --- | --- |
+| contour, helical bore | flat, bull nose, ball |
+| face | face mill, flat, bull nose |
+| pocket, 3D rough, waterline | flat, bull nose |
+| raster | ball, flat, tapered ball, lollipop |
+| multi-axis finish | ball, tapered ball, lollipop |
+| drill | drills, spot and centre drills, reamers, taps, boring bars, counterbores, countersinks, flat end mills |
+
+Drilling picks the cycle from the tool when none is given (tap for a tap, a dwell for spot and
+centre drills, countersinks and counterbores, feed out for reamers and boring bars), and a tap's
+pitch is the tool's.
 
 ## Showing, renaming, copying
 

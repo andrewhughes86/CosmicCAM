@@ -2,6 +2,7 @@
 //! settings. Moves are kept in world millimetres with the feed each uses; the WCS they were
 //! programmed in travels with them for posting later.
 
+pub mod bore;
 mod common;
 pub mod contour;
 pub mod drill;
@@ -23,6 +24,7 @@ pub fn strategy_label(strategy: &str) -> &'static str {
         "waterline" => "Waterline",
         "raster" => "Raster",
         "multiaxis" => "Multi-axis finish",
+        "bore" => "Helical bore",
         _ => "2D contour",
     }
 }

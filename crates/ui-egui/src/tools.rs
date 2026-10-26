@@ -181,7 +181,7 @@ impl Tools {
     /// [`Tools::finished`].
     pub fn show(&mut self, ctx: &egui::Context, tokens: &Tokens, session: &Session) -> Option<Request> {
         let (request, open) = match &mut self.pending {
-            Some(Pending::Form(form)) => (form.show(ctx, tokens), form.is_open()),
+            Some(Pending::Form(form)) => (form.show(ctx, tokens, session), form.is_open()),
             Some(Pending::Pick(tool)) => (tool.show(ctx, tokens, session), tool.is_open()),
             _ => return None,
         };

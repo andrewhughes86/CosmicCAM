@@ -204,12 +204,7 @@ pub fn gcode(s: &Session, ids: &[String], opt: &Options) -> EngineResult<String>
         let tool = m.tool(tp.tool).ok_or_else(|| {
             EngineError::InvalidParams(format!("{} uses T{}, which is no longer in the library", tp.name, tp.tool))
         })?;
-        let rpm = tp
-            .params
-            .get("spindle_rpm")
-            .and_then(serde_json::Value::as_f64)
-            .filter(|v| *v > 0.0)
-            .unwrap_or(tool.spindle_rpm);
+        let rpm = crate::postproc::toolpath_rpm(tp, tool);
         if rpm <= 0.0 {
             return Err(EngineError::InvalidParams(format!(
                 "{} has no spindle speed; set one on the tool (T{}) or the toolpath",

@@ -29,14 +29,16 @@ pub const DRILL_HEIGHTS: [(&str, &str, f64); 4] = [
     ("bottom", "selection", 0.0),
 ];
 
-/// A hole to drill, in the frame: centre and its own top and bottom.
-struct Hole {
-    at: DVec2,
-    top: f64,
-    bottom: f64,
+/// A hole to drill, in the frame: centre, its own top and bottom, and its radius (0 for a
+/// point).
+pub(super) struct Hole {
+    pub at: DVec2,
+    pub top: f64,
+    pub bottom: f64,
+    pub radius: f64,
 }
 
-fn holes(s: &Session, p: &Value, f: &super::contour::Frame) -> EngineResult<Vec<Hole>> {
+pub(super) fn holes(s: &Session, p: &Value, f: &super::contour::Frame) -> EngineResult<Vec<Hole>> {
     let refs = params::str_list(p, "geometry")?;
     if refs.is_empty() {
         return Err(bad("select the holes: cylinder faces, circular edges or points (`geometry`)"));
@@ -47,29 +49,29 @@ fn holes(s: &Session, p: &Value, f: &super::contour::Frame) -> EngineResult<Vec<
         let axis_ok = |axis: glam::Vec3| f.z.dot(axis.as_dvec3().normalize_or_zero()).abs() > 0.999;
         let hole = match entity {
             Entity::Face(fi) => match m.faces.faces.get(fi).map(|face| face.kind) {
-                Some(FaceKind::Cylinder { base, axis, length, .. }) => {
+                Some(FaceKind::Cylinder { base, axis, length, radius, .. }) => {
                     if !axis_ok(axis) {
                         return Err(bad(format!("{r} is not along the WCS Z axis; it cannot be drilled from here")));
                     }
                     let (a, b) = (f.local(base), f.local(base + axis * length));
-                    Hole { at: a.truncate(), top: a.z.max(b.z), bottom: a.z.min(b.z) }
+                    Hole { at: a.truncate(), top: a.z.max(b.z), bottom: a.z.min(b.z), radius: f64::from(radius) }
                 }
                 _ => return Err(bad(format!("{r} is not a cylinder; pick the hole's wall"))),
             },
             Entity::Edge(ei) => match m.edges.edges.get(ei).map(|e| e.kind) {
-                Some(EdgeKind::Circle { center, normal, .. }) => {
+                Some(EdgeKind::Circle { center, normal, radius }) => {
                     if !axis_ok(normal) {
                         return Err(bad(format!("{r} does not face along the WCS Z axis")));
                     }
                     let c = f.local(center);
-                    Hole { at: c.truncate(), top: c.z, bottom: c.z }
+                    Hole { at: c.truncate(), top: c.z, bottom: c.z, radius: f64::from(radius) }
                 }
                 _ => return Err(bad(format!("{r} is not a circular edge"))),
             },
             Entity::Vertex(vi) => {
                 let q = m.mesh.positions().get(vi).ok_or_else(|| bad(format!("no point `{r}`")))?;
                 let c = f.local(*q);
-                Hole { at: c.truncate(), top: c.z, bottom: c.z }
+                Hole { at: c.truncate(), top: c.z, bottom: c.z, radius: 0.0 }
             }
         };
         // The same hole picked twice (its wall and its rim) is drilled once.
@@ -85,19 +87,25 @@ fn holes(s: &Session, p: &Value, f: &super::contour::Frame) -> EngineResult<Vec<
 
 pub fn drill(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
     let m = s.library.active_machine().ok_or_else(|| bad("there is no machine; create one on the Machine tab"))?;
-    let tool = match p.get("tool").and_then(Value::as_u64) {
-        Some(n) => {
-            m.tool(u32::try_from(n).unwrap_or(0)).ok_or_else(|| bad(format!("no tool T{n} in {}'s library", m.name)))?
-        }
-        None => m.tools.first().ok_or_else(|| bad(format!("{}'s tool library is empty; add a tool first", m.name)))?,
-    };
+    let (_, tool) = super::contour::pick_tool(s, p, crate::tooling::HOLEMAKING)?;
+    let tool = &tool;
     let (f, wcs) = frame(s, p)?;
     let num = |key: &str, lo: f64, hi: f64| params::opt_f64(p, key, lo, hi);
     let pick = |v: Option<f64>, fallback: f64| v.filter(|x| *x > 0.0).unwrap_or(fallback);
-    let cycle = params::opt_str(p, "cycle")?.unwrap_or("drill").to_owned();
+    // The tool says which cycle fits unless one is asked for.
+    let typical = match tool.kind.as_str() {
+        "tap" => "tap",
+        "spot_drill" | "center_drill" | "countersink" | "counterbore" => "spot",
+        "reamer" | "boring_bar" => "bore",
+        _ => "drill",
+    };
+    let cycle = params::opt_str(p, "cycle")?.unwrap_or(typical).to_owned();
     let mut warnings = Vec::new();
     if tool.kind == "flat" && cycle != "spot" {
         warnings.push(format!("T{} is a flat end mill; check it can drill these holes", tool.number));
+    }
+    if cycle == "tap" && tool.kind != "tap" {
+        warnings.push(format!("T{} is not a tap", tool.number));
     }
     let feed = pick(num("feed", 0.0, 1.0e6)?, if tool.plunge_feed > 0.0 { tool.plunge_feed } else { tool.feed * 0.5 });
     if feed <= 0.0 {
@@ -106,7 +114,7 @@ pub fn drill(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
     if feed > m.max_feed {
         return Err(bad(format!("`feed` {feed} is above {}'s maximum feed of {}", m.name, m.max_feed)));
     }
-    let pitch = num("pitch", 0.0, 100.0)?.unwrap_or(0.0);
+    let pitch = num("pitch", 0.0, 100.0)?.filter(|v| *v > 0.0).unwrap_or(tool.thread_pitch);
     if cycle == "tap" && pitch <= 0.0 {
         return Err(bad("tapping needs the thread pitch (`pitch`, mm per turn)"));
     }

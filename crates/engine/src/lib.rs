@@ -20,6 +20,7 @@ pub mod post;
 pub mod postproc;
 pub mod session;
 pub mod sim;
+pub mod tooling;
 pub mod toolpath;
 pub mod units;
 

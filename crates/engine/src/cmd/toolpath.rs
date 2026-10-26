@@ -43,6 +43,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamKind::Number { min: 0.0, max: 500_000.0 },
                 "Spindle speed, rpm (default: the tool's)",
             ),
+            Param::optional(
+                "preset",
+                ParamKind::Str,
+                "One of the tool's cutting presets to take speed and feeds from (default: the tool's own)",
+            ),
             Param::optional("feed", RATE, "Cutting feed, mm/min (default: the tool's)"),
             Param::optional(
                 "plunge_feed",

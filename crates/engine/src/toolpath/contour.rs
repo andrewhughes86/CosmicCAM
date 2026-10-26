@@ -123,14 +123,20 @@ struct Settings {
 }
 
 /// The tool a toolpath uses: `tool` (a number in the active machine's library), else the
-/// first tool there. It must be one of `kinds` (tool types).
-pub(super) fn pick_tool<'a>(s: &'a Session, p: &Value, kinds: &[&str]) -> EngineResult<(&'a Machine, &'a Tool)> {
+/// first tool there of one of `kinds` (tool types), which it must be. With `preset`, the
+/// tool's cutting data is that preset's.
+pub(super) fn pick_tool<'a>(s: &'a Session, p: &Value, kinds: &[&str]) -> EngineResult<(&'a Machine, Tool)> {
     let m = s.library.active_machine().ok_or_else(|| bad("there is no machine; create one on the Machine tab"))?;
     let tool = match p.get("tool").and_then(Value::as_u64) {
         Some(n) => {
             m.tool(u32::try_from(n).unwrap_or(0)).ok_or_else(|| bad(format!("no tool T{n} in {}'s library", m.name)))?
         }
-        None => m.tools.first().ok_or_else(|| bad(format!("{}'s tool library is empty; add a tool first", m.name)))?,
+        None if m.tools.is_empty() => {
+            return Err(bad(format!("{}'s tool library is empty; add a tool first", m.name)));
+        }
+        None => m.tools.iter().find(|t| kinds.contains(&t.kind.as_str())).ok_or_else(|| {
+            bad(format!("{}'s tool library has no {} tool; add one first", m.name, kinds.join(" or ")))
+        })?,
     };
     if !kinds.contains(&tool.kind.as_str()) {
         return Err(EngineError::NotSupported(format!(
@@ -140,11 +146,22 @@ pub(super) fn pick_tool<'a>(s: &'a Session, p: &Value, kinds: &[&str]) -> Engine
             kinds.join(" or ")
         )));
     }
+    let mut tool = tool.clone();
+    if let Some(name) = params::opt_str(p, "preset")?.filter(|n| !n.is_empty()) {
+        let c = tool.cutting(Some(name)).map_err(bad)?;
+        for (slot, v) in
+            [(&mut tool.spindle_rpm, c.spindle_rpm), (&mut tool.feed, c.feed), (&mut tool.plunge_feed, c.plunge_feed)]
+        {
+            if v > 0.0 {
+                *slot = v;
+            }
+        }
+    }
     Ok((m, tool))
 }
 
 fn settings(s: &Session, p: &Value) -> EngineResult<(Settings, String)> {
-    let (machine, tool) = pick_tool(s, p, &["flat"])?;
+    let (machine, tool) = pick_tool(s, p, &["flat", "bull", "ball"])?;
     let num = |key: &str, lo: f64, hi: f64| params::opt_f64(p, key, lo, hi);
     let choice = |key: &str, default: &str| -> EngineResult<String> {
         Ok(params::opt_str(p, key)?.unwrap_or(default).to_owned())

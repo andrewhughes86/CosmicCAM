@@ -45,9 +45,10 @@ simulation yet, so **check its G-code before running it on a machine**.
   stock: fitted to the model with margins, a fixed size, or two corners, rounded up if wanted, and
   shown see-through while it is defined.
 - **Toolpaths:** 2D contour, Face, Pocket (with islands), Drill (canned cycles: drill, spot,
-  peck, chip break, tap, bore), 3D rough, Waterline, Raster and Multi-axis finish, each set up in
-  the toolpath panel with a live preview. Raster also takes ball end mills; the other 3D
-  strategies use flat end mills for now.
+  peck, chip break, tap, bore), Helical bore, 3D rough, Waterline, Raster and Multi-axis finish,
+  each set up in the toolpath panel with a live preview and offering the tool types that suit it
+  (face mills for facing, bull noses for 2D and roughing, ball-ended tools for 3D and multi-axis
+  finishing, the holemaking tools for drilling), with speeds and feeds from a tool preset.
 - **2D contour:** follow edges or a face outline at depth with radial and axial
   passes, stock to leave, leads, ramps, feed optimization, an entry point and a tolerance that
   follows true circles; set up in a panel with a live preview.
@@ -58,7 +59,11 @@ simulation yet, so **check its G-code before running it on a machine**.
 - **Explorer:** right-click any item to edit, show/hide, rename, copy, paste, duplicate or
   delete it; an eye beside each toolpath and model shows or hides it (only the selected toolpath
   is drawn otherwise).
-- **Demo project:** the app opens with a ready-made job to try things on (Home → Demo project).
+- **Demo project:** the app opens with a ready-made 5-axis job to try things on (Home → Demo
+  project): a part with a dome, a 45° slope with an angled hole and a Ø24 bore, on its own
+  trunnion machine with the sample tool library, faced, roughed, finished, helically bored, the
+  dome finished 5-axis and the angled hole spot drilled and drilled 3+2. `cargo xtask demo`
+  rebuilds it.
 - **Job files:** save and open jobs as `.cosmic` files, each open job in its own tab, carrying the
   tools their toolpaths use; on Linux,
   `packaging/linux/install-file-type.sh` gives `.cosmic` files their own icon and opens them in
@@ -78,8 +83,15 @@ simulation yet, so **check its G-code before running it on a machine**.
   tool centre point control (G43.4, G234) or the machine's own positions with inverse-time feeds.
 - **Units:** inches (default) or millimetres everywhere in the app, from Preferences on the Home tab;
   scripts and the API always use millimetres.
-- **Machines and tools:** several machine configurations, each with its own tool library of flat
-  and ball end mills (geometry, cutting data, offsets), saved automatically; import and export as JSON.
+- **Machines and tools:** several machine configurations, each with its own tool library, saved
+  automatically. Twenty tool types (flat, ball, bull nose, tapered ball, lollipop, chamfer,
+  engraving, dovetail, slot, corner rounding, face mill, thread mill, drill, spot and centre drill,
+  reamer, tap, boring bar, counterbore, countersink), each with the geometry it needs (corner and
+  form radii, point and taper angles, tip and pilot sizes, necks and reach, thread pitch and hand),
+  material, coating, coolant through the tool, vendor and part number; cutting presets per
+  workpiece material worked out from surface speed and chip load; a holder library; a to-scale
+  preview drawn from the tool's real outline with its holder; filtering and search; a built-in
+  sample library with two tools of every type; import and export as JSON.
 - **Work coordinate systems:** create, place on the part (top centre, corners…), offset,
   rotate and align WCS, setting each axis and the origin by clicking faces and edges (planes,
   holes, edges, corners, box points); the active one is drawn in full colour in the viewport.

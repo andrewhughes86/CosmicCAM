@@ -12,7 +12,7 @@ use glam::{DVec3, Vec3};
 use crate::cutter::Triangle;
 
 /// A tool as the voxel model cuts it, mm.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ToolShape {
     pub radius: f64,
     /// A ball end (radius `radius`) instead of a flat bottom.
@@ -21,6 +21,9 @@ pub struct ToolShape {
     pub shank_radius: f64,
     /// Stick-out from the holder to the tip.
     pub length: f64,
+    /// The holder above the stick-out: (bottom, top, radius) of each segment, heights above the
+    /// holder face, as cylinders of the segment's wider end; empty for none.
+    pub holder: Vec<(f64, f64, f64)>,
 }
 
 /// What one cut did.
@@ -36,6 +39,9 @@ pub struct VoxelCut {
     pub deep_shank: usize,
     /// One cell the shank went deep into, if any.
     pub shank_at: Option<DVec3>,
+    /// Cells the holder went through, and one of them.
+    pub holder: usize,
+    pub holder_at: Option<DVec3>,
     /// The lowest removed cell centre along the tool axis, measured up from the tip at the
     /// move's start (how deep into material the tool went), if anything was removed.
     pub lowest: Option<f64>,
@@ -204,55 +210,85 @@ impl Voxels {
         let flute = tool.flute_length.max(r);
         let length = tool.length.max(flute);
         let shank_r = tool.shank_radius.max(0.0);
-        let reach = r.max(shank_r) + self.cell;
         let d = to - from;
-        let ends = [from, to, from + a * length, to + a * length];
-        let (mut lo, mut hi) = (ends[0], ends[0]);
-        for e in ends {
-            lo = lo.min(e);
-            hi = hi.max(e);
-        }
-        let Some([is, js, ks]) = self.range(lo - DVec3::splat(reach), hi + DVec3::splat(reach)) else {
-            return out;
+        // The box a stretch of the tool from `h0` to `h1` up its axis sweeps, `pad` wide.
+        let swept = |h0: f64, h1: f64, pad: f64| {
+            let ends = [from + a * h0, to + a * h0, from + a * h1, to + a * h1];
+            let (mut lo, mut hi) = (ends[0], ends[0]);
+            for e in ends {
+                lo = lo.min(e);
+                hi = hi.max(e);
+            }
+            (lo - DVec3::splat(pad), hi + DVec3::splat(pad))
         };
         let ball_start = from + a * r;
         // The tool one cell smaller all round, for telling deep cuts from grazes.
         let c = self.cell;
         let (rs, shank_rs) = ((r - c).max(0.0), (shank_r - c).max(0.0));
         let [nx, ny, _] = self.dims;
-        for k in ks {
-            for j in js.clone() {
-                for i in is.clone() {
-                    let n = (k * ny + j) * nx + i;
-                    let solid = self.bits.get(n / 64).is_some_and(|w| w >> (n % 64) & 1 == 1);
-                    if !solid {
-                        continue;
-                    }
-                    let p = self.centre(i, j, k);
-                    let w = p - from;
-                    let flutes = if tool.ball {
-                        segment_distance_sq(p, ball_start, d) <= r * r || in_swept_cylinder(w, d, a, r, flute, r)
-                    } else {
-                        in_swept_cylinder(w, d, a, 0.0, flute, r)
-                    };
-                    if flutes {
-                        out.removed += 1;
-                        let h = w.dot(a);
-                        out.lowest = Some(out.lowest.map_or(h, |l: f64| l.min(h)));
-                        let deep = if tool.ball {
-                            segment_distance_sq(p, ball_start, d) <= rs * rs || in_swept_cylinder(w, d, a, r, flute, rs)
-                        } else {
-                            in_swept_cylinder(w, d, a, c, flute, rs)
-                        };
-                        out.deep += usize::from(deep);
-                        self.clear_bit(n);
-                    } else if shank_r > 0.0 && in_swept_cylinder(w, d, a, flute, length, shank_r) {
-                        out.shank += 1;
-                        if in_swept_cylinder(w, d, a, flute + c, length, shank_rs) {
-                            out.deep_shank += 1;
-                            out.shank_at.get_or_insert(p);
+        // The tool itself.
+        let (lo, hi) = swept(0.0, length, r.max(shank_r) + c);
+        if let Some([is, js, ks]) = self.range(lo, hi) {
+            for k in ks {
+                for j in js.clone() {
+                    for i in is.clone() {
+                        let n = (k * ny + j) * nx + i;
+                        let solid = self.bits.get(n / 64).is_some_and(|w| w >> (n % 64) & 1 == 1);
+                        if !solid {
+                            continue;
                         }
-                        self.clear_bit(n);
+                        let p = self.centre(i, j, k);
+                        let w = p - from;
+                        let flutes = if tool.ball {
+                            segment_distance_sq(p, ball_start, d) <= r * r || in_swept_cylinder(w, d, a, r, flute, r)
+                        } else {
+                            in_swept_cylinder(w, d, a, 0.0, flute, r)
+                        };
+                        if flutes {
+                            out.removed += 1;
+                            let h = w.dot(a);
+                            out.lowest = Some(out.lowest.map_or(h, |l: f64| l.min(h)));
+                            let deep = if tool.ball {
+                                segment_distance_sq(p, ball_start, d) <= rs * rs
+                                    || in_swept_cylinder(w, d, a, r, flute, rs)
+                            } else {
+                                in_swept_cylinder(w, d, a, c, flute, rs)
+                            };
+                            out.deep += usize::from(deep);
+                            self.clear_bit(n);
+                        } else if shank_r > 0.0 && in_swept_cylinder(w, d, a, flute, length, shank_r) {
+                            out.shank += 1;
+                            if in_swept_cylinder(w, d, a, flute + c, length, shank_rs) {
+                                out.deep_shank += 1;
+                                out.shank_at.get_or_insert(p);
+                            }
+                            self.clear_bit(n);
+                        }
+                    }
+                }
+            }
+        }
+        // The holder, in its own box: usually well above the stock, so nothing to look at.
+        for &(h0, h1, hr) in &tool.holder {
+            if !(hr > 0.0 && h1 > h0) {
+                continue;
+            }
+            let (lo, hi) = swept(length + h0, length + h1, hr + c);
+            let Some([is, js, ks]) = self.range(lo, hi) else { continue };
+            for k in ks {
+                for j in js.clone() {
+                    for i in is.clone() {
+                        let n = (k * ny + j) * nx + i;
+                        let solid = self.bits.get(n / 64).is_some_and(|w| w >> (n % 64) & 1 == 1);
+                        if !solid {
+                            continue;
+                        }
+                        let p = self.centre(i, j, k);
+                        if in_swept_cylinder(p - from, d, a, length + h0, length + h1, (hr - c).max(0.0)) {
+                            out.holder += 1;
+                            out.holder_at.get_or_insert(p);
+                            self.clear_bit(n);
+                        }
                     }
                 }
             }
@@ -505,7 +541,14 @@ mod tests {
     }
 
     fn flat(d: f64) -> ToolShape {
-        ToolShape { radius: d / 2.0, ball: false, flute_length: 15.0, shank_radius: d / 2.0, length: 40.0 }
+        ToolShape {
+            radius: d / 2.0,
+            ball: false,
+            flute_length: 15.0,
+            shank_radius: d / 2.0,
+            length: 40.0,
+            holder: Vec::new(),
+        }
     }
 
     #[test]
@@ -540,7 +583,14 @@ mod tests {
     #[test]
     fn a_ball_leaves_a_round_bottom_and_the_shank_is_reported() {
         let mut v = block();
-        let tool = ToolShape { radius: 3.0, ball: true, flute_length: 5.0, shank_radius: 3.0, length: 40.0 };
+        let tool = ToolShape {
+            radius: 3.0,
+            ball: true,
+            flute_length: 5.0,
+            shank_radius: 3.0,
+            length: 40.0,
+            holder: Vec::new(),
+        };
         // Plunging straight down, the flutes clear the way for the shank.
         let c = v.cut(DVec3::new(10.0, 10.0, 12.0), DVec3::new(10.0, 10.0, 2.0), DVec3::Z, &tool);
         assert_eq!(c.shank, 0, "{c:?}");
@@ -555,6 +605,27 @@ mod tests {
         // Brushing the side of the cut by less than a cell is no deep cut.
         let graze = v.cut(DVec3::new(10.0, 10.3, 2.5), DVec3::new(16.0, 10.3, 2.5), DVec3::Z, &tool);
         assert_eq!(graze.deep, 0, "{graze:?}");
+    }
+
+    #[test]
+    fn a_holder_that_reaches_the_stock_is_reported() {
+        let mut v = block();
+        // 8 mm of stick-out and a Ø20 holder above it, the tip 9 mm below the block's top: the
+        // holder's bottom 1 mm is level with the stock.
+        let tool = ToolShape {
+            radius: 2.0,
+            ball: false,
+            flute_length: 6.0,
+            shank_radius: 2.0,
+            length: 8.0,
+            holder: vec![(0.0, 20.0, 10.0)],
+        };
+        // Beside the block (x 0..20): the tool clears it by 7 mm, the holder reaches 1 mm in.
+        let c = v.cut(DVec3::new(-13.0, 10.0, 1.0), DVec3::new(-9.0, 10.0, 1.0), DVec3::Z, &tool);
+        assert!(c.removed == 0 && c.holder > 0 && c.holder_at.is_some_and(|p| p.z > 9.0), "{c:?}");
+        let mut v = block();
+        let c = v.cut(DVec3::new(-13.0, 10.0, 4.0), DVec3::new(-9.0, 10.0, 4.0), DVec3::Z, &tool);
+        assert_eq!(c.holder, 0, "{c:?}");
     }
 
     #[test]

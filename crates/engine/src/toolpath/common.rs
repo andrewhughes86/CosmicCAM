@@ -55,7 +55,7 @@ impl Common {
 /// Reads the shared settings for a flat end mill. `stepover` and `stepdown` defaults are
 /// fractions of the tool diameter, used when neither the parameters nor the tool give one.
 pub(super) fn common(s: &Session, p: &Value, stepover_of_d: f64, stepdown_of_d: f64) -> EngineResult<Common> {
-    common_for(s, p, stepover_of_d, stepdown_of_d, &["flat"])
+    common_for(s, p, stepover_of_d, stepdown_of_d, &["flat", "bull"])
 }
 
 /// [`common`] for a strategy that takes the tool types `kinds`.
@@ -94,7 +94,7 @@ pub(super) fn common_for(
     };
     Ok(Common {
         name: params::opt_str(p, "name")?.map(crate::library::clip).filter(|n| !n.is_empty()).unwrap_or_default(),
-        tool: tool.clone(),
+        tool,
         machine: machine.id.clone(),
         frame,
         wcs,

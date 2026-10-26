@@ -153,24 +153,58 @@ impl AxisRule {
     }
 }
 
-/// The tool for the collision check, mm.
+/// The tool for the collision check, mm: the ball's radius, then everything above the ball's
+/// centre as segments along the axis, (bottom, top, radius, cutting), from the tool's profile
+/// and its holder.
 struct Body {
     radius: f64,
-    flute: f64,
-    shank_radius: f64,
-    length: f64,
+    segments: Vec<(f64, f64, f64, bool)>,
 }
 
 impl Body {
-    /// True when the flutes above the ball and the shank keep clear of the part.
+    fn new(tool: &crate::library::Tool, holder: Option<&crate::library::Holder>) -> Self {
+        let r = tool.diameter / 2.0;
+        let profile = tool.profile();
+        let mut segments: Vec<(f64, f64, f64, bool)> = Vec::new();
+        let mut add = |h0: f64, h1: f64, radius: f64, cutting: bool| {
+            if h1 <= h0 + 1.0e-9 || radius <= 0.0 {
+                return;
+            }
+            match segments.last_mut() {
+                // Neighbours of one width and kind merge into one check.
+                Some(last) if (last.2 - radius).abs() < 1.0e-6 && last.3 == cutting && (last.1 - h0).abs() < 1.0e-9 => {
+                    last.1 = h1;
+                }
+                _ => segments.push((h0, h1, radius, cutting)),
+            }
+        };
+        // A hair above the ball's equator: the ball itself rests on the surface (the drop cutter
+        // checks it).
+        let start = r * 1.02;
+        for w in profile.points.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let (h0, h1) = (a[1].max(start), b[1]);
+            if h1 > h0 {
+                let cutting = b[1] <= profile.flute_top + 1.0e-9;
+                add(h0, h1, a[0].max(b[0]), cutting);
+            }
+        }
+        if let Some(h) = holder {
+            for w in h.profile().windows(2) {
+                let (a, b) = (w[0], w[1]);
+                add(tool.overall_length + a[1], tool.overall_length + b[1], a[0].max(b[0]), false);
+            }
+        }
+        Self { radius: r, segments }
+    }
+
+    /// True when the tool above the ball (flutes, neck, shank, holder) keeps clear of the part:
+    /// cutting parts by their own radius, the rest by `margin` more.
     fn clear(&self, index: &MeshIndex, tip: DVec3, axis: DVec3, margin: f64) -> bool {
-        let r = self.radius;
-        let centre = tip + axis * r;
-        let top = tip + axis * self.flute.max(r * 1.01);
-        // A hair above the ball's equator, the flutes are a cylinder of the ball's radius; the
-        // ball itself rests on the surface and is checked by the drop cutter.
-        index.clear(centre + axis * (0.02 * r), top, r * 0.995 - 1.0e-3)
-            && index.clear(top, tip + axis * self.length.max(self.flute), self.shank_radius + margin)
+        self.segments.iter().all(|&(h0, h1, radius, cutting)| {
+            let r = if cutting { radius * 0.995 - 1.0e-3 } else { radius + margin };
+            index.clear(tip + axis * h0, tip + axis * h1, r)
+        })
     }
 }
 
@@ -433,7 +467,7 @@ fn simplify(pts: &[Point], tolerance: f64) -> Vec<Point> {
 }
 
 pub fn multiaxis(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
-    let c = common_for(s, p, 0.1, 1.0, &["ball"])?;
+    let c = common_for(s, p, 0.1, 1.0, crate::tooling::BALL_ENDED)?;
     let machine = s.library.machine(&c.machine).ok_or_else(|| bad("the toolpath's machine no longer exists"))?;
     if machine.kinematics.is_none() {
         return Err(bad(format!(
@@ -450,12 +484,8 @@ pub fn multiaxis(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
     let r = c.radius();
     let stock = c.stock_axial.max(-0.9 * r);
     let offset_radius = r + stock;
-    let body = Body {
-        radius: r,
-        flute: c.tool.flute_length,
-        shank_radius: c.tool.shank_diameter / 2.0,
-        length: c.tool.overall_length,
-    };
+    let holder = s.library.holder_of(&c.tool);
+    let body = Body::new(&c.tool, holder);
     let index = rule.avoid.then(|| MeshIndex::new(tris.clone(), body.radius.max(1.0)));
     let step =
         params::opt_f64(p, "sample_step", 0.0, 1.0e3)?.filter(|v| *v > 0.0).unwrap_or((r * 0.25).clamp(0.05, 1.0));
@@ -522,8 +552,11 @@ pub fn multiaxis(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
             ctx.stuck
         ));
     }
-    if rule.avoid {
-        warnings.push("the tool holder is not checked for collisions; only the flutes and the shank are".into());
+    if rule.avoid && holder.is_none() {
+        warnings.push(format!(
+            "T{} has no holder, so only the flutes, neck and shank are checked for collisions; give it one in the tool library",
+            c.tool.number
+        ));
     }
     e.mark_started();
     e.finish(p, c, id, MULTIAXIS, "Multi-axis finish", warnings)

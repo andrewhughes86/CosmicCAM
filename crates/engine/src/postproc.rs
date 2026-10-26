@@ -226,7 +226,7 @@ pub fn cl_data(s: &Session, toolpaths: &[&Toolpath], opt: &ClOptions) -> EngineR
                 json!({ "id": null, "name": "world", "index": 0 }),
             ),
         };
-        let rpm = tp.params.get("spindle_rpm").and_then(Value::as_f64).filter(|v| *v > 0.0).unwrap_or(tool.spindle_rpm);
+        let rpm = toolpath_rpm(tp, tool);
         let coolant = tp.params.get("coolant").and_then(Value::as_str).unwrap_or("flood");
         let mut start = frame.local(tp.start);
         let axis = frame.local_dir(tp.axis);
@@ -396,6 +396,19 @@ pub fn cl_data(s: &Session, toolpaths: &[&Toolpath], opt: &ClOptions) -> EngineR
         "properties": machine.post_properties,
         "warnings": warnings,
     }))
+}
+
+/// The spindle speed a toolpath runs at: its own, else its preset's, else the tool's.
+pub fn toolpath_rpm(tp: &Toolpath, tool: &crate::library::Tool) -> f64 {
+    let own = tp.params.get("spindle_rpm").and_then(Value::as_f64).filter(|v| *v > 0.0);
+    let preset = tp
+        .params
+        .get("preset")
+        .and_then(Value::as_str)
+        .and_then(|name| tool.cutting(Some(name)).ok())
+        .map(|c| c.spindle_rpm)
+        .filter(|v| *v > 0.0);
+    own.or(preset).unwrap_or(tool.spindle_rpm)
 }
 
 /// A toolpath's moves as CL moves: rapids, lines and (within `tolerance`) arcs.

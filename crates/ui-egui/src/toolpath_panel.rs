@@ -52,6 +52,7 @@ pub enum Strategy {
     Waterline,
     Raster,
     MultiAxis,
+    Bore,
 }
 
 impl Strategy {
@@ -66,6 +67,7 @@ impl Strategy {
             "toolpath.waterline" => Self::Waterline,
             "toolpath.raster" => Self::Raster,
             "toolpath.multiaxis" => Self::MultiAxis,
+            "toolpath.bore" => Self::Bore,
             _ => return None,
         })
     }
@@ -80,6 +82,7 @@ impl Strategy {
             "waterline" => Self::Waterline,
             "raster" => Self::Raster,
             "multiaxis" => Self::MultiAxis,
+            "bore" => Self::Bore,
             _ => Self::Contour,
         }
     }
@@ -94,6 +97,7 @@ impl Strategy {
             Self::Waterline => "toolpath.waterline",
             Self::Raster => "toolpath.raster",
             Self::MultiAxis => "toolpath.multiaxis",
+            Self::Bore => "toolpath.bore",
         }
     }
 
@@ -107,6 +111,7 @@ impl Strategy {
             Self::Waterline => "waterline",
             Self::Raster => "raster",
             Self::MultiAxis => "multi-axis finish",
+            Self::Bore => "helical bore",
         }
     }
 
@@ -122,6 +127,7 @@ impl Strategy {
             Self::Waterline => st::WATERLINE,
             Self::Raster => st::RASTER,
             Self::MultiAxis => CosmicCAM_engine::toolpath::multiaxis::MULTIAXIS,
+            Self::Bore => CosmicCAM_engine::toolpath::bore::BORE,
         }
     }
 
@@ -129,7 +135,7 @@ impl Strategy {
         TABS.iter()
             .copied()
             .filter(|(t, _)| match self {
-                Self::Drill | Self::MultiAxis => *t != Tab::Linking,
+                Self::Drill | Self::MultiAxis | Self::Bore => *t != Tab::Linking,
                 _ => true,
             })
             .collect()
@@ -137,7 +143,20 @@ impl Strategy {
 
     /// Whether the strategy needs geometry picked before it can run.
     fn needs_geometry(self) -> bool {
-        matches!(self, Self::Contour | Self::Pocket | Self::Drill)
+        matches!(self, Self::Contour | Self::Pocket | Self::Drill | Self::Bore)
+    }
+
+    /// The tool types the strategy takes, best first.
+    fn tool_kinds(self) -> &'static [&'static str] {
+        use CosmicCAM_engine::tooling as tl;
+        match self {
+            Self::Contour | Self::Bore => &["flat", "bull", "ball"],
+            Self::Face => &["face_mill", "flat", "bull"],
+            Self::Pocket | Self::Rough | Self::Waterline => &["flat", "bull"],
+            Self::Drill => tl::HOLEMAKING,
+            Self::Raster => &["ball", "flat", "tapered_ball", "lollipop"],
+            Self::MultiAxis => tl::BALL_ENDED,
+        }
     }
 
     /// (prefix, reference, offset mm) for each height the strategy uses.
@@ -148,6 +167,7 @@ impl Strategy {
             Self::Face => st::FACE_HEIGHTS.to_vec(),
             Self::Pocket => st::POCKET_HEIGHTS.to_vec(),
             Self::Drill => CosmicCAM_engine::toolpath::drill::DRILL_HEIGHTS.to_vec(),
+            Self::Bore => CosmicCAM_engine::toolpath::bore::BORE_HEIGHTS.to_vec(),
             Self::Rough => st::ROUGH_HEIGHTS.to_vec(),
             Self::Waterline | Self::Raster | Self::MultiAxis => st::FINISH_HEIGHTS.to_vec(),
         }
@@ -548,48 +568,55 @@ impl ToolpathPanel {
             ui.label(RichText::new("There is no machine. Add one on the Machine tab.").color(tokens.error));
             return false;
         };
-        if machine.tools.is_empty() {
+        let kinds = self.strategy.tool_kinds();
+        let fitting: Vec<&CosmicCAM_engine::library::Tool> =
+            machine.tools.iter().filter(|t| kinds.contains(&t.kind.as_str())).collect();
+        if fitting.is_empty() {
+            let names: Vec<&str> =
+                kinds.iter().filter_map(|k| CosmicCAM_engine::tooling::tool_type(k)).map(|t| t.label).collect();
             ui.label(
-                RichText::new(format!("{}'s tool library is empty. Add a tool on the Tooling tab.", machine.name))
-                    .color(tokens.error),
+                RichText::new(format!(
+                    "{} has no tool this strategy takes ({}). Add one on the Tooling tab, or load the sample library.",
+                    machine.name,
+                    names.join(", ")
+                ))
+                .color(tokens.error),
             );
             return false;
         }
         let mut changed = false;
-        let current = self
-            .values
-            .get("tool")
-            .and_then(Value::as_u64)
-            .map(|n| n as u32)
-            .or(machine.tools.first().map(|t| t.number));
+        let current =
+            self.values.get("tool").and_then(Value::as_u64).map(|n| n as u32).or(fitting.first().map(|t| t.number));
         let tool = current.and_then(|n| machine.tool(n));
         ui.label(RichText::new(format!("Machine: {}", machine.name)).small().color(tokens.text_muted));
         egui::ComboBox::from_id_salt("tp-tool")
             .selected_text(tool.map_or("Choose a tool".to_owned(), |t| format!("T{}  {}", t.number, t.name)))
             .width(300.0)
             .show_ui(ui, |ui| {
-                for t in &machine.tools {
-                    if ui.selectable_label(Some(t.number) == current, format!("T{}  {}", t.number, t.name)).clicked() {
+                for t in &fitting {
+                    let text = format!("T{}  {}  ({})", t.number, t.name, t.type_label().to_lowercase());
+                    if ui.selectable_label(Some(t.number) == current, text).clicked() {
                         self.values.insert("tool".into(), json!(t.number));
+                        self.values.remove("preset");
                         changed = true;
                     }
                 }
             });
         if let Some(t) = tool {
-            crate::tool_view::draw(
-                ui,
-                Some(crate::tool_view::ToolShape {
-                    diameter: t.diameter,
-                    shank_diameter: t.shank_diameter,
-                    flute_length: t.flute_length,
-                    overall_length: t.overall_length,
-                    flutes: t.flutes,
-                    ball: t.kind == "ball",
-                }),
-                u,
-                tokens,
-                egui::vec2(300.0, 190.0),
-            );
+            crate::tool_view::draw(ui, Some(t), session.library.holder_of(t), u, tokens, egui::vec2(300.0, 190.0));
+            if !t.presets.is_empty() {
+                let mut presets: Vec<(&str, &str)> = vec![("", "The tool's own")];
+                presets.extend(t.presets.iter().map(|p| (p.name.as_str(), p.name.as_str())));
+                egui::Grid::new("tp-preset").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                    changed |= Self::row(ui, "Cutting data", "Speeds and feeds from one of the tool's presets", |ui| {
+                        let c = self.choice(ui, "preset", &presets, "");
+                        if self.values.get("preset").and_then(Value::as_str) == Some("") {
+                            self.values.remove("preset");
+                        }
+                        c
+                    });
+                });
+            }
             let hint_rate = |v: f64| if v > 0.0 { u.plain_rate(v) } else { "not set".into() };
             ui.label(RichText::new("Feeds and speeds (blank = the tool's)").strong());
             egui::Grid::new("tp-feeds").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
@@ -606,6 +633,9 @@ impl ToolpathPanel {
                         ("lead_feed", "Lead-in / out feed", t.feed),
                     ],
                     Strategy::Drill => &[("feed", "Drilling feed", t.plunge_feed)],
+                    Strategy::Bore => {
+                        &[("feed", "Cutting feed", t.feed), ("plunge_feed", "Feed down to the hole", t.plunge_feed)]
+                    }
                     _ => &[("feed", "Cutting feed", t.feed), ("plunge_feed", "Plunge feed", t.plunge_feed)],
                 };
                 for &(key, label, fallback) in feeds {
@@ -857,6 +887,7 @@ impl ToolpathPanel {
             Strategy::Drill => {
                 "Click the holes: their walls (cylinders) or rims (circular edges). Each hole is drilled once."
             }
+            Strategy::Bore => "Click the holes to bore: their walls (cylinders) or rims (circular edges).",
             Strategy::Rough | Strategy::Waterline => "Works on the whole model; there is nothing to pick.",
             _ => "Choose the area below. With Selected faces, click faces or closed edges to work inside.",
         };
@@ -896,6 +927,21 @@ impl ToolpathPanel {
         };
         let strategy = self.strategy;
         egui::Grid::new("tp-strategy-passes").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+            if strategy == Strategy::Bore {
+                changed |= Self::row(ui, "Pitch", "Depth per turn of the helix", |ui| len(ui, self, "pitch", "15% Ø"));
+                changed |= Self::row(ui, "Stepover", "Between helices in a hole wider than one clears", |ui| {
+                    len(ui, self, "stepover", "40% Ø")
+                });
+                changed |= Self::row(ui, "Stock to leave", "On the wall", |ui| len(ui, self, "stock_radial", "0"));
+                let dirs = [("climb", "Climb"), ("conventional", "Conventional")];
+                changed |= Self::row(ui, "Direction", "Climb runs counter-clockwise inside a hole", |ui| {
+                    self.choice(ui, "direction", &dirs, "climb")
+                });
+                changed |= Self::row(ui, "Tolerance", "How far the helix may stray from a true circle", |ui| {
+                    len(ui, self, "tolerance", &u.plain(0.01))
+                });
+                return;
+            }
             if strategy == Strategy::Drill {
                 let cycles = [
                     ("drill", "Drill"),

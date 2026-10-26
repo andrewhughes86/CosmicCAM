@@ -178,74 +178,57 @@ fn voxel_stock(sim: &Sim, v: &Voxels, c: &SimColours) -> SceneGeometry {
     g
 }
 
-/// The tool with its tip at `tip` and its axis along `axis` (both in the frame): flutes (a ball
-/// end on a ball end mill) in one colour, the shank above them in another.
+/// The tool with its tip at `tip` and its axis along `axis` (both in the frame), drawn from its
+/// real outline: the fluted part in one colour, the neck and shank in another, and its holder
+/// above them.
 pub fn tool(f: &SimFrame, tip: DVec3, axis: DVec3, t: &SimTool, c: &SimColours) -> SceneGeometry {
     let mut g = SceneGeometry::default();
     let axis = axis.normalize_or(DVec3::Z);
-    let flutes = t.flute_length.max(t.radius).min(t.length.max(t.radius));
-    if t.ball {
-        sphere(&mut g, f, tip + axis * t.radius, t.radius, c.flutes);
-        cylinder(&mut g, f, tip + axis * t.radius, axis, t.radius, (flutes - t.radius).max(0.0), c.flutes);
-    } else {
-        cylinder(&mut g, f, tip, axis, t.radius, flutes, c.flutes);
-    }
-    let shank = (t.length - flutes).max(0.0);
-    if shank > 1.0e-6 {
-        cylinder(&mut g, f, tip + axis * flutes, axis, t.shank_radius.max(t.radius * 0.5), shank, c.shank);
+    revolve(&mut g, f, tip, axis, &t.profile, |h| if h <= t.flute_top + 1.0e-9 { c.flutes } else { c.shank });
+    if !t.holder.is_empty() {
+        revolve(&mut g, f, tip + axis * t.length, axis, &t.holder, |_| c.shank);
     }
     g
 }
 
-fn sphere(g: &mut SceneGeometry, f: &SimFrame, centre: DVec3, radius: f64, colour: Rgba) {
-    const SIDES: usize = 24;
-    const RINGS: usize = 12;
-    let at = |ring: usize, k: usize| -> DVec3 {
-        let (polar, around) =
-            (std::f64::consts::PI * ring as f64 / RINGS as f64, std::f64::consts::TAU * k as f64 / SIDES as f64);
-        DVec3::new(polar.sin() * around.cos(), polar.sin() * around.sin(), polar.cos())
-    };
-    let v = |d: DVec3| Vertex::lit(f.world(centre + d * radius), world_normal(f, d), colour);
-    for ring in 0..RINGS {
-        for k in 0..SIDES {
-            let (a, b, cc, d) = (at(ring, k), at(ring + 1, k), at(ring + 1, k + 1), at(ring, k + 1));
-            g.triangles.extend_from_slice(&[v(a), v(b), v(cc), v(a), v(cc), v(d)]);
-        }
-    }
-}
-
-fn cylinder(g: &mut SceneGeometry, f: &SimFrame, base: DVec3, axis: DVec3, radius: f64, height: f64, colour: Rgba) {
+/// The solid of revolution of `profile` ((radius, height) points along `axis` from `base`),
+/// each band coloured by `colour(its top height)`.
+fn revolve(
+    g: &mut SceneGeometry,
+    f: &SimFrame,
+    base: DVec3,
+    axis: DVec3,
+    profile: &[[f64; 2]],
+    colour: impl Fn(f64) -> Rgba,
+) {
     const SIDES: usize = 32;
-    if height <= 1.0e-9 {
-        return;
-    }
     let u = axis.any_orthonormal_vector();
     let w = axis.cross(u);
     let ring = |k: usize| {
         let a = std::f64::consts::TAU * k as f64 / SIDES as f64;
         u * a.cos() + w * a.sin()
     };
-    let top = base + axis * height;
-    for k in 0..SIDES {
-        let (d0, d1) = (ring(k), ring(k + 1));
-        let p = |c: DVec3, d: DVec3| f.world(c + d * radius);
-        let n0 = world_normal(f, d0);
-        let n1 = world_normal(f, d1);
-        let (a, b, cc, d) = (
-            Vertex::lit(p(base, d0), n0, colour),
-            Vertex::lit(p(base, d1), n1, colour),
-            Vertex::lit(p(top, d1), n1, colour),
-            Vertex::lit(p(top, d0), n0, colour),
-        );
-        g.triangles.extend_from_slice(&[a, b, cc, a, cc, d]);
-        let (up, down) = (world_normal(f, axis), world_normal(f, -axis));
-        g.triangles.extend_from_slice(&[
-            Vertex::lit(f.world(top), up, colour),
-            Vertex::lit(p(top, d0), up, colour),
-            Vertex::lit(p(top, d1), up, colour),
-            Vertex::lit(f.world(base), down, colour),
-            Vertex::lit(p(base, d1), down, colour),
-            Vertex::lit(p(base, d0), down, colour),
-        ]);
+    for seg in profile.windows(2) {
+        let ([r0, h0], [r1, h1]) = (seg[0], seg[1]);
+        if (r0 - r1).abs() < 1.0e-9 && (h0 - h1).abs() < 1.0e-9 {
+            continue;
+        }
+        let col = colour(h1);
+        // The band's normal leans by the profile's slope.
+        let (dr, dh) = (r1 - r0, h1 - h0);
+        let len = dr.hypot(dh).max(1.0e-12);
+        let (nr, nh) = (dh / len, -dr / len);
+        for k in 0..SIDES {
+            let (d0, d1) = (ring(k), ring(k + 1));
+            let p = |d: DVec3, r: f64, h: f64| f.world(base + axis * h + d * r);
+            let n = |d: DVec3| world_normal(f, d * nr + axis * nh);
+            let (a, b, cc, dd) = (
+                Vertex::lit(p(d0, r0, h0), n(d0), col),
+                Vertex::lit(p(d1, r0, h0), n(d1), col),
+                Vertex::lit(p(d1, r1, h1), n(d1), col),
+                Vertex::lit(p(d0, r1, h1), n(d0), col),
+            );
+            g.triangles.extend_from_slice(&[a, b, cc, a, cc, dd]);
+        }
     }
 }

@@ -371,6 +371,12 @@ pub fn face_json(model: &Model, face: usize) -> Value {
             v["length"] = json!(length);
             v["hole"] = json!(hole);
         }
+        FaceKind::Sphere { center, radius, convex } => {
+            v["center"] = json!(center.to_array());
+            v["radius"] = json!(radius);
+            v["diameter"] = json!(radius * 2.0);
+            v["convex"] = json!(convex);
+        }
         FaceKind::Freeform => {}
     }
     v
@@ -1346,6 +1352,11 @@ impl Session {
                         ("Length".into(), u.fmt_len(f64::from(length))),
                         ("Axis".into(), v(axis)),
                         ("Axis base".into(), u.fmt_point(base.to_array())),
+                    ]),
+                    FaceKind::Sphere { center, radius, convex } => props.extend([
+                        ("Type".into(), if convex { "Dome" } else { "Spherical pocket" }.into()),
+                        ("Diameter".into(), u.fmt_len(f64::from(radius) * 2.0)),
+                        ("Centre of sphere".into(), u.fmt_point(center.to_array())),
                     ]),
                     FaceKind::Freeform => {}
                 }

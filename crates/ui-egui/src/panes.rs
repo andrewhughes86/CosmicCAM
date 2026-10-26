@@ -378,18 +378,23 @@ pub fn console(ui: &mut Ui, session: &Session, tokens: &Tokens, state: &mut Cons
     });
 }
 
-/// Per-window state of the tool library: the row under the pointer, previewed in place of the
-/// selection while hovered.
+/// Per-window state of the tool library: the row under the pointer (previewed in place of the
+/// selection while hovered), the type filter and the search text.
 #[derive(Default)]
 pub struct LibraryState {
     hovered: Option<u32>,
+    kind: Option<String>,
+    search: String,
 }
 
-/// Machines and the active machine's tool library, with a to-scale preview of the tool under
-/// the pointer (or the selected one). Every button runs a command; the selected tool is the
-/// session selection, so the inspector shows it and edits start from it. Up and Down step
-/// through the tools while the pointer is over the window.
+/// Machines and the active machine's tool library: every tool type, filtered by type and search,
+/// with a to-scale preview of the tool under the pointer (or the selected one) drawn from its
+/// real geometry and holder, its type's values and its cutting presets, and the holder library.
+/// Every button runs a command; the selected tool is the session selection, so the inspector
+/// shows it and edits start from it. Up and Down step through the tools shown while the pointer
+/// is over the window.
 pub fn library(ui: &mut Ui, session: &Session, tokens: &Tokens, state: &mut LibraryState, requests: &mut Vec<Request>) {
+    use CosmicCAM_engine::tooling::{TYPES, tool_type};
     let lib = &session.library;
     let u = session.prefs.units;
     let Some(machine) = lib.active_machine() else {
@@ -429,9 +434,13 @@ pub fn library(ui: &mut Ui, session: &Session, tokens: &Tokens, state: &mut Libr
             requests.push(("machine.edit".into(), Value::Null));
         }
         let [x, y, z] = machine.travel;
+        let axes = machine
+            .kinematics
+            .as_ref()
+            .map_or("3-axis".to_owned(), |k| format!("{}-axis {}", 3 + k.names().len(), k.names().join("")));
         ui.label(
             RichText::new(format!(
-                "Travel {} × {} × {} {} · {} rpm · {} · {}",
+                "{axes} · travel {} × {} × {} {} · {} rpm · {} · {}",
                 u.plain(x),
                 u.plain(y),
                 u.plain(z),
@@ -450,40 +459,71 @@ pub fn library(ui: &mut Ui, session: &Session, tokens: &Tokens, state: &mut Libr
     });
     ui.separator();
 
+    // The tools shown: of the chosen type, matching the search.
+    let search = state.search.trim().to_lowercase();
+    let shown: Vec<&CosmicCAM_engine::library::Tool> = machine
+        .tools
+        .iter()
+        .filter(|t| state.kind.as_deref().is_none_or(|k| t.kind == k))
+        .filter(|t| {
+            search.is_empty()
+                || [t.name.as_str(), t.type_label(), t.vendor.as_str(), t.product_id.as_str(), t.notes.as_str()]
+                    .iter()
+                    .any(|f| f.to_lowercase().contains(&search))
+                || format!("t{}", t.number) == search
+        })
+        .collect();
+
     // Up / Down move through the list while the pointer is over the library.
-    if ui.ui_contains_pointer() && !ui.ctx().egui_wants_keyboard_input() && !machine.tools.is_empty() {
+    if ui.ui_contains_pointer() && !ui.ctx().egui_wants_keyboard_input() && !shown.is_empty() {
         let (up, down) = ui.input(|i| (i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown)));
         if up || down {
-            let i = selected.and_then(|n| machine.tools.iter().position(|t| t.number == n));
-            let last = machine.tools.len() - 1;
+            let i = selected.and_then(|n| shown.iter().position(|t| t.number == n));
+            let last = shown.len() - 1;
             let next = match (i, down) {
                 (None, _) => 0,
                 (Some(i), true) => (i + 1).min(last),
                 (Some(i), false) => i.saturating_sub(1),
             };
-            if let Some(t) = machine.tools.get(next) {
+            if let Some(t) = shown.get(next) {
                 select(requests, t.number);
                 state.hovered = None;
             }
         }
     }
 
-    let preview_width = 290.0;
+    let preview_width = 300.0;
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             // A cap, not a fixed width: sizing to all the remaining space would overflow by the
             // spacing each frame and grow the window without end.
-            ui.set_max_width((ui.available_width() - preview_width - 40.0).max(260.0));
+            ui.set_max_width((ui.available_width() - preview_width - 40.0).max(300.0));
             ui.horizontal_wrapped(|ui| {
-                if ui.button("New end mill…").on_hover_text("Add a flat end mill").clicked() {
-                    requests.push(("tool.create.flat".into(), Value::Null));
-                }
+                ui.menu_button("New tool…", |ui| {
+                    for ty in TYPES {
+                        if ui.button(ty.label).clicked() {
+                            requests.push((format!("tool.create.{}", ty.id), Value::Null));
+                            ui.close();
+                        }
+                    }
+                });
                 ui.add_enabled_ui(selected.is_some(), |ui| {
                     if ui.button("Edit…").clicked() {
                         requests.push(("tool.edit".into(), Value::Null));
                     }
-                    if ui.button("Feeds…").on_hover_text("Spindle speed, feeds and depths of cut").clicked() {
+                    if ui
+                        .button("Feeds…")
+                        .on_hover_text("Spindle speed and feeds, or work them out from surface speed and chip load")
+                        .clicked()
+                    {
                         requests.push(("tool.feeds".into(), Value::Null));
+                    }
+                    if ui
+                        .button("Preset…")
+                        .on_hover_text("Add or change a cutting preset (per workpiece material)")
+                        .clicked()
+                    {
+                        requests.push(("tool.preset.set".into(), Value::Null));
                     }
                     if ui.button("Copy").clicked()
                         && let Some(n) = selected
@@ -494,104 +534,261 @@ pub fn library(ui: &mut Ui, session: &Session, tokens: &Tokens, state: &mut Libr
                         requests.push(("tool.remove".into(), Value::Null));
                     }
                 });
+                ui.separator();
+                if ui
+                    .button("Sample library")
+                    .on_hover_text("Add two tools of every type, with presets and holders")
+                    .clicked()
+                {
+                    requests.push(("tool.library.sample".into(), json!({})));
+                }
+                if ui.button("Import…").clicked() {
+                    requests.push(("tool.library.import".into(), Value::Null));
+                }
+                if ui.button("Export…").clicked() {
+                    requests.push(("tool.library.export".into(), Value::Null));
+                }
+            });
+            ui.horizontal(|ui| {
+                let label = state.kind.as_deref().and_then(tool_type).map_or("All types", |t| t.label);
+                egui::ComboBox::from_id_salt("library-type").selected_text(label).width(170.0).show_ui(ui, |ui| {
+                    if ui.selectable_label(state.kind.is_none(), "All types").clicked() {
+                        state.kind = None;
+                    }
+                    for ty in TYPES {
+                        let count = machine.tools.iter().filter(|t| t.kind == ty.id).count();
+                        let text = format!("{} ({count})", ty.label);
+                        if ui.selectable_label(state.kind.as_deref() == Some(ty.id), text).clicked() {
+                            state.kind = Some(ty.id.to_owned());
+                        }
+                    }
+                });
+                ui.add(
+                    egui::TextEdit::singleline(&mut state.search)
+                        .hint_text("Search name, vendor, part no.")
+                        .desired_width(200.0),
+                );
+                ui.label(
+                    RichText::new(format!("{} of {} tools", shown.len(), machine.tools.len()))
+                        .small()
+                        .color(tokens.text_muted),
+                );
             });
             ui.add_space(4.0);
             if machine.tools.is_empty() {
                 state.hovered = None;
-                ui.label(RichText::new("No tools yet. Add one with New end mill.").color(tokens.text_muted));
+                ui.label(
+                    RichText::new("No tools yet. Add one with New tool, or load the sample library.")
+                        .color(tokens.text_muted),
+                );
                 return;
             }
             let rate = |v: f64| if v > 0.0 { u.plain_rate(v) } else { "–".into() };
             let rpm = |v: f64| if v > 0.0 { format!("{v}") } else { "–".into() };
             let mut hovered = None;
-            ScrollArea::vertical().id_salt("library-scroll").auto_shrink([true, true]).show(ui, |ui| {
-                egui::Grid::new("library-tools").striped(true).num_columns(8).spacing([12.0, 4.0]).show(ui, |ui| {
-                    for h in [
-                        "T".to_owned(),
-                        "Name".to_owned(),
-                        "Type".to_owned(),
-                        format!("Ø {}", u.length()),
-                        "Flutes".to_owned(),
-                        format!("LOC {}", u.length()),
-                        "rpm".to_owned(),
-                        format!("Feed {}", u.rate()),
-                    ] {
-                        ui.label(RichText::new(h).small().color(tokens.text_muted));
-                    }
-                    ui.end_row();
-                    for t in &machine.tools {
-                        let on = selected == Some(t.number);
-                        let mut cells = vec![
-                            ui.selectable_label(on, format!("T{}", t.number)),
-                            ui.selectable_label(on, t.name.as_str()),
-                        ];
-                        for text in [t.kind.clone(), u.plain(t.diameter), t.flutes.to_string(), u.plain(t.flute_length)]
-                        {
-                            cells.push(ui.label(text));
-                        }
-                        cells.push(ui.label(rpm(t.spindle_rpm)));
-                        cells.push(ui.label(rate(t.feed)));
-                        ui.end_row();
-                        if cells.iter().any(egui::Response::hovered) {
-                            hovered = Some(t.number);
-                        }
-                        if cells.iter().any(egui::Response::clicked) {
-                            select(requests, t.number);
-                        }
-                        if cells.iter().any(egui::Response::double_clicked) {
-                            select(requests, t.number);
-                            requests.push(("tool.edit".into(), Value::Null));
-                        }
-                    }
+            ScrollArea::vertical()
+                .id_salt("library-scroll")
+                .auto_shrink([true, true])
+                .max_height(ui.available_height().max(200.0))
+                .show(ui, |ui| {
+                    egui::Grid::new("library-tools").striped(true).num_columns(10).spacing([12.0, 4.0]).show(
+                        ui,
+                        |ui| {
+                            for h in [
+                                "T".to_owned(),
+                                "Name".to_owned(),
+                                "Type".to_owned(),
+                                format!("Ø {}", u.length()),
+                                "R / angle".to_owned(),
+                                "Flutes".to_owned(),
+                                format!("LOC {}", u.length()),
+                                "Holder".to_owned(),
+                                "rpm".to_owned(),
+                                format!("Feed {}", u.rate()),
+                            ] {
+                                ui.label(RichText::new(h).small().color(tokens.text_muted));
+                            }
+                            ui.end_row();
+                            for t in &shown {
+                                let on = selected == Some(t.number);
+                                let shape = if t.tip_angle > 0.0 {
+                                    format!("{}°", t.tip_angle)
+                                } else if t.corner_radius > 0.0 {
+                                    format!("R{}", u.plain(t.corner_radius))
+                                } else if t.thread_pitch > 0.0 {
+                                    format!("P{}", u.plain(t.thread_pitch))
+                                } else {
+                                    "–".into()
+                                };
+                                let holder = lib.holder_of(t).map_or("–".to_owned(), |h| h.name.clone());
+                                let mut cells = vec![
+                                    ui.selectable_label(on, format!("T{}", t.number)),
+                                    ui.selectable_label(on, t.name.as_str()),
+                                ];
+                                for text in [
+                                    t.type_label().to_owned(),
+                                    u.plain(t.diameter),
+                                    shape,
+                                    t.flutes.to_string(),
+                                    u.plain(t.flute_length),
+                                ] {
+                                    cells.push(ui.label(text));
+                                }
+                                cells.push(ui.label(RichText::new(holder).small()));
+                                cells.push(ui.label(rpm(t.spindle_rpm)));
+                                cells.push(ui.label(rate(t.feed)));
+                                ui.end_row();
+                                if cells.iter().any(egui::Response::hovered) {
+                                    hovered = Some(t.number);
+                                }
+                                if cells.iter().any(egui::Response::clicked) {
+                                    select(requests, t.number);
+                                }
+                                if cells.iter().any(egui::Response::double_clicked) {
+                                    select(requests, t.number);
+                                    requests.push(("tool.edit".into(), Value::Null));
+                                }
+                            }
+                        },
+                    );
                 });
-            });
             state.hovered = hovered;
         });
         ui.separator();
         ui.vertical(|ui| {
             ui.set_width(preview_width);
-            let shown = state.hovered.or(selected).and_then(|n| machine.tool(n));
-            match shown {
-                Some(t) => {
-                    ui.label(RichText::new(format!("T{}  {}", t.number, t.name)).strong());
-                    crate::tool_view::draw(
-                        ui,
-                        Some(crate::tool_view::ToolShape {
-                            diameter: t.diameter,
-                            shank_diameter: t.shank_diameter,
-                            flute_length: t.flute_length,
-                            overall_length: t.overall_length,
-                            flutes: t.flutes,
-                            ball: t.kind == "ball",
-                        }),
-                        u,
-                        tokens,
-                        egui::vec2(preview_width, 300.0),
-                    );
-                    let facts = [
-                        ("Flutes", t.flutes.to_string()),
-                        ("Shank", u.fmt_len(t.shank_diameter)),
-                        ("Material", t.material.clone()),
-                        (
-                            "Speed",
-                            if t.spindle_rpm > 0.0 { format!("{} rpm", t.spindle_rpm) } else { "not set".into() },
-                        ),
-                        ("Feed", if t.feed > 0.0 { u.fmt_rate(t.feed) } else { "not set".into() }),
-                    ];
-                    egui::Grid::new("library-facts").num_columns(2).spacing([10.0, 2.0]).show(ui, |ui| {
-                        for (k, v) in facts {
-                            ui.label(RichText::new(k).small().color(tokens.text_muted));
-                            ui.label(RichText::new(v).small());
-                            ui.end_row();
-                        }
-                    });
-                }
+            let shown_tool = state.hovered.or(selected).and_then(|n| machine.tool(n));
+            match shown_tool {
+                Some(t) => tool_details(ui, session, t, tokens, preview_width, selected == Some(t.number), requests),
                 None => {
                     ui.label(RichText::new("Point at a tool to preview it.").color(tokens.text_muted));
                 }
             }
+            ui.add_space(8.0);
+            holders(ui, session, tokens, requests);
         });
     });
+}
+
+/// One tool: its drawing, its type's values and its cutting presets.
+fn tool_details(
+    ui: &mut Ui,
+    session: &Session,
+    t: &CosmicCAM_engine::library::Tool,
+    tokens: &Tokens,
+    width: f32,
+    selected: bool,
+    requests: &mut Vec<Request>,
+) {
+    let u = session.prefs.units;
+    ui.label(RichText::new(format!("T{}  {}", t.number, t.name)).strong());
+    ui.label(RichText::new(t.type_label()).small().color(tokens.text_muted));
+    crate::tool_view::draw(ui, Some(t), session.library.holder_of(t), u, tokens, egui::vec2(width, 300.0));
+    let mut facts: Vec<(&str, String)> = vec![
+        ("Flutes", t.flutes.to_string()),
+        ("Shank", u.fmt_len(t.shank_diameter)),
+        ("Stick-out", u.fmt_len(t.overall_length)),
+    ];
+    let len = |v: f64| u.fmt_len(v);
+    if t.corner_radius > 0.0 && !t.ball_ended() {
+        facts.push(("Corner radius", len(t.corner_radius)));
+    }
+    if t.tip_angle > 0.0 {
+        facts.push(("Point angle", format!("{}°", t.tip_angle)));
+    }
+    if t.tip_diameter > 0.0 {
+        facts.push(("Tip / pilot Ø", len(t.tip_diameter)));
+    }
+    if t.tip_length > 0.0 {
+        facts.push(("Pilot length", len(t.tip_length)));
+    }
+    if t.taper_angle > 0.0 {
+        facts.push(("Taper", format!("{}°", t.taper_angle)));
+    }
+    if t.neck_diameter > 0.0 {
+        facts.push(("Neck Ø", len(t.neck_diameter)));
+    }
+    if t.shoulder_length > 0.0 {
+        facts.push(("Reach", len(t.shoulder_length)));
+    }
+    if t.thread_pitch > 0.0 {
+        facts.push(("Pitch", format!("{} ({} hand)", len(t.thread_pitch), t.hand)));
+    }
+    facts.push((
+        "Material",
+        format!("{}{}", t.material, if t.coating.is_empty() { String::new() } else { format!(", {}", t.coating) }),
+    ));
+    if t.coolant_through {
+        facts.push(("Coolant", "through the tool".into()));
+    }
+    if !t.vendor.is_empty() || !t.product_id.is_empty() {
+        facts.push(("Vendor", format!("{} {}", t.vendor, t.product_id).trim().to_owned()));
+    }
+    facts.push(("Speed", if t.spindle_rpm > 0.0 { format!("{} rpm", t.spindle_rpm) } else { "not set".into() }));
+    facts.push(("Feed", if t.feed > 0.0 { u.fmt_rate(t.feed) } else { "not set".into() }));
+    egui::Grid::new("library-facts").num_columns(2).spacing([10.0, 2.0]).show(ui, |ui| {
+        for (k, v) in facts {
+            ui.label(RichText::new(k).small().color(tokens.text_muted));
+            ui.label(RichText::new(v).small());
+            ui.end_row();
+        }
+    });
+    if !t.presets.is_empty() {
+        ui.add_space(6.0);
+        ui.label(RichText::new("Cutting presets").strong());
+        egui::Grid::new("library-presets").num_columns(5).spacing([8.0, 2.0]).show(ui, |ui| {
+            for p in &t.presets {
+                ui.label(RichText::new(p.name.as_str()).small());
+                ui.label(
+                    RichText::new(if p.surface_speed > 0.0 {
+                        format!("{} m/min", p.surface_speed)
+                    } else {
+                        "–".into()
+                    })
+                    .small(),
+                );
+                ui.label(RichText::new(format!("{} rpm", p.spindle_rpm)).small());
+                ui.label(RichText::new(u.fmt_rate(p.feed)).small());
+                ui.horizontal(|ui| {
+                    if selected
+                        && ui.small_button("Use").on_hover_text("Make this the tool's own cutting data").clicked()
+                    {
+                        requests.push(("tool.preset.apply".into(), json!({ "number": t.number, "name": p.name })));
+                    }
+                    if selected && ui.small_button("×").on_hover_text("Delete this preset").clicked() {
+                        requests.push(("tool.preset.remove".into(), json!({ "number": t.number, "name": p.name })));
+                    }
+                });
+                ui.end_row();
+            }
+        });
+    }
+}
+
+/// The holder library: each holder's name and size, with New and Delete.
+fn holders(ui: &mut Ui, session: &Session, tokens: &Tokens, requests: &mut Vec<Request>) {
+    let u = session.prefs.units;
+    egui::CollapsingHeader::new(format!("Holders ({})", session.library.holders.len()))
+        .id_salt("library-holders")
+        .show(ui, |ui| {
+            if ui.small_button("New holder…").clicked() {
+                requests.push(("holder.create".into(), Value::Null));
+            }
+            for h in &session.library.holders {
+                let widest = h.segments.iter().map(|s| s.lower_diameter.max(s.upper_diameter)).fold(0.0, f64::max);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(h.name.as_str()).small());
+                    ui.label(
+                        RichText::new(format!("Ø{} × {}", u.plain(widest), u.fmt_len(h.height())))
+                            .small()
+                            .color(tokens.text_muted),
+                    );
+                    if ui.small_button("×").on_hover_text("Delete this holder").clicked() {
+                        requests.push(("holder.remove".into(), json!({ "id": h.id })));
+                    }
+                });
+            }
+        });
 }
 
 #[cfg(test)]

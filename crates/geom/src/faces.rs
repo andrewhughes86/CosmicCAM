@@ -4,7 +4,10 @@
 //! 1. **Planes**: connected triangles with the same normal on one plane.
 //! 2. **Cylinders**: neighbouring planar strips whose normals are all square to one axis and
 //!    whose vertices lie on one circle around it (tessellated holes, bosses and fillets).
-//! 3. **Freeform** patches: small leftover facets joined smoothly (spheres, blends).
+//! 3. **Spheres**: smoothly joined facets whose vertices lie on one sphere and whose normals
+//!    point through its centre (domes, ball pockets). Found before cylinders, which a narrow
+//!    band of a sphere would otherwise pass for.
+//! 4. **Freeform** patches: small leftover facets joined smoothly (blends).
 //!
 //! Every triangle belongs to exactly one face. Work is linear in the triangle count apart
 //! from cylinder fitting, which samples a bounded number of points.
@@ -42,6 +45,13 @@ pub enum FaceKind {
         length: f32,
         hole: bool,
     },
+    /// `convex` is true for a dome (the surface faces away from `center`), false for a
+    /// spherical pocket.
+    Sphere {
+        center: Vec3,
+        radius: f32,
+        convex: bool,
+    },
     Freeform,
 }
 
@@ -50,6 +60,7 @@ impl FaceKind {
         match self {
             Self::Plane { .. } => "plane",
             Self::Cylinder { .. } => "cylinder",
+            Self::Sphere { .. } => "sphere",
             Self::Freeform => "freeform",
         }
     }
@@ -269,7 +280,105 @@ pub fn segment(mesh: &Mesh) -> FaceMap {
     };
 
     if n <= MAX_TRIANGLES_FOR_CURVES {
-        // 2. Cylinders grown from neighbouring strips.
+        // 2. Spheres: a smooth patch of at least a few facets, all on one sphere.
+        for seed in 0..regions.len() {
+            if face_of_region.get(seed).is_none_or(|f| *f != u32::MAX) {
+                continue;
+            }
+            let Some(sr) = regions.get(seed) else { continue };
+            if sr.area > total_area * 0.05 {
+                continue;
+            }
+            let mut members = vec![seed as u32];
+            let mut points = region_points(sr);
+            let mut sphere: Option<Sphere> = None;
+            let mut queue: Vec<u32> = sr.neighbours.clone();
+            let mut tried: Vec<u32> = Vec::new();
+            while let Some(nb) = queue.pop() {
+                if members.contains(&nb) || tried.contains(&nb) || members.len() > 100_000 {
+                    continue;
+                }
+                let Some(r) = regions.get(nb as usize) else { continue };
+                if face_of_region.get(nb as usize).is_none_or(|f| *f != u32::MAX)
+                    || !members.iter().any(|m| {
+                        regions.get(*m as usize).is_some_and(|mr| mr.neighbours.contains(&nb) && smooth(mr, r))
+                    })
+                {
+                    continue;
+                }
+                let new_points = region_points(r);
+                let ok = match &sphere {
+                    Some(sp) => sp.accepts(r, &new_points, tol),
+                    // Until there are enough facets to fit, take smooth neighbours on trust.
+                    None => true,
+                };
+                if !ok {
+                    tried.push(nb);
+                    continue;
+                }
+                members.push(nb);
+                points.extend(new_points);
+                queue.extend(r.neighbours.iter().copied());
+                if members.len() >= 6 && (sphere.is_none() || members.len().is_power_of_two()) {
+                    let fit = Sphere::fit(&points, tol).filter(|sp| sp.radius < scale * 4.0);
+                    let all_fit = fit.as_ref().is_some_and(|sp| {
+                        members
+                            .iter()
+                            .filter_map(|m| regions.get(*m as usize))
+                            .all(|mr| sp.accepts(mr, &region_points(mr), tol))
+                    });
+                    match (all_fit, &sphere) {
+                        (true, _) => sphere = fit,
+                        // The first fit failed: these facets are not one sphere.
+                        (false, None) => break,
+                        // A later one: keep the sphere found so far.
+                        (false, Some(_)) => {}
+                    }
+                }
+            }
+            let Some(sp) = sphere else { continue };
+            // A real sphere bends: its facets' normals spread over more than a few degrees.
+            let normals: Vec<DVec3> =
+                members.iter().filter_map(|m| regions.get(*m as usize)).map(|r| r.normal).collect();
+            let spread = normals.iter().flat_map(|a| normals.iter().map(move |b| a.dot(*b))).fold(1.0, f64::min);
+            if members.len() < 6 || spread > MIN_CYLINDER_SPAN_DEG.to_radians().cos() {
+                continue;
+            }
+            // A cylinder's normals all lie in one plane (square to its axis); a sphere's do not.
+            let mut m = [[0.0f64; 3]; 3];
+            for nrm in &normals {
+                let v = nrm.to_array();
+                for (i, row) in m.iter_mut().enumerate() {
+                    for (j, cell) in row.iter_mut().enumerate() {
+                        *cell += v[i] * v[j] / normals.len() as f64;
+                    }
+                }
+            }
+            let (values, _) = symmetric_eigen(m);
+            if values.iter().copied().fold(f64::INFINITY, f64::min) < 4.0e-3 {
+                continue;
+            }
+            let facing: f64 = members
+                .iter()
+                .filter_map(|m| regions.get(*m as usize))
+                .map(|r| r.normal.dot((r.centroid - sp.centre).normalize_or_zero()) * r.area)
+                .sum();
+            let fid = faces.len() as u32;
+            let (area, centroid, count) = stats(&regions, &members);
+            faces.push(Face {
+                kind: FaceKind::Sphere { center: sp.centre.as_vec3(), radius: sp.radius as f32, convex: facing > 0.0 },
+                area,
+                centroid,
+                triangles: count,
+            });
+            for m in members {
+                if let Some(f) = face_of_region.get_mut(m as usize) {
+                    *f = fid;
+                }
+            }
+        }
+
+        // 3. Cylinders grown from neighbouring strips.
         for seed in 0..regions.len() {
             if face_of_region.get(seed).is_none_or(|f| *f != u32::MAX) {
                 continue;
@@ -363,7 +472,7 @@ pub fn segment(mesh: &Mesh) -> FaceMap {
             }
         }
 
-        // 3. Small leftover facets joined smoothly become freeform patches.
+        // 4. Small leftover facets joined smoothly become freeform patches.
         let small = |r: &Region| r.area < total_area * 0.01;
         for seed in 0..regions.len() {
             let Some(sr) = regions.get(seed) else { continue };
@@ -443,6 +552,72 @@ struct Cylinder {
     point: DVec3,
     axis: DVec3,
     radius: f64,
+}
+
+struct Sphere {
+    centre: DVec3,
+    radius: f64,
+}
+
+impl Sphere {
+    /// The sphere through `points` (least squares on x² + y² + z² + Dx + Ey + Fz + G = 0).
+    fn fit(points: &[DVec3], tol: f64) -> Option<Self> {
+        let step = points.len().div_ceil(MAX_FIT_POINTS).max(1);
+        let sample: Vec<DVec3> = points.iter().step_by(step).copied().collect();
+        if sample.len() < 4 {
+            return None;
+        }
+        // Centred for conditioning.
+        let mean = sample.iter().sum::<DVec3>() / sample.len() as f64;
+        let mut a = [[0.0f64; 5]; 4];
+        for q in &sample {
+            let d = *q - mean;
+            let row = [d.x, d.y, d.z, 1.0];
+            let rhs = -(d.length_squared());
+            for i in 0..4 {
+                for j in 0..4 {
+                    a[i][j] += row[i] * row[j];
+                }
+                a[i][4] += row[i] * rhs;
+            }
+        }
+        // Gaussian elimination with partial pivoting.
+        for col in 0..4 {
+            let pivot = (col..4).max_by(|&x, &y| a[x][col].abs().total_cmp(&a[y][col].abs()))?;
+            a.swap(col, pivot);
+            let p = a[col][col];
+            if p.abs() < 1.0e-12 {
+                return None;
+            }
+            let pivot_row = a[col];
+            for (row, cells) in a.iter_mut().enumerate() {
+                if row != col {
+                    let f = cells[col] / p;
+                    for (cell, pv) in cells.iter_mut().zip(pivot_row).skip(col) {
+                        *cell -= f * pv;
+                    }
+                }
+            }
+        }
+        let sol: Vec<f64> = (0..4).map(|i| a[i][4] / a[i][i]).collect();
+        let centre = DVec3::new(-sol[0] / 2.0, -sol[1] / 2.0, -sol[2] / 2.0);
+        let r2 = centre.length_squared() - sol[3];
+        if !(r2.is_finite() && r2 > tol * tol) {
+            return None;
+        }
+        let sp = Self { centre: centre + mean, radius: r2.sqrt() };
+        let limit = sp.radius * 2.0e-3 + tol * 10.0;
+        sample.iter().all(|q| (q.distance(sp.centre) - sp.radius).abs() <= limit).then_some(sp)
+    }
+
+    /// A facet belongs when its vertices lie on the sphere and its normal points through the
+    /// centre.
+    fn accepts(&self, r: &Region, points: &[DVec3], tol: f64) -> bool {
+        let limit = self.radius * 2.0e-3 + tol * 10.0;
+        let radial = (r.centroid - self.centre).normalize_or_zero();
+        r.normal.dot(radial).abs() > 0.98
+            && points.iter().all(|q| (q.distance(self.centre) - self.radius).abs() <= limit)
+    }
 }
 
 impl Cylinder {

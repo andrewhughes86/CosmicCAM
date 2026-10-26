@@ -915,11 +915,8 @@ fn flat_end_mills_go_into_the_active_machines_library() {
 
     // Refused: duplicate numbers, other tool types, impossible geometry, limits over the machine's.
     assert!(s.execute("tool.create.flat", &json!({"diameter": 6, "number": 1})).is_err());
-    assert!(matches!(
-        s.execute("tool.create", &json!({"diameter": 6, "type": "bull"})),
-        Err(EngineError::NotSupported(_))
-    ));
-    assert!(matches!(s.execute("tool.create.bull", &Value::Null), Err(EngineError::Disabled(_))));
+    assert!(s.execute("tool.create", &json!({"diameter": 6, "type": "spoon"})).is_err());
+    assert!(s.execute("tool.create.bull", &json!({"diameter": 6, "corner_radius": 4})).is_err(), "radius over half Ø");
     // A ball end mill's corner radius is half its diameter.
     let ball = s.execute("tool.create.ball", &json!({"diameter": 6, "number": 30})).unwrap_or_default();
     assert_eq!((ball["type"].as_str(), ball["corner_radius"].as_f64()), (Some("ball"), Some(3.0)), "{ball}");
@@ -1628,16 +1625,33 @@ fn the_demo_project_opens_ready_to_post() {
     assert_eq!(s.job.path, None, "saving the demo asks where");
     assert!(!s.job.is_modified());
     assert_eq!(s.job.models.len(), 1);
-    assert_eq!(s.job.wcs.len(), 1);
+    assert_eq!(s.job.wcs.len(), 2, "the top and the slope's work plane");
     assert_eq!(s.job.setups.len(), 1);
     assert!(s.job.stock.is_some());
-    assert!(s.job.toolpaths.len() >= 4);
-    // Its tools join the library, so the whole program posts.
-    assert!(s.library.active_machine().map_or(0, |m| m.tools.len()) >= before + 2);
-    let text = gcode(&mut s, json!({}));
+    // 5-axis, 3+2 and helical boring among its toolpaths.
+    let strategies: Vec<&str> = s.job.toolpaths.iter().map(|t| t.strategy.as_str()).collect();
+    for want in ["face", "rough3d", "waterline", "bore", "multiaxis", "drill", "contour2d"] {
+        assert!(strategies.contains(&want), "{want}: {strategies:?}");
+    }
+    assert!(s.job.toolpaths.iter().any(|t| t.multi_axis()));
+    assert!(s.job.toolpaths.iter().any(|t| !t.multi_axis() && t.axis.z < 0.99), "a 3+2 toolpath");
+    // It runs on its own 5-axis machine with the sample library, which becomes active.
+    let m = s.library.active_machine().cloned().unwrap_or_else(|| crate::library::Machine::generic("x".into()));
+    assert_eq!(m.name, crate::demo::DEMO_MACHINE);
+    assert!(m.kinematics.is_some() && m.tools.len() >= before + 40 && !s.library.holders.is_empty());
+    assert!(s.job.toolpaths.iter().all(|t| t.machine == m.id));
+    // The whole program posts with the machine's Fanuc post: tilted plane and tool tip control.
+    let g = s.execute("post.gcode.get", &json!({ "units": "mm" })).unwrap_or_default();
+    let text = g["text"].as_str().unwrap_or_default().to_owned();
+    assert_eq!(g["post"], "fanuc", "{g}");
     assert!(text.lines().count() > 1000 && text.ends_with("%\n"));
-    // Opening it again shows a second copy only if the first was kept; a blank tab is replaced.
-    assert_eq!(s.tabs().len(), 1);
+    assert!(text.contains("G43.4") && text.contains("G68.2"));
+    // Opening it again adds no second machine and no duplicate tools.
+    let machines = s.library.machines.len();
+    assert!(s.execute("job.demo.open", &Value::Null).is_ok());
+    assert_eq!(s.library.machines.len(), machines);
+    // Opening it again shows a second copy (the first was kept).
+    assert_eq!(s.tabs().len(), 2);
 }
 
 #[test]
@@ -2186,4 +2200,133 @@ fn tilting_tools_are_simulated_in_voxels() {
     // A finish straight into raw stock buries the tool: the shank rubs.
     let c = s.execute("sim.collision.check", &Value::Null).unwrap_or_default();
     assert!(c["events"].as_array().into_iter().flatten().any(|e| e["kind"] == "shank_contact"), "{c}");
+}
+
+#[test]
+fn every_tool_type_is_created_with_its_own_geometry() {
+    let mut s = Session::new();
+    for ty in crate::tooling::TYPES {
+        let id = format!("tool.create.{}", ty.id);
+        let t = s.execute(&id, &json!({ "diameter": 10 }));
+        assert!(t.is_ok(), "{id}: {t:?}");
+        let t = t.unwrap_or_default();
+        assert_eq!(t["type"], ty.id);
+        assert_eq!(t["type_label"], ty.label);
+        // Each create command offers only the values its type uses.
+        let spec = cmd::find(&id).map(|c| c.params).unwrap_or_default();
+        for extra in ["corner_radius", "tip_angle", "tip_diameter", "tip_length", "taper_angle", "thread_pitch"] {
+            assert_eq!(spec.iter().any(|p| p.name == extra), ty.fields.contains(&extra), "{id} {extra}");
+        }
+        // The profile the preview and simulation draw is the type's outline.
+        let prof = s.execute("tool.profile.get", &json!({ "number": t["number"] })).unwrap_or_default();
+        assert!(prof["points"].as_array().is_some_and(|p| p.len() >= 4), "{id}: {prof}");
+    }
+    // Values that do not fit the type are refused.
+    for (id, p) in [
+        ("tool.create.bull", json!({"diameter": 6, "corner_radius": 4})),
+        ("tool.create.lollipop", json!({"diameter": 6, "neck_diameter": 8})),
+        ("tool.create.center_drill", json!({"diameter": 6, "tip_diameter": 7})),
+        ("tool.create.radius_mill", json!({"diameter": 10, "corner_radius": 4, "tip_diameter": 6})),
+    ] {
+        assert!(s.execute(id, &p).is_err(), "{id} {p}");
+    }
+    // A tap is named by its thread, a ball's corner radius follows its diameter.
+    let tap = s.execute("tool.create.tap", &json!({"diameter": 8})).unwrap_or_default();
+    assert_eq!(tap["name"], "M8×1.25 tap");
+    let ball = s.execute("tool.create.ball", &json!({"diameter": 8})).unwrap_or_default();
+    let edited = s.execute("tool.edit", &json!({"number": ball["number"], "diameter": 10})).unwrap_or_default();
+    assert_eq!(edited["corner_radius"], 5.0);
+    // Lists filter by type and search.
+    let drills = s.execute("tool.list", &json!({"type": "drill"})).unwrap_or_default();
+    assert_eq!(drills.as_array().map(Vec::len), Some(1));
+    let found = s.execute("tool.list", &json!({"search": "lollipop"})).unwrap_or_default();
+    assert_eq!(found.as_array().map(Vec::len), Some(1));
+}
+
+#[test]
+fn presets_holders_and_the_sample_library() {
+    let mut s = Session::new();
+    let t = s.execute("tool.create.flat", &json!({"diameter": 10, "flutes": 3})).unwrap_or_default();
+    let n = t["number"].clone();
+    // Surface speed and chip load work out speed and feed.
+    let p = s
+        .execute("tool.preset.set", &json!({"number": n, "name": "Aluminium", "workpiece": "aluminium", "surface_speed": 250, "feed_per_tooth": 0.05}))
+        .unwrap_or_default();
+    let preset = &p["presets"][0];
+    let rpm = (250_000.0 / (std::f64::consts::PI * 10.0)).round();
+    assert_eq!(preset["spindle_rpm"], rpm, "{p}");
+    assert_eq!(preset["feed"], (rpm * 0.15).round());
+    // Too fast for the machine: refused.
+    assert!(s.execute("tool.preset.set", &json!({"number": n, "name": "Fast", "spindle_rpm": 90000})).is_err());
+    let applied = s.execute("tool.preset.apply", &json!({"number": n, "name": "Aluminium"})).unwrap_or_default();
+    assert_eq!(applied["spindle_rpm"], rpm);
+    // A toolpath can take its cutting data from a preset.
+    let mut job = sample_with_tool();
+    assert!(
+        job.execute("tool.preset.set", &json!({"number": 1, "name": "Slow", "spindle_rpm": 4000, "feed": 300})).is_ok()
+    );
+    let bottom = base_bottom(&mut job);
+    let tp = job.execute("toolpath.contour", &json!({"geometry": [bottom], "preset": "Slow"})).unwrap_or_default();
+    let mv = moves(&mut job, tp["id"].as_str().unwrap_or_default());
+    assert!(mv.iter().filter(|m| m["kind"] == "cut").all(|m| m["feed"] == 300.0));
+    assert!(gcode(&mut job, json!({})).contains("S4000 M3"));
+    assert!(job.execute("toolpath.contour", &json!({"geometry": [bottom], "preset": "Nonesuch"})).is_err());
+    assert!(s.execute("tool.preset.remove", &json!({"number": n, "name": "Aluminium"})).is_ok());
+    // Holders: created, given to a tool, removed (the tool keeps going without one).
+    let h = s
+        .execute("holder.create", &json!({"name": "ER25", "segment_a": [42, 42, 20], "segment_b": [36, 50, 25]}))
+        .unwrap_or_default();
+    assert_eq!(h["height"], 45.0, "{h}");
+    let hid = h["id"].clone();
+    assert!(s.execute("tool.edit", &json!({"number": n, "holder": hid})).is_ok());
+    assert!(s.execute("tool.edit", &json!({"number": n, "holder": "holder.99"})).is_err());
+    let prof = s.execute("tool.profile.get", &json!({"number": n})).unwrap_or_default();
+    assert!(prof["holder"].as_array().is_some_and(|p| p.len() == 6), "{prof}");
+    assert!(s.execute("holder.create", &json!({"name": "Bad", "segment_a": [0, 10, 5]})).is_err());
+    let r = s.execute("holder.remove", &json!({"id": hid})).unwrap_or_default();
+    assert_eq!(r["tools"], 1);
+    // The sample library: two tools of each type, with holders; loading it twice adds nothing.
+    let first = s.execute("tool.library.sample", &json!({})).unwrap_or_default();
+    assert!(first["imported"].as_u64().unwrap_or(0) >= 39 && first["holders"].as_u64() == Some(6), "{first}");
+    assert!(first["skipped"].as_array().is_some_and(|k| k.len() == 1), "T1 was taken: {first}");
+    let again = s.execute("tool.library.sample", &json!({})).unwrap_or_default();
+    assert_eq!((again["imported"].as_u64(), again["holders"].as_u64()), (Some(0), Some(0)), "{again}");
+    // Export and import carry the holders.
+    let file = TempFile::new("sample-tools.json", b"");
+    assert!(s.execute("tool.library.export", &json!({"path": file.path()})).is_ok());
+    let mut other = Session::new();
+    let r = other.execute("tool.library.import", &json!({"path": file.path()})).unwrap_or_default();
+    assert!(r["imported"].as_u64().unwrap_or(0) >= 40 && r["holders"].as_u64() == Some(6), "{r}");
+    let t3 = other.library.active_machine().and_then(|m| m.tool(3).cloned());
+    assert!(t3.as_ref().is_some_and(|t| other.library.holder_of(t).is_some()));
+}
+
+#[test]
+fn strategies_take_the_tools_that_suit_them_and_helical_boring_opens_holes() {
+    let mut s = Session::new();
+    assert!(s.execute("job.demo.open", &Value::Null).is_ok());
+    let bore = s.job.toolpaths.iter().find(|t| t.strategy == "bore").cloned();
+    assert!(bore.is_some(), "no bore in the demo");
+    let Some(bore) = bore else { return };
+    // The Ø24 hole at (15, 0), 20 deep from z 45, bored with the Ø12 end mill: the tool centre
+    // stays within 6 mm of the hole's axis and reaches the floor.
+    let cuts: Vec<CosmicCAM_geom::Vec3> =
+        bore.moves.iter().filter(|m| m.kind == crate::toolpath::MoveKind::Cut).map(|m| m.to).collect();
+    assert!(cuts.iter().all(|p| ((p.x - 15.0).hypot(p.y) - 6.0) < 1.0e-3), "beyond the hole");
+    assert!(cuts.iter().any(|p| (p.z - 25.0).abs() < 1.0e-3) && cuts.iter().all(|p| p.z >= 25.0 - 1.0e-3));
+    assert!(cuts.iter().any(|p| ((p.x - 15.0).hypot(p.y) - 6.0).abs() < 1.0e-3), "the last helix reaches the wall");
+    // A tool too wide for the hole, and a drill, are refused.
+    let geometry = bore.params["geometry"].clone();
+    assert!(s.execute("toolpath.bore", &json!({"geometry": geometry, "tool": 21})).is_err(), "face mill");
+    assert!(
+        s.execute("toolpath.bore", &json!({"geometry": geometry, "tool": 6})).is_ok(),
+        "Ø16 bull nose fits a Ø24 hole"
+    );
+    assert!(s.execute("toolpath.bore", &json!({"geometry": geometry, "tool": 25})).is_err(), "a drill");
+    // Strategies pick a fitting tool when none is named, and refuse unfitting ones.
+    assert!(s.execute("toolpath.multiaxis", &json!({"tool": 1})).is_err(), "a flat end mill cannot multi-axis finish");
+    assert!(s.execute("toolpath.drill", &json!({"geometry": geometry, "tool": 3})).is_err(), "a ball cannot drill");
+    let tap = s.execute("toolpath.drill", &json!({"geometry": geometry, "tool": 34})).unwrap_or_default();
+    assert_eq!(tap["params"]["tool"], 34);
+    assert!(s.job.toolpaths.last().and_then(|t| t.drill.as_ref()).is_some_and(|d| d.cycle == "tap" && d.pitch == 1.5));
 }

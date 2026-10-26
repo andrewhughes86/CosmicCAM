@@ -5,9 +5,9 @@
 | 1 | Desktop UI & theme engine | **Done** (2026-10-24) |
 | 2 | Model import & geometry ingestion | **Done except STEP/IGES** (2026-10-24) |
 | 3 | Work coordinate system (WCS) creation | **Done** (2026-10-24) |
-| 4 | Tool library & management | **In progress** (flat and ball end mills, machine libraries, 4/5-axis kinematics 2026-10-25) |
+| 4 | Tool library & management | **Done** (20 tool types, presets, holders, sample library, 4/5-axis kinematics 2026-10-25) |
 | 5 | Stock setup & material definition | **In progress** (setups, box stock options 2026-10-25) |
-| 6 | Toolpath creation engine | **In progress** (contour, face, pocket, drill, 3D rough, waterline, raster, 3+2, multi-axis finish 2026-10-25) |
+| 6 | Toolpath creation engine | **In progress** (contour, face, pocket, drill, helical bore, 3D rough, waterline, raster, 3+2, multi-axis finish 2026-10-25) |
 | 7 | Material removal simulation & verification | **In progress** (height-field and voxel stock simulation, gouges, collisions 2026-10-25) |
 | 8 | Post-processor & G-code export | **In progress** (Python posts, arc fitting, limits, 4/5-axis output 2026-10-25) |
 | 9 | MCP agent integration | Planned |
@@ -105,6 +105,31 @@
 - Still to come: bull-nose tools, holder geometry, fixtures, comparing the
   cut stock with the part (rest material), background computation for long programs.
 
+## Tool library (2026-10-25)
+
+- `engine::tooling`: twenty tool types, each with the values its geometry needs (corner/form
+  radius, point angle, tip flat or pilot diameter and length, taper, neck and reach, thread pitch
+  and hand), material, coating, coolant through, vendor and product number; typical values per
+  type and diameter; per-type checks. `Tool::profile` is the outline as a solid of revolution:
+  the preview, the simulation's tool and the multi-axis collision body are all drawn from it.
+- Cutting presets per workpiece material (`tool.preset.set` / `remove` / `apply`), worked out from
+  surface speed and chip load; `tool.feeds` does the same for the tool's own data; toolpaths take
+  `preset`.
+- Holders (`holder.create` / `edit` / `remove` / `list`), shared by the machines; a tool's holder
+  is drawn, checked by the multi-axis finish and reported by the simulation (`holder_contact`).
+- `tool.create.<type>` for every type with only its values; `tool.list` filters by type and
+  search; `tool.profile.get`; export and import carry holders; `tool.library.sample` (and
+  `samples/tools.json`): two tools of every type with presets and holders.
+- Library pane: New tool menu of all types, type filter and search, columns for the type's
+  values, the holder, a preview from the real outline with the holder, the type's values and the
+  presets (Use, delete), the holder library; the tool dialog previews what is typed through the
+  engine.
+- Strategies take the tool types that suit them and pick a fitting tool by default; drilling picks
+  its cycle and a tap's pitch from the tool.
+- Face recognition finds spheres (domes, ball pockets) as one face.
+- Still to do: bull nose and cone drop cutters (3D strategies with those), chamfer and thread
+  milling toolpaths, holder collision checks in the 3-axis strategies.
+
 ## Demo project (2026-10-25)
 
 - `samples/demo.cosmic` (from `samples/demo-part.obj`) is built in and opens at start-up while
@@ -113,6 +138,11 @@
 - Job files save the tools their toolpaths use; opening adds missing ones to the library and moves
   toolpaths on unknown machines to the active one.
 - Faster screenshots for recordings (`settle: false`, background PNG writing).
+- Rebuilt for 5-axis (`cargo xtask demo` makes the part, the job and `samples/tools.json`): a base
+  with a dome, a block with a 45° slope carrying a Ø5 hole square to it and a Ø24 bore; the
+  "Demo 5-axis trunnion" machine with the sample library (added on opening if missing); face,
+  rough, waterline, helical bore, a 5-axis finish of the dome, 3+2 spot and peck drilling of the
+  angled hole, profile; checked free of gouges and collisions when built.
 
 ## Toolpath strategies (2026-10-25)
 

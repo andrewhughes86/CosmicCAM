@@ -145,10 +145,15 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         shortcut: None,
         params: &[
             Param::required("id", ParamKind::Str, "Model id, e.g. model.1"),
-            Param::optional("kind", ParamKind::Choice(&["plane", "cylinder", "freeform"]), "Only faces of this kind"),
+            Param::optional(
+                "kind",
+                ParamKind::Choice(&["plane", "cylinder", "sphere", "freeform"]),
+                "Only faces of this kind",
+            ),
         ],
         returns: "list of faces {face, model, kind, area, centroid, triangles, ...}: planes add normal and point; \
-                  cylinders add base, axis, radius, diameter, length and hole (at most 5000)",
+                  cylinders add base, axis, radius, diameter, length and hole; spheres add center, radius, diameter \
+                  and convex (at most 5000)",
         enabled: always,
         run: |s, p| {
             let id = params::req_str(p, "id")?;
