@@ -30,7 +30,7 @@ const MAX_REPORTED: usize = 50;
 /// Rapid rate assumed when the machine gives none faster, mm/min.
 const RAPID_RATE: f64 = 10_000.0;
 /// Most cells a voxel stock gets by default (a finer `cell` may ask for up to `MAX_VOXELS`).
-const DEFAULT_VOXELS: f64 = 6.0e6;
+const DEFAULT_VOXELS: f64 = 8.0e6;
 const MAX_VOXELS: usize = 24_000_000;
 
 fn bad(m: impl Into<String>) -> EngineError {
@@ -317,7 +317,7 @@ impl Sim {
             let volume = size.x * size.y * size.z;
             let cell = cell
                 .filter(|c| *c > 0.0)
-                .unwrap_or_else(|| (smallest / 3.0).max((volume / DEFAULT_VOXELS).cbrt()).clamp(0.05, 5.0));
+                .unwrap_or_else(|| (smallest / 4.0).max((volume / DEFAULT_VOXELS).cbrt()).clamp(0.05, 5.0));
             let v = Voxels::new(stock.min.as_dvec3(), stock.max.as_dvec3(), cell, MAX_VOXELS).ok_or_else(|| {
                 bad(format!("the stock needs more than {MAX_VOXELS} cells at {cell:.3} mm; use a coarser `cell`"))
             })?;
@@ -416,7 +416,7 @@ impl Sim {
                     let m = m.clone();
                     self.cut_voxels(&m, index, fa, fb, tool);
                 } else if let Some(tool) = tool {
-                    let cut = self.zmap.cut(a, b, tool.radius);
+                    let cut = self.zmap.cut_tool(a, b, tool.radius, tool.ball);
                     self.removed += cut.volume;
                     let tol = self.zmap.cell() * 0.5;
                     let kind = if m.kind == MoveKind::Rapid && cut.core_depth > tol {

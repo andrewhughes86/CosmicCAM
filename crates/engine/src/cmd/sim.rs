@@ -48,7 +48,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             Param::optional(
                 "cell",
                 ParamKind::Length { min: 0.0, max: 100.0 },
-                "Stock grid spacing, mm (default: a quarter of the smallest tool radius; voxels: a third, coarser for big stock)",
+                "Stock grid spacing, mm (default: a quarter of the smallest tool radius; voxels: a quarter, coarser for big stock)",
             ),
             Param::optional(
                 "mode",

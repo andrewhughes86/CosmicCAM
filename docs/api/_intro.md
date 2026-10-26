@@ -386,6 +386,10 @@ at the machine's rapid rate) and shows the stock as it is cut, with flat and bal
 When every toolpath works along one tool axis the stock is a height grid in that axis's frame;
 when the tool tilts (multi-axis toolpaths, or 3+2 toolpaths along different axes) it is a voxel
 model, cut by the tool swept along each move with its axis. `mode` forces one or the other.
+Ball ends cut true round scallops in both. The voxel model keeps each cell's distance to the cut
+surface (not just inside or outside), so domes, bores and scallops are drawn smooth between
+cells; its default cell is a quarter of the smallest tool radius, coarser when the stock would
+need more than about 8 million cells.
 
 ```python
 cc.sim_start(cell=0.25)                 # all toolpaths; or toolpaths=["toolpath.2", ...], mode="voxel"

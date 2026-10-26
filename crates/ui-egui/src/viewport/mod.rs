@@ -134,10 +134,13 @@ pub struct Viewport {
     cube_hover: Option<overlay::CubeHover>,
     /// Stock being defined, drawn as a see-through box over the scene.
     pub stock_preview: Option<CosmicCAM_geom::Aabb>,
-    /// What the simulated stock was last drawn from: (cut revision, marks revision, theme).
-    sim_stock_key: Option<(u64, u64, Theme)>,
-    /// When the simulated stock was last rebuilt, seconds of app time.
+    /// What the simulated stock was last drawn from: (cut revision, marks revision, theme,
+    /// playing).
+    sim_stock_key: Option<(u64, u64, Theme, bool)>,
+    /// When the simulated stock was last rebuilt, seconds of app time, and how long to wait
+    /// before rebuilding it while playing (longer for a bigger mesh).
     sim_stock_built: f64,
+    sim_stock_interval: f64,
     /// Where the simulated tool was last drawn.
     sim_tool_key: Option<[i64; 3]>,
     /// Scene built before the GPU existed, uploaded once it does.
@@ -181,6 +184,7 @@ impl Viewport {
             stock_preview: None,
             sim_stock_key: None,
             sim_stock_built: f64::NEG_INFINITY,
+            sim_stock_interval: 0.08,
             sim_tool_key: None,
             pending_upload: None,
             animating: false,
@@ -516,10 +520,12 @@ impl Viewport {
             shank: theme::linear(tokens.text_muted),
         };
         let now = ui.input(|i| i.time);
-        let key = (sim.stock_revision(), sim.marks_revision, session.prefs.theme);
-        let due = !sim.playing || now - self.sim_stock_built > 0.08;
+        let key = (sim.stock_revision(), sim.marks_revision, session.prefs.theme, sim.playing);
+        let due = !sim.playing || now - self.sim_stock_built > self.sim_stock_interval;
         if self.sim_stock_key != Some(key) && due {
             let g = sim::stock(sim, &colours);
+            // A big mesh takes a while to build and upload: rebuild it less often while playing.
+            self.sim_stock_interval = 0.08 + g.triangles.len() as f64 / 6.0e6;
             let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_stock(&g)));
             self.sim_stock_key = Some(key);
             self.sim_stock_built = now;

@@ -102,6 +102,9 @@
 - `sim.gouge.check`: cells cut below the part's surface (measured against the lowest surface
   around each cell, so cuts beside walls are not flagged); `sim.collision.check`: rapids that
   remove material and cuts deeper than the flutes (cells wholly under the cutter only).
+- Smooth round cuts (2026-10-25): the voxel stock is a signed distance field (exact swept-ball and
+  swept-cylinder distances, surface nets with sub-cell crossings and gradient normals), and the
+  height grid cuts the ball's true underside, so domes, bores and scallops no longer look stepped.
 - Still to come: bull-nose tools, holder geometry, fixtures, comparing the
   cut stock with the part (rest material), background computation for long programs.
 

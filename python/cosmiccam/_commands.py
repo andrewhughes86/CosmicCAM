@@ -3060,7 +3060,7 @@ class Commands:
 
         Args:
             toolpaths: Toolpaths to run, in order (default: all).
-            cell: Stock grid spacing, mm (default: a quarter of the smallest tool radius; voxels: a third, coarser for big stock) (0 to 100 mm).
+            cell: Stock grid spacing, mm (default: a quarter of the smallest tool radius; voxels: a quarter, coarser for big stock) (0 to 100 mm).
             mode: Stock model: a height field (one tool axis), voxels (any axis), or auto: voxels when the tool tilts — one of auto, height, voxel.
 
         Returns:

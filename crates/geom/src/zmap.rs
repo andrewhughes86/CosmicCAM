@@ -1,7 +1,8 @@
 //! A height field ("Z-map") of the stock for 3-axis material removal: a grid over the stock's
-//! footprint holding the top of the material in each cell. A flat end mill moving from one
-//! point to another lowers every cell its bottom passes over to the lowest height it reaches
-//! there. Coordinates are in the toolpath frame, Z along the tool.
+//! footprint holding the top of the material in each cell. A tool moving from one point to
+//! another lowers every cell its end passes over to the lowest height it reaches there: a flat
+//! end mill's bottom, or the underside of a ball end mill's ball. Coordinates are in the
+//! toolpath frame, Z along the tool.
 
 use glam::{DVec2, DVec3};
 
@@ -95,6 +96,11 @@ impl ZMap {
     /// Moves a flat end mill of `radius` from `a` to `b` (its bottom centre), removing the
     /// material it passes through.
     pub fn cut(&mut self, a: DVec3, b: DVec3, radius: f64) -> Cut {
+        self.cut_tool(a, b, radius, false)
+    }
+
+    /// Moves a flat (or, with `ball`, ball) end mill of `radius` from tip `a` to tip `b`.
+    pub fn cut_tool(&mut self, a: DVec3, b: DVec3, radius: f64, ball: bool) -> Cut {
         let mut out = Cut::default();
         if !(a.is_finite() && b.is_finite() && radius.is_finite() && radius > 0.0) {
             return out;
@@ -135,6 +141,38 @@ impl ZMap {
                     }
                 };
                 let Some(low) = low else { continue };
+                // A ball's underside rises away from its centre: the lowest it reaches over this
+                // cell, over the stretch of the move it covers the cell (convex there).
+                let low = if ball {
+                    let (t0, t1) = if qa < 1.0e-18 {
+                        (0.0, 1.0)
+                    } else {
+                        let qb = 2.0 * f.dot(d);
+                        let qc = f.length_squared() - r2;
+                        let sq = (qb * qb - 4.0 * qa * qc).max(0.0).sqrt();
+                        (((-qb - sq) / (2.0 * qa)).max(0.0), ((-qb + sq) / (2.0 * qa)).min(1.0))
+                    };
+                    let under = |t: f64| {
+                        let c = a.truncate() + d * t;
+                        let h2 = (r2 - c.distance_squared(p)).max(0.0);
+                        a.z + (b.z - a.z) * t + radius - h2.sqrt()
+                    };
+                    let (mut lo, mut hi) = (t0, t1);
+                    for _ in 0..40 {
+                        if hi - lo < 1.0e-6 {
+                            break;
+                        }
+                        let (m1, m2) = (lo + (hi - lo) / 3.0, hi - (hi - lo) / 3.0);
+                        if under(m1) < under(m2) {
+                            hi = m2;
+                        } else {
+                            lo = m1;
+                        }
+                    }
+                    under((lo + hi) / 2.0).min(under(t0)).min(under(t1))
+                } else {
+                    low
+                };
                 let low = low.max(self.bottom);
                 if let Some(z) = self.z.get_mut(j * self.nx + i) {
                     let old = f64::from(*z);
@@ -166,6 +204,22 @@ impl ZMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_ball_leaves_a_round_groove() {
+        let mut z = block();
+        // A Ø6 ball along X with its tip at z 15: across the groove the floor follows the ball.
+        z.cut_tool(DVec3::new(-10.0, 25.0, 15.0), DVec3::new(110.0, 25.0, 15.0), 3.0, true);
+        for dy in [0.0, 1.0, 2.0, 2.5] {
+            let h = z.height_at(DVec2::new(50.25, 25.25 + dy)).unwrap_or(f64::NAN);
+            let expect = 18.0 - (9.0 - (dy + 0.25_f64).powi(2)).sqrt();
+            assert!((h - expect).abs() < 1.0e-3, "{dy}: {h} vs {expect}");
+        }
+        // A flat end mill leaves a flat floor.
+        let mut f = block();
+        f.cut(DVec3::new(-10.0, 25.0, 15.0), DVec3::new(110.0, 25.0, 15.0), 3.0);
+        assert_eq!(f.height_at(DVec2::new(50.25, 27.25)), Some(15.0));
+    }
 
     /// A 100 × 50 × 20 block with 0.5 mm cells (an empty 1-cell map if that ever failed).
     fn block() -> ZMap {

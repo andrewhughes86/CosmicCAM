@@ -1,9 +1,12 @@
 //! A voxel model of the stock, for simulating tools that are not vertical (3+2 and 5-axis): a
-//! grid of solid / empty cells cut by a tool swept along a move with any (constant) axis.
+//! grid holding, at each cell centre, the signed distance to the material's surface (positive
+//! inside, a few cells either way), cut by a tool swept along a move with any (constant) axis.
 //!
-//! - A move removes every cell whose centre the cutting part of the tool sweeps through: a
-//!   cylinder (flat end mill) or a cylinder on a ball (ball end mill), tested exactly against the
-//!   straight sweep. Cells the shank sweeps through are counted as shank contact and removed.
+//! - A move takes the distance at each cell near the tool to the smaller of what it was and the
+//!   distance to the swept cutting part of the tool: a cylinder (flat end mill) or a cylinder on
+//!   a ball (ball end mill), worked out exactly for the straight sweep. Keeping distances, not
+//!   just solid or empty, puts the surface between cell centres, so round and spherical cuts come
+//!   out round. Cells the shank or holder sweeps through are counted as contact and removed.
 //! - [`Voxels::part_cells`] marks the cells inside a closed mesh, for gouge checks.
 //! - [`Voxels::surface`] meshes the solid with surface nets for display.
 
@@ -50,9 +53,13 @@ pub struct VoxelCut {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Voxels {
     origin: DVec3,
+    /// The stock box's far corner (the near one is `origin`).
+    far: DVec3,
     cell: f64,
     dims: [usize; 3],
-    bits: Vec<u64>,
+    /// Signed distance to the surface at each cell centre, in units of `cell / STEPS`, positive
+    /// inside the material, clamped to ±127 (about two cells).
+    values: Vec<i8>,
     /// Bumped whenever a cut removes something.
     pub revision: u64,
 }
@@ -109,6 +116,71 @@ fn in_swept_cylinder(w: DVec3, d: DVec3, a: DVec3, h0: f64, h1: f64, r: f64) -> 
     intersect(s, (qb - root) / qa, (qb + root) / qa).is_some()
 }
 
+/// Distance units per cell (so the ±127 stored spans about two cells either side).
+const STEPS: f64 = 64.0;
+
+/// The signed distance from `q` to a capped cylinder along unit `a` from `h0` to `h1`, radius `r`
+/// (negative inside).
+fn cylinder_distance(q: DVec3, a: DVec3, h0: f64, h1: f64, r: f64) -> f64 {
+    let h = q.dot(a);
+    let dx = (q - a * h).length() - r;
+    let dy = (h0 - h).max(h - h1);
+    let (ox, oy) = (dx.max(0.0), dy.max(0.0));
+    (ox * ox + oy * oy).sqrt() + dx.max(dy).min(0.0)
+}
+
+/// The signed distance from `w` (relative to the tip's start) to that cylinder swept by the tip
+/// along `d`: the least distance over the sweep, which is convex in the sweep, so a golden
+/// section search finds it.
+fn swept_cylinder_distance(w: DVec3, d: DVec3, a: DVec3, h0: f64, h1: f64, r: f64, precision: f64) -> f64 {
+    let f = |s: f64| cylinder_distance(w - d * s, a, h0, h1, r);
+    let len = d.length();
+    if len < 1.0e-9 {
+        return f(0.0);
+    }
+    let da = d.dot(a);
+    let dp = d - a * da;
+    let (wa, wp) = (w.dot(a), w - a * w.dot(a));
+    let cap = |rho: f64, lo: f64, hi: f64| {
+        let dx = rho - r;
+        let dy = (lo - wa).max(wa - hi);
+        let (ox, oy) = (dx.max(0.0), dy.max(0.0));
+        (ox * ox + oy * oy).sqrt() + dx.max(dy).min(0.0)
+    };
+    // Square to the axis (a 3-axis move): a slot with round ends, exactly.
+    if da.abs() < 1.0e-9 * len {
+        let l2 = dp.length_squared();
+        let t = (wp.dot(dp) / l2).clamp(0.0, 1.0);
+        return cap((wp - dp * t).length(), h0, h1);
+    }
+    // Along the axis (a plunge): a longer cylinder.
+    if dp.length() < 1.0e-9 * len {
+        return cap(wp.length(), h0 + da.min(0.0), h1 + da.max(0.0));
+    }
+    const GOLD: f64 = 0.618_033_988_749_894_8;
+    let (mut lo, mut hi) = (0.0, 1.0);
+    let (mut x1, mut x2) = (hi - GOLD * (hi - lo), lo + GOLD * (hi - lo));
+    let (mut f1, mut f2) = (f(x1), f(x2));
+    // Enough steps to pin the sweep down to `precision` along the move.
+    let steps = ((len / precision.max(1.0e-9)).ln() / 0.4812).ceil().clamp(6.0, 30.0) as usize;
+    for _ in 0..steps {
+        if f1 < f2 {
+            hi = x2;
+            x2 = x1;
+            f2 = f1;
+            x1 = hi - GOLD * (hi - lo);
+            f1 = f(x1);
+        } else {
+            lo = x1;
+            x1 = x2;
+            f1 = f2;
+            x2 = lo + GOLD * (hi - lo);
+            f2 = f(x2);
+        }
+    }
+    f1.min(f2).min(f(0.0)).min(f(1.0))
+}
+
 fn segment_distance_sq(p: DVec3, a: DVec3, d: DVec3) -> f64 {
     let l2 = d.length_squared();
     let t = if l2 > 1.0e-24 { ((p - a).dot(d) / l2).clamp(0.0, 1.0) } else { 0.0 };
@@ -131,14 +203,31 @@ impl Voxels {
             return None;
         }
         let dims = [(d.x as usize).max(1), (d.y as usize).max(1), (d.z as usize).max(1)];
-        let n = dims[0] * dims[1] * dims[2];
-        let mut bits = vec![u64::MAX; n.div_ceil(64)];
-        if let Some(last) = bits.last_mut()
-            && !n.is_multiple_of(64)
-        {
-            *last = (1u64 << (n % 64)) - 1;
+        let mut v = Self { origin: lo, far: hi, cell, dims, values: Vec::new(), revision: 0 };
+        let mut values = Vec::with_capacity(dims[0] * dims[1] * dims[2]);
+        for k in 0..dims[2] {
+            for j in 0..dims[1] {
+                for i in 0..dims[0] {
+                    values.push(v.quantize(v.box_distance(v.centre(i, j, k))));
+                }
+            }
         }
-        Some(Self { origin: lo, cell, dims, bits, revision: 0 })
+        v.values = values;
+        Some(v)
+    }
+
+    /// The distance from `p` into the original stock box (negative outside it).
+    fn box_distance(&self, p: DVec3) -> f64 {
+        (p - self.origin).min(self.far - p).min_element()
+    }
+
+    /// A distance in mm as a stored value.
+    fn quantize(&self, mm: f64) -> i8 {
+        (mm * STEPS / self.cell).round().clamp(-127.0, 127.0) as i8
+    }
+
+    fn value(&self, n: usize) -> i8 {
+        self.values.get(n).copied().unwrap_or(-127)
     }
 
     pub fn cell(&self) -> f64 {
@@ -158,13 +247,21 @@ impl Voxels {
         (i < nx && j < ny && k < nz).then_some((k * ny + j) * nx + i)
     }
 
+    /// Whether cell (i, j, k)'s centre is in the material.
     pub fn get(&self, i: usize, j: usize, k: usize) -> bool {
-        self.index(i, j, k).and_then(|n| self.bits.get(n / 64).map(|w| w >> (n % 64) & 1 == 1)).unwrap_or(false)
+        self.index(i, j, k).is_some_and(|n| self.value(n) > 0)
     }
 
-    fn clear_bit(&mut self, n: usize) {
-        if let Some(w) = self.bits.get_mut(n / 64) {
-            *w &= !(1u64 << (n % 64));
+    /// Lowers cell `n`'s distance to at most `v`; true when that took its centre out of the
+    /// material.
+    fn lower(&mut self, n: usize, v: i8) -> bool {
+        match self.values.get_mut(n) {
+            Some(slot) if v < *slot => {
+                let was = *slot > 0;
+                *slot = v;
+                was && v <= 0
+            }
+            _ => false,
         }
     }
 
@@ -172,14 +269,16 @@ impl Voxels {
         self.origin + (DVec3::new(i as f64, j as f64, k as f64) + 0.5) * self.cell
     }
 
-    /// Solid cells.
+    /// Cells whose centres are in the material.
     pub fn count(&self) -> usize {
-        self.bits.iter().map(|w| w.count_ones() as usize).sum()
+        self.values.iter().filter(|v| **v > 0).count()
     }
 
-    /// Solid volume, mm³.
+    /// Material volume, mm³: each cell counts by how far its centre lies inside (a cell the
+    /// surface halves counts half).
     pub fn volume(&self) -> f64 {
-        self.count() as f64 * self.cell.powi(3)
+        let fill: f64 = self.values.iter().map(|v| (0.5 + f64::from(*v) / STEPS).clamp(0.0, 1.0)).sum();
+        fill * self.cell.powi(3)
     }
 
     /// Cell index range covering world `lo`..`hi`, clipped to the grid.
@@ -222,54 +321,74 @@ impl Voxels {
             (lo - DVec3::splat(pad), hi + DVec3::splat(pad))
         };
         let ball_start = from + a * r;
-        // The tool one cell smaller all round, for telling deep cuts from grazes.
         let c = self.cell;
-        let (rs, shank_rs) = ((r - c).max(0.0), (shank_r - c).max(0.0));
+        // Distances matter within this band of the surface; beyond it a cell is just in or out.
+        let band = 127.0 * c / STEPS;
+        let (h0, h1) = (if tool.ball { r } else { 0.0 }, flute);
         let [nx, ny, _] = self.dims;
-        // The tool itself.
-        let (lo, hi) = swept(0.0, length, r.max(shank_r) + c);
+        // The flutes: distances near them are worked out exactly.
+        let (lo, hi) = swept(0.0, flute, r + band);
         if let Some([is, js, ks]) = self.range(lo, hi) {
             for k in ks {
                 for j in js.clone() {
                     for i in is.clone() {
                         let n = (k * ny + j) * nx + i;
-                        let solid = self.bits.get(n / 64).is_some_and(|w| w >> (n % 64) & 1 == 1);
-                        if !solid {
+                        if self.value(n) <= -127 {
                             continue;
                         }
                         let p = self.centre(i, j, k);
                         let w = p - from;
-                        let flutes = if tool.ball {
-                            segment_distance_sq(p, ball_start, d) <= r * r || in_swept_cylinder(w, d, a, r, flute, r)
-                        } else {
-                            in_swept_cylinder(w, d, a, 0.0, flute, r)
-                        };
-                        if flutes {
+                        // The signed distance to the swept flutes, if within the band.
+                        let mut dt = f64::INFINITY;
+                        if tool.ball {
+                            dt = segment_distance_sq(p, ball_start, d).sqrt() - r;
+                        }
+                        if in_swept_cylinder(w, d, a, h0 - band, h1 + band, r + band) {
+                            let deep = h1 - h0 > 2.0 * band
+                                && r > band
+                                && in_swept_cylinder(w, d, a, h0 + band, h1 - band, r - band);
+                            let dc = if deep { -band } else { swept_cylinder_distance(w, d, a, h0, h1, r, c / 32.0) };
+                            dt = dt.min(dc);
+                        }
+                        if dt <= band && self.lower(n, self.quantize(dt)) {
                             out.removed += 1;
                             let h = w.dot(a);
                             out.lowest = Some(out.lowest.map_or(h, |l: f64| l.min(h)));
-                            let deep = if tool.ball {
-                                segment_distance_sq(p, ball_start, d) <= rs * rs
-                                    || in_swept_cylinder(w, d, a, r, flute, rs)
-                            } else {
-                                in_swept_cylinder(w, d, a, c, flute, rs)
-                            };
-                            out.deep += usize::from(deep);
-                            self.clear_bit(n);
-                        } else if shank_r > 0.0 && in_swept_cylinder(w, d, a, flute, length, shank_r) {
-                            out.shank += 1;
-                            if in_swept_cylinder(w, d, a, flute + c, length, shank_rs) {
-                                out.deep_shank += 1;
-                                out.shank_at.get_or_insert(p);
+                            out.deep += usize::from(dt < -c);
+                        }
+                    }
+                }
+            }
+        }
+        // The shank: whatever material the flutes left in its way.
+        if shank_r > 0.0 && length > flute {
+            let (lo, hi) = swept(flute, length, shank_r + c);
+            if let Some([is, js, ks]) = self.range(lo, hi) {
+                for k in ks {
+                    for j in js.clone() {
+                        for i in is.clone() {
+                            let n = (k * ny + j) * nx + i;
+                            if self.value(n) <= 0 {
+                                continue;
                             }
-                            self.clear_bit(n);
+                            let p = self.centre(i, j, k);
+                            let w = p - from;
+                            if in_swept_cylinder(w, d, a, flute, length, shank_r) {
+                                out.shank += 1;
+                                if in_swept_cylinder(w, d, a, flute + c, length, (shank_r - c).max(0.0)) {
+                                    out.deep_shank += 1;
+                                    out.shank_at.get_or_insert(p);
+                                }
+                                self.lower(n, -1);
+                            }
                         }
                     }
                 }
             }
         }
         // The holder, in its own box: usually well above the stock, so nothing to look at.
-        for &(h0, h1, hr) in &tool.holder {
+        for &(g0, g1, hr) in &tool.holder {
+            let (h0, h1) = (g0, g1);
             if !(hr > 0.0 && h1 > h0) {
                 continue;
             }
@@ -279,15 +398,14 @@ impl Voxels {
                 for j in js.clone() {
                     for i in is.clone() {
                         let n = (k * ny + j) * nx + i;
-                        let solid = self.bits.get(n / 64).is_some_and(|w| w >> (n % 64) & 1 == 1);
-                        if !solid {
+                        if self.value(n) <= 0 {
                             continue;
                         }
                         let p = self.centre(i, j, k);
                         if in_swept_cylinder(p - from, d, a, length + h0, length + h1, (hr - c).max(0.0)) {
                             out.holder += 1;
                             out.holder_at.get_or_insert(p);
-                            self.clear_bit(n);
+                            self.lower(n, -1);
                         }
                     }
                 }
@@ -387,85 +505,114 @@ impl Voxels {
         out
     }
 
-    /// The solid's surface as a smooth mesh (surface nets), sampling every `step` cells: a
-    /// coarse cell is solid when every fine cell in it is, so narrow cuts stay visible.
+    /// The material's surface as a smooth mesh (surface nets on the distances), sampling every
+    /// `step` cells: a coarse sample takes the lowest distance in its block, so narrow cuts stay
+    /// visible. Vertices sit where the distances cross zero, normals follow their gradient.
     pub fn surface(&self, step: usize) -> Surface {
         let step = step.max(1);
         let [fx, fy, fz] = self.dims;
         let (nx, ny, nz) = (fx.div_ceil(step), fy.div_ceil(step), fz.div_ceil(step));
         let cell = self.cell * step as f64;
-        let solid: Vec<bool> = {
-            let mut v = vec![false; nx * ny * nz];
+        let coarse: Vec<f32> = if step == 1 {
+            self.values.iter().map(|v| f32::from(*v)).collect()
+        } else {
+            let mut out = vec![0.0f32; nx * ny * nz];
             for k in 0..nz {
                 for j in 0..ny {
                     for i in 0..nx {
-                        let mut all = true;
-                        'block: for kk in k * step..((k + 1) * step).min(fz) {
+                        let mut low = 127i8;
+                        for kk in k * step..((k + 1) * step).min(fz) {
                             for jj in j * step..((j + 1) * step).min(fy) {
                                 for ii in i * step..((i + 1) * step).min(fx) {
-                                    if !self.get(ii, jj, kk) {
-                                        all = false;
-                                        break 'block;
-                                    }
+                                    low = low.min(self.value((kk * fy + jj) * fx + ii));
                                 }
                             }
                         }
-                        if let Some(s) = v.get_mut((k * ny + j) * nx + i) {
-                            *s = all;
+                        if let Some(slot) = out.get_mut((k * ny + j) * nx + i) {
+                            // In coarse-cell units, so crossings land in the right place.
+                            *slot = f32::from(low) / step as f32;
                         }
                     }
                 }
             }
-            v
-        };
-        // Coarse cell (i, j, k) with i in -1..=n: outside the grid is empty; `inside_box` tells
-        // the original stock (cut when empty) from the space around it.
-        let at = |i: isize, j: isize, k: isize| -> (bool, bool) {
-            if i < 0 || j < 0 || k < 0 || i >= nx as isize || j >= ny as isize || k >= nz as isize {
-                return (false, false);
-            }
-            let n = (k as usize * ny + j as usize) * nx + i as usize;
-            (solid.get(n).copied().unwrap_or(false), true)
+            out
         };
         let centre =
             |i: isize, j: isize, k: isize| self.origin + (DVec3::new(i as f64, j as f64, k as f64) + 0.5) * cell;
+        // The samples with a border of one all round (i in -1..=n), outside the grid carrying on
+        // the distance to the stock box so its faces come out where they are; flat, for speed.
+        let (px, py, pz) = (nx + 2, ny + 2, nz + 2);
+        let mut padded = vec![0.0f32; px * py * pz];
+        for k in 0..pz {
+            for j in 0..py {
+                for i in 0..px {
+                    let (ci, cj, ck) = (i as isize - 1, j as isize - 1, k as isize - 1);
+                    let inside =
+                        ci >= 0 && cj >= 0 && ck >= 0 && ci < nx as isize && cj < ny as isize && ck < nz as isize;
+                    let v = if inside {
+                        coarse.get((ck as usize * ny + cj as usize) * nx + ci as usize).copied().unwrap_or(-127.0)
+                    } else {
+                        (self.box_distance(centre(ci, cj, ck)) * STEPS / cell).clamp(-127.0, 127.0) as f32
+                    };
+                    if let Some(slot) = padded.get_mut((k * py + j) * px + i) {
+                        *slot = v;
+                    }
+                }
+            }
+        }
         let mut out = Surface::default();
-        // One vertex per dual cell (the cube between eight cell centres) that the surface crosses.
+        // One vertex per dual cell (the cube between eight sample points) the surface crosses.
         let (vx, vy, vz) = (nx + 1, ny + 1, nz + 1);
         let mut vertex = vec![u32::MAX; vx * vy * vz];
-        let corners: [(isize, isize, isize); 8] =
+        let corners: [(usize, usize, usize); 8] =
             [(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0), (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)];
+        let offsets: [usize; 8] = corners.map(|(a, b, c)| (c * py + b) * px + a);
         let edges: [(usize, usize); 12] =
             [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)];
         for k in 0..vz {
             for j in 0..vy {
+                let row = (k * py + j) * px;
                 for i in 0..vx {
-                    let base = (i as isize - 1, j as isize - 1, k as isize - 1);
-                    let states: Vec<(bool, bool)> =
-                        corners.iter().map(|(a, b, c)| at(base.0 + a, base.1 + b, base.2 + c)).collect();
-                    let filled = states.iter().filter(|s| s.0).count();
-                    if filled == 0 || filled == 8 {
+                    // Dual cell (i, j, k) has padded samples (i..i+1, j..j+1, k..k+1) at its corners.
+                    let base = row + i;
+                    let mut vals = [0.0f64; 8];
+                    let mut inside = 0;
+                    for (slot, off) in vals.iter_mut().zip(offsets) {
+                        let v = padded.get(base + off).map_or(-127.0, |v| f64::from(*v));
+                        inside += usize::from(v > 0.0);
+                        *slot = v;
+                    }
+                    if inside == 0 || inside == 8 {
                         continue;
                     }
+                    let cb = (i as isize - 1, j as isize - 1, k as isize - 1);
                     let mut sum = DVec3::ZERO;
                     let mut crossings = 0.0_f64;
                     for (e0, e1) in edges {
-                        let (Some(s0), Some(s1)) = (states.get(e0), states.get(e1)) else { continue };
-                        if s0.0 != s1.0 {
-                            let (Some(c0), Some(c1)) = (corners.get(e0), corners.get(e1)) else { continue };
-                            let p0 = centre(base.0 + c0.0, base.1 + c0.1, base.2 + c0.2);
-                            let p1 = centre(base.0 + c1.0, base.1 + c1.1, base.2 + c1.2);
-                            sum += (p0 + p1) * 0.5;
+                        let (v0, v1) = (vals[e0], vals[e1]);
+                        if (v0 > 0.0) != (v1 > 0.0) {
+                            let (c0, c1) = (corners[e0], corners[e1]);
+                            let p0 = centre(cb.0 + c0.0 as isize, cb.1 + c0.1 as isize, cb.2 + c0.2 as isize);
+                            let p1 = centre(cb.0 + c1.0 as isize, cb.1 + c1.1 as isize, cb.2 + c1.2 as isize);
+                            let t = (v0 / (v0 - v1)).clamp(0.0, 1.0);
+                            sum += p0 + (p1 - p0) * t;
                             crossings += 1.0;
                         }
                     }
-                    let cut = states.iter().any(|s| s.1 && !s.0);
+                    let p = sum / crossings.max(1.0);
+                    // The distances fall going out of the material: the normal points down them.
+                    let g = DVec3::new(
+                        (vals[1] + vals[3] + vals[5] + vals[7]) - (vals[0] + vals[2] + vals[4] + vals[6]),
+                        (vals[2] + vals[3] + vals[6] + vals[7]) - (vals[0] + vals[1] + vals[4] + vals[5]),
+                        (vals[4] + vals[5] + vals[6] + vals[7]) - (vals[0] + vals[1] + vals[2] + vals[3]),
+                    );
                     if let Some(slot) = vertex.get_mut((k * vy + j) * vx + i) {
                         *slot = out.positions.len() as u32;
                     }
-                    out.positions.push((sum / crossings.max(1.0)).as_vec3());
-                    out.normals.push(Vec3::ZERO);
-                    out.cut.push(cut);
+                    out.positions.push(p.as_vec3());
+                    out.normals.push((-g).normalize_or_zero().as_vec3());
+                    // On the original stock's faces, or a cut?
+                    out.cut.push(self.box_distance(p) > 0.35 * self.cell);
                     out.cells.push([
                         (i.saturating_sub(1) * step).min(fx.saturating_sub(1)),
                         (j.saturating_sub(1) * step).min(fy.saturating_sub(1)),
@@ -480,21 +627,20 @@ impl Voxels {
             }
             vertex.get((k as usize * vy + j as usize) * vx + i as usize).copied().filter(|v| *v != u32::MAX)
         };
-        // Each grid edge between a solid and an empty cell gets a quad of the four dual vertices
-        // around it, facing out of the solid.
-        for k in -1..nz as isize {
-            for j in -1..ny as isize {
-                for i in -1..nx as isize {
-                    let here = at(i, j, k).0;
-                    for axis in 0..3 {
-                        let (di, dj, dk) = [(1, 0, 0), (0, 1, 0), (0, 0, 1)][axis];
-                        let there = at(i + di, j + dj, k + dk).0;
-                        if here == there {
+        // Each grid edge between an inside and an outside sample gets a quad of the four dual
+        // vertices around it, facing out of the material.
+        let inside_at = |n: usize| padded.get(n).is_some_and(|v| *v > 0.0);
+        for k in 0..pz - 1 {
+            for j in 0..py - 1 {
+                for i in 0..px - 1 {
+                    // Padded sample (i, j, k) is cell (i - 1, j - 1, k - 1).
+                    let n = (k * py + j) * px + i;
+                    let here = inside_at(n);
+                    for (axis, step_n) in [1, px, px * py].into_iter().enumerate() {
+                        if here == inside_at(n + step_n) {
                             continue;
                         }
-                        // Dual vertex (a, b, c) sits between cells (a-1..a, ...): the four around
-                        // this edge share its far index along the axis.
-                        let (a, b, c) = (i + 1, j + 1, k + 1);
+                        let (a, b, c) = (i as isize, j as isize, k as isize);
                         let quad = match axis {
                             0 => [(a, b - 1, c - 1), (a, b, c - 1), (a, b, c), (a, b - 1, c)],
                             1 => [(a - 1, b, c - 1), (a - 1, b, c), (a, b, c), (a, b, c - 1)],
@@ -502,25 +648,28 @@ impl Voxels {
                         };
                         let ids: Vec<u32> = quad.iter().filter_map(|(x, y, z)| vid(*x, *y, *z)).collect();
                         let [q0, q1, q2, q3] = ids[..] else { continue };
-                        // Facing from the solid towards the empty side.
                         let tris = if here { [[q0, q1, q2], [q0, q2, q3]] } else { [[q0, q2, q1], [q0, q3, q2]] };
                         out.triangles.extend(tris);
                     }
                 }
             }
         }
+        // Where the gradient gives nothing (flat ties), the faces around the vertex do.
+        let mut fallback = vec![Vec3::ZERO; out.positions.len()];
         for t in &out.triangles {
             let p: Vec<Vec3> = t.iter().filter_map(|i| out.positions.get(*i as usize).copied()).collect();
             let [p0, p1, p2] = p[..] else { continue };
             let n = (p1 - p0).cross(p2 - p0);
             for i in t {
-                if let Some(slot) = out.normals.get_mut(*i as usize) {
+                if let Some(slot) = fallback.get_mut(*i as usize) {
                     *slot += n;
                 }
             }
         }
-        for n in &mut out.normals {
-            *n = n.normalize_or_zero();
+        for (n, f) in out.normals.iter_mut().zip(fallback) {
+            if *n == Vec3::ZERO {
+                *n = f.normalize_or_zero();
+            }
         }
         out
     }
@@ -533,9 +682,10 @@ mod tests {
     fn block() -> Voxels {
         Voxels::new(DVec3::ZERO, DVec3::new(20.0, 20.0, 10.0), 0.5, 1 << 22).unwrap_or_else(|| Voxels {
             origin: DVec3::ZERO,
+            far: DVec3::ZERO,
             cell: 1.0,
             dims: [0; 3],
-            bits: Vec::new(),
+            values: Vec::new(),
             revision: 0,
         })
     }
@@ -605,6 +755,62 @@ mod tests {
         // Brushing the side of the cut by less than a cell is no deep cut.
         let graze = v.cut(DVec3::new(10.0, 10.3, 2.5), DVec3::new(16.0, 10.3, 2.5), DVec3::Z, &tool);
         assert_eq!(graze.deep, 0, "{graze:?}");
+    }
+
+    #[test]
+    fn swept_distances_agree_with_a_brute_force_sweep() {
+        let brute = |w: DVec3, d: DVec3, a: DVec3| {
+            (0..=4000)
+                .map(|k| cylinder_distance(w - d * (k as f64 / 4000.0), a, 0.0, 10.0, 3.0))
+                .fold(f64::INFINITY, f64::min)
+        };
+        let a = DVec3::Z;
+        let tilted = DVec3::new(0.3, -0.2, 1.0).normalize();
+        for (d, axis) in [
+            (DVec3::new(20.0, 5.0, 0.0), a),
+            (DVec3::new(0.0, 0.0, -15.0), a),
+            (DVec3::new(10.0, -4.0, -3.0), a),
+            (DVec3::new(8.0, 2.0, 1.0), tilted),
+        ] {
+            for w in [
+                DVec3::new(5.0, 6.0, 4.0),
+                DVec3::new(2.0, 1.0, -2.0),
+                DVec3::new(-3.5, 0.5, 5.0),
+                DVec3::new(12.0, 3.0, 12.0),
+                DVec3::new(4.0, 1.0, 1.0),
+            ] {
+                let (fast, slow) = (swept_cylinder_distance(w, d, axis, 0.0, 10.0, 3.0, 1.0e-3), brute(w, d, axis));
+                assert!((fast - slow).abs() < 2.0e-3, "{d} {w}: {fast} vs {slow}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_ball_cut_is_round_between_cells() {
+        // A Ø8 ball plunged 3 mm into a block of 0.5 mm cells: the surface it leaves lies on its
+        // sphere to a small part of a cell, not on the cells' faces.
+        let mut v = block();
+        let tool = ToolShape {
+            radius: 4.0,
+            ball: true,
+            flute_length: 8.0,
+            shank_radius: 4.0,
+            length: 40.0,
+            holder: Vec::new(),
+        };
+        v.cut(DVec3::new(10.0, 10.0, 20.0), DVec3::new(10.0, 10.0, 7.0), DVec3::Z, &tool);
+        let centre = DVec3::new(10.0, 10.0, 11.0);
+        let s = v.surface(1);
+        let on_sphere: Vec<f64> = s
+            .positions
+            .iter()
+            .map(|p| p.as_dvec3())
+            .filter(|p| p.z < 9.5 && p.distance(centre) < 5.0)
+            .map(|p| (p.distance(centre) - 4.0).abs())
+            .collect();
+        assert!(on_sphere.len() > 20, "{}", on_sphere.len());
+        let worst = on_sphere.iter().copied().fold(0.0, f64::max);
+        assert!(worst < 0.1, "worst {worst} mm off the sphere");
     }
 
     #[test]

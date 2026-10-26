@@ -10,9 +10,9 @@ use CosmicCAM_render::scene::{SceneGeometry, Vertex};
 use glam::{DVec2, DVec3};
 
 /// Most grid points along one side of the drawn stock; finer stock grids are drawn sampled.
-const MAX_DRAWN: usize = 240;
+const MAX_DRAWN: usize = 400;
 /// Most voxel cells meshed for drawing; finer voxel stock is drawn sampled.
-const MAX_DRAWN_VOXELS: f64 = 1.5e6;
+const MAX_DRAWN_VOXELS: f64 = 8.0e6;
 
 /// Colours for the simulated stock.
 pub struct SimColours {
@@ -47,7 +47,9 @@ pub fn stock(sim: &Sim, c: &SimColours) -> SceneGeometry {
             *g = true;
         }
     }
-    // Each grid point takes the lowest cell around it, so narrow cuts stay visible when sampled.
+    // Each grid point (a cell corner) takes the cells around it: their average when every cell is
+    // drawn, so curved cuts come out smooth; the lowest when the grid is sampled, so narrow cuts
+    // stay visible.
     let w = gx + 1;
     let mut h = vec![0.0f64; w * (gy + 1)];
     let mut colour = vec![c.stock; w * (gy + 1)];
@@ -58,17 +60,23 @@ pub fn stock(sim: &Sim, c: &SimColours) -> SceneGeometry {
                 (ci.saturating_sub(step.max(1)), (ci + step).min(nx).max(ci.saturating_sub(step.max(1)) + 1));
             let (j0, j1) =
                 (cj.saturating_sub(step.max(1)), (cj + step).min(ny).max(cj.saturating_sub(step.max(1)) + 1));
-            let mut low = f64::INFINITY;
+            let (mut low, mut sum, mut count) = (f64::INFINITY, 0.0, 0.0);
             let mut gouge = false;
             for j in j0..j1.min(ny) {
                 for i in i0..i1.min(nx) {
                     if let Some(hz) = z.height(i, j) {
                         low = low.min(hz);
+                        sum += hz;
+                        count += 1.0;
                     }
                     gouge |= gouged.get(j * nx + i).copied().unwrap_or(false);
                 }
             }
-            let low = if low.is_finite() { low } else { top };
+            let low = match (step, count > 0.0) {
+                (1, true) => sum / count,
+                (_, true) => low,
+                _ => top,
+            };
             if let Some(slot) = h.get_mut(v * w + u) {
                 *slot = low;
             }
@@ -143,7 +151,12 @@ pub fn stock(sim: &Sim, c: &SimColours) -> SceneGeometry {
 fn voxel_stock(sim: &Sim, v: &Voxels, c: &SimColours) -> SceneGeometry {
     let [nx, ny, nz] = v.dims();
     let cells = (nx * ny * nz) as f64;
-    let step = ((cells / MAX_DRAWN_VOXELS).cbrt().ceil() as usize).max(1);
+    let mut step = ((cells / MAX_DRAWN_VOXELS).cbrt().ceil() as usize).max(1);
+    // While playing, big stock is drawn at half the resolution so playback keeps up; it is
+    // drawn in full again when it stops.
+    if sim.playing && cells > 1.0e6 {
+        step = step.max(2);
+    }
     let surface = v.surface(step);
     let gouged: std::collections::HashSet<[usize; 3]> =
         sim.voxel_gouges.iter().flatten().map(|g| [g[0] / step, g[1] / step, g[2] / step]).collect();
