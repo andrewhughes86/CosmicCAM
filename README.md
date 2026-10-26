@@ -12,8 +12,8 @@ setup with fitted stock, then a 2D contour around the part and 3D roughing of th
 
 ## Where the project is
 
-**Early development.** Phases 1 and 3 are complete, and Phase 2 is complete apart from STEP/IGES
-import. CosmicCAM imports models, defines WCS, setups, stock, machines and tools, makes 2.5D and
+**Early development.** Phases 1 to 4 are complete. CosmicCAM imports CAD models (STEP, IGES) and
+meshes, defines WCS, setups, stock, machines and tools, makes 2.5D and
 3D toolpaths (with 3+2 and simultaneous 4/5-axis work), simulates the stock removal and posts
 G-code for Fanuc, Haas, LinuxCNC, Grbl and Mach controls. The posts follow published controller documentation and there is no full machine
 simulation yet, so **check its G-code before running it on a machine**.
@@ -21,9 +21,9 @@ simulation yet, so **check its G-code before running it on a machine**.
 | Phase | Milestone | Status |
 | --- | --- | --- |
 | 1 | Desktop UI & theme engine | **Done** |
-| 2 | Model import & geometry ingestion (STL/OBJ, STEP/IGES) | **Done except STEP/IGES** |
+| 2 | Model import & geometry ingestion (STEP, IGES and 12 mesh formats) | **Done** |
 | 3 | Work coordinate system (WCS) creation | **Done** |
-| 4 | Tool library & management | **In progress** |
+| 4 | Tool library & management | **Done** |
 | 5 | Stock setup & material definition | **In progress** (setups, box stock) |
 | 6 | Toolpath creation (2.5D, 3-axis and multi-axis strategies) | **In progress** (contour, face, pocket, drill, 3D rough, waterline, raster, 3+2, multi-axis finish) |
 | 7 | Material-removal simulation & verification | **In progress** (height-field and voxel stock simulation, gouge and collision checks) |
@@ -38,9 +38,14 @@ simulation yet, so **check its G-code before running it on a machine**.
     icons; the tab strip doubles as the title bar, with document tabs and the window controls.
   - Viewport, Explorer, Inspector and Console panes you can drag, stack and resize.
   - A dark theme (default) and a high-contrast light theme, chosen in Preferences.
-- **Model import:** binary and ASCII STL and Wavefront OBJ, from the Import model button
-  (Ctrl+I), drag-and-drop onto the window or `model.import` in scripts. Files are read in mm,
-  cm, m or inches.
+- **Model import:** from the Import model button (Ctrl+I), drag-and-drop onto the window or
+  `model.import` in scripts.
+  - CAD: STEP (AP203, AP214, AP242, with assemblies) and IGES. Their exact surfaces are
+    tessellated in pure Rust to a tolerance you choose (0.01 mm by default), and solids come in
+    watertight.
+  - Meshes: STL, OBJ, 3MF, PLY, OFF, AMF, glTF/GLB, COLLADA, VRML, X3D, 3DS and DXF; gzipped
+    files too.
+  - Files that record their unit are read in it; the rest are read in mm, cm, m or inches.
 - **Setups and stock:** Create setup names a setup and picks its machine, WCS (or the origin) and
   stock: fitted to the model with margins, a fixed size, or two corners, rounded up if wanted, and
   shown see-through while it is defined.
@@ -55,7 +60,8 @@ simulation yet, so **check its G-code before running it on a machine**.
 - **Simulation:** play the program against the stock in machine time (Simulation tab, or Space),
   scrub, step and change speed; gouge check (cuts below the part, shown in red) and collision
   check (rapids through material, cuts deeper than the flutes, the shank rubbing). A height field
-  for one tool axis, voxels when the tool tilts; flat and ball end mills.
+  for one tool axis, voxels when the tool tilts; flat and ball end mills, with round cuts (domes,
+  bores, scallops) drawn smooth.
 - **Explorer:** right-click any item to edit, show/hide, rename, copy, paste, duplicate or
   delete it; an eye beside each toolpath and model shows or hides it (only the selected toolpath
   is drawn otherwise).
@@ -102,7 +108,7 @@ simulation yet, so **check its G-code before running it on a machine**.
   - Orthographic and perspective projection, smooth camera moves and a frame-rate limit.
   - Orbit with left-drag, pan with middle/right-drag or Shift+drag, zoom with the wheel about the cursor.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
-  the same 145 commands. Each command has a typed parameter schema that the engine checks before
+  the same 170 commands. Each command has a typed parameter schema that the engine checks before
   running it.
 - **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
   token-protected localhost control channel.
@@ -144,8 +150,8 @@ cargo run --release -p CosmicCAM
 ```
 
 While CosmicCAM is in pre-release it opens with a **demo project** (`samples/demo.cosmic`): a
-part with a pocket and a boss, a WCS, a setup with its stock, two tools and five toolpaths (face,
-3D rough, pocket, waterline and a profile), ready to inspect, change and post. Reopen it any time
+5-axis part with a dome, an angled face and hole and a bore, on a trunnion machine with the sample
+tool library and toolpaths from facing to 5-axis finishing, ready to inspect, change and post. Reopen it any time
 with **Demo project** on the Home tab; its tools are added to your library if they are missing.
 
 | Option | Effect |
@@ -186,8 +192,9 @@ with cosmiccam.launch(sample=True) as cc:      # starts the app; quits it on exi
 
 | Path | Contents |
 | --- | --- |
-| `crates/geom` | L0 — vectors, bounding boxes (millimetres, Z up) |
+| `crates/geom` | L0 — vectors, meshes, exact CAD curves and surfaces, tessellation, toolpath and stock kernels (millimetres, Z up) |
 | `crates/render` | L1 — orbit camera, scene buffers, view-cube geometry (no GPU code) |
+| `crates/io` | L3 — model file readers (STEP, IGES and the mesh formats) |
 | `crates/engine` | L4 — session, command registry and parameter schemas |
 | `crates/ui-egui` | L5 — theme, ribbon, dock, wgpu viewport, icons, control channel |
 | `apps/CosmicCAM` | The desktop application |
