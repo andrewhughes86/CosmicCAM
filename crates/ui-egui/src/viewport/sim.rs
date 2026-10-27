@@ -2,11 +2,11 @@
 //! (or, for tilting tools, a smooth mesh of the voxel stock), and the tool at its current
 //! position and axis.
 
-use CosmicCAM_engine::sim::{Sim, SimFrame, SimTool};
-use CosmicCAM_geom::Vec3;
-use CosmicCAM_geom::voxel::Voxels;
-use CosmicCAM_render::scene::Rgba;
-use CosmicCAM_render::scene::{SceneGeometry, Vertex};
+use CosmicDMS_engine::sim::{Sim, SimFrame, SimTool};
+use CosmicDMS_geom::Vec3;
+use CosmicDMS_geom::voxel::Voxels;
+use CosmicDMS_render::scene::Rgba;
+use CosmicDMS_render::scene::{SceneGeometry, Vertex};
 use glam::{DVec2, DVec3};
 
 /// Most grid points along one side of the drawn stock; finer stock grids are drawn sampled.

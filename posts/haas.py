@@ -6,7 +6,7 @@ Rigid tapping is set on the control, so G84 is written without M29. On 5-axis ma
 trunnions): TCPC (G234) for simultaneous moves and dynamic work offsets (G254 / G255) for 3+2.
 """
 
-from cosmiccam_post import Post
+from cosmicdms_post import Post
 
 
 class HaasPost(Post):

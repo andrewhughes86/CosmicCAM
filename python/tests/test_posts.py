@@ -1,5 +1,5 @@
 """Tests for the post-processors shipped in posts/: the library's formatting and modal output,
-each controller's dialect, and the runner CosmicCAM starts."""
+each controller's dialect, and the runner CosmicDMS starts."""
 
 import copy
 import json
@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 POSTS = os.path.join(ROOT, "posts")
 sys.path.insert(0, POSTS)
 
-import cosmiccam_post  # noqa: E402
+import cosmicdms_post  # noqa: E402
 import fanuc  # noqa: E402
 import grbl  # noqa: E402
 import haas  # noqa: E402
@@ -24,7 +24,7 @@ import mach  # noqa: E402
 def cl(**job):
     """A small job: a profile with a quarter arc and a helical entry, then a pecked hole."""
     data = {
-        "format": "CosmicCAM-CL/1",
+        "format": "CosmicDMS-CL/1",
         "job": dict({"name": "Bracket", "units": "mm", "program_number": 7, "line_numbers": False}, **job),
         "machine": {"name": "Test mill", "travel": [500, 400, 300], "max_spindle_rpm": 12000, "max_feed": 5000, "tool_capacity": 20},
         "tools": [
@@ -83,11 +83,11 @@ def post(cls, data=None):
 
 class LibraryTest(unittest.TestCase):
     def test_numbers(self):
-        n = cosmiccam_post.Number(3)
+        n = cosmicdms_post.Number(3)
         self.assertEqual(n(1.5), "1.500")
         self.assertEqual(n(-0.0001), "0.000")
-        self.assertEqual(cosmiccam_post.Number(4, trailing_zeros=False)(2.5), "2.5")
-        self.assertEqual(cosmiccam_post.Number(3, trailing_zeros=False, force_decimal=False)(2.0), "2")
+        self.assertEqual(cosmicdms_post.Number(4, trailing_zeros=False)(2.5), "2.5")
+        self.assertEqual(cosmicdms_post.Number(3, trailing_zeros=False, force_decimal=False)(2.0), "2")
 
     def test_fanuc_program(self):
         lines, p = post(fanuc.FanucPost)
@@ -165,19 +165,19 @@ class LibraryTest(unittest.TestCase):
         self.assertIn("M89", lines, "through-spindle coolant has its own off code")
         self.assertIn("G54.1 P2", lines)
         d["operations"][1]["work_offset"] = 60
-        with self.assertRaises(cosmiccam_post.PostError):
+        with self.assertRaises(cosmicdms_post.PostError):
             post(fanuc.FanucPost, d)
 
     def test_errors(self):
         d = cl()
         d["operations"][0]["spindle_rpm"] = 0
-        with self.assertRaises(cosmiccam_post.PostError):
+        with self.assertRaises(cosmicdms_post.PostError):
             post(fanuc.FanucPost, d)
         d = cl()
         d["operations"][0]["spindle_rpm"] = 20000
-        with self.assertRaises(cosmiccam_post.PostError):
+        with self.assertRaises(cosmicdms_post.PostError):
             post(fanuc.FanucPost, d)
-        with self.assertRaises(cosmiccam_post.PostError):
+        with self.assertRaises(cosmicdms_post.PostError):
             post(fanuc.FanucPost, dict(cl(), operations=[]))
 
 
@@ -203,7 +203,7 @@ class ControllerTest(unittest.TestCase):
         self.assertIn("G53 G0 Z0", lines)
         self.assertEqual(lines[-2:], ["M2", "%"])
         d["operations"][1]["work_offset"] = 9
-        with self.assertRaises(cosmiccam_post.PostError):
+        with self.assertRaises(cosmicdms_post.PostError):
             post(linuxcnc.LinuxCNCPost, d)
 
     def test_grbl(self):
@@ -218,7 +218,7 @@ class ControllerTest(unittest.TestCase):
         self.assertIn("G1 Z-15.000", lines)
         d = cl()
         d["operations"][1]["drill"].update(cycle="tap", pitch=1.0)
-        with self.assertRaises(cosmiccam_post.PostError):
+        with self.assertRaises(cosmicdms_post.PostError):
             post(grbl.GrblPost, d)
 
     def test_mach(self):
@@ -240,7 +240,7 @@ class PropertyTest(unittest.TestCase):
         for bad in ({"line_numbers": "maybe"}, {"line_number_step": "x"}, {"comment_style": "fancy"}):
             d = cl()
             d["properties"] = bad
-            with self.assertRaises(cosmiccam_post.PostError):
+            with self.assertRaises(cosmicdms_post.PostError):
                 post(fanuc.FanucPost, d)
         d = cl()
         d["properties"] = {"nonesuch": "1"}
@@ -401,11 +401,11 @@ class FiveAxisTest(unittest.TestCase):
         self.assertIn("G1 X20.000 Z-2.000 F1000.0", lines)
         # TCP without the codes cannot be written.
         d["properties"] = {"plane_output": "tcp"}
-        with self.assertRaises(cosmiccam_post.PostError):
+        with self.assertRaises(cosmicdms_post.PostError):
             post(linuxcnc.LinuxCNCPost, d)
 
     def test_three_axis_controls_refuse_tilted_work(self):
-        with self.assertRaises(cosmiccam_post.PostError):
+        with self.assertRaises(cosmicdms_post.PostError):
             post(grbl.GrblPost, five_axis_cl())
         self.assertNotIn("multi_axis_output", {p["name"] for p in grbl.GrblPost.describe_properties()})
         lines, _ = post(mach.MachPost, five_axis_cl())
@@ -413,7 +413,7 @@ class FiveAxisTest(unittest.TestCase):
         # A tilted operation for a machine with no rotary axes.
         d = five_axis_cl()
         del d["machine"]["kinematics"]
-        with self.assertRaises(cosmiccam_post.PostError):
+        with self.assertRaises(cosmicdms_post.PostError):
             post(fanuc.FanucPost, d)
 
 
@@ -439,7 +439,7 @@ class RunnerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "broken.py")
             with open(path, "w") as f:
-                f.write("from cosmiccam_post import Post\n\nclass Broken(Post):\n    def write_program_start(self, job):\n        raise ValueError('oops')\n")
+                f.write("from cosmicdms_post import Post\n\nclass Broken(Post):\n    def write_program_start(self, job):\n        raise ValueError('oops')\n")
             answer = self.run_post({"action": "post", "post": path, "cl": cl()})
             self.assertIn("oops", answer["error"])
             answer = self.run_post({"action": "post", "post": os.path.join(d, "missing.py"), "cl": cl()})

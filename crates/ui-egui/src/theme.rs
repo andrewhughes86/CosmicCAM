@@ -4,8 +4,8 @@
 //! (inheriting everything else from egui's own dark or light visuals) and
 //! [`Tokens::scene_palette`] maps them into the 3D viewport.
 
-use CosmicCAM_engine::Theme;
-use CosmicCAM_render::ScenePalette;
+use CosmicDMS_engine::Theme;
+use CosmicDMS_render::ScenePalette;
 use egui::{Color32, CornerRadius, Rgba, Stroke, Visuals};
 
 #[derive(Clone, Copy, Debug, PartialEq)]

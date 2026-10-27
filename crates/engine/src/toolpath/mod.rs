@@ -15,7 +15,7 @@ pub mod twod;
 
 use std::sync::Arc;
 
-use CosmicCAM_geom::{Aabb, Vec3};
+use CosmicDMS_geom::{Aabb, Vec3};
 use serde_json::{Value, json};
 
 /// A strategy id as people read it.

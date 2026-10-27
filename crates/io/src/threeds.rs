@@ -5,7 +5,7 @@
 //! (`0x4120`), whose vertices are already in world space. Materials, lights, cameras and the
 //! keyframer are skipped.
 
-use CosmicCAM_geom::{Mat4, Mesh, Vec3};
+use CosmicDMS_geom::{Mat4, Mesh, Vec3};
 
 use crate::{ImportError, Soup};
 

@@ -5,9 +5,9 @@
 
 use std::collections::HashMap;
 
-use CosmicCAM_engine::Session;
-use CosmicCAM_engine::units::DisplayUnits;
-use CosmicCAM_geom::{Aabb, Vec3};
+use CosmicDMS_engine::Session;
+use CosmicDMS_engine::units::DisplayUnits;
+use CosmicDMS_geom::{Aabb, Vec3};
 use egui::{RichText, Ui};
 use serde_json::{Map, Value, json};
 

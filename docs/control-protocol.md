@@ -1,20 +1,20 @@
 # Control protocol
 
-The control channel lets scripts, the Python API (`python/cosmiccam`) and agents drive a
-running CosmicCAM. It is JSON lines over TCP on `127.0.0.1` only.
+The control channel lets scripts, the Python API (`python/cosmicdms`) and agents drive a
+running CosmicDMS. It is JSON lines over TCP on `127.0.0.1` only.
 
 ## Opening it
 
 ```bash
-CosmicCAM --control 5800              # 0 picks a free port; opens the demo project
+CosmicDMS --control 5800              # 0 picks a free port; opens the demo project
 ```
 
-On start the app prints `CosmicCAM control channel listening on 127.0.0.1:PORT` to stdout.
+On start the app prints `CosmicDMS control channel listening on 127.0.0.1:PORT` to stdout.
 
 **Token.** The first request on every connection must carry `"token"`. The token is
-`$CosmicCAM_CONTROL_TOKEN` when set (at least 16 characters); otherwise the app generates a
+`$CosmicDMS_CONTROL_TOKEN` when set (at least 16 characters); otherwise the app generates a
 random 256-bit token and writes it, readable by the user only, to
-`<data dir>/CosmicCAM/control/PORT.token` (`~/.local/share` on Linux, `~/Library/Application Support`
+`<data dir>/CosmicDMS/control/PORT.token` (`~/.local/share` on Linux, `~/Library/Application Support`
 on macOS, `%APPDATA%` on Windows). The file is removed when the app exits. A wrong or missing
 token gets an `unauthorized` error and the connection is closed.
 

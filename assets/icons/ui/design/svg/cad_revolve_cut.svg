@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#INK" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polygon points="6,10 17,15.5 17,25.5 6,20" fill="#SHADE" stroke="#INK"/>
+  <polygon points="17,15.5 27,10.5 27,20.5 17,25.5" fill="#SHADE" stroke="#INK"/>
+  <polygon points="16,5 27,10.5 17,15.5 6,10" fill="#FACE" stroke="#INK"/>
+  <ellipse cx="16.5" cy="10.3" rx="5.5" ry="2.75" fill="#SHADE" stroke="#ACCENT"/>
+  <polyline points="16.5,1 16.5,7.5" stroke="#INK" stroke-dasharray="2 2" stroke-opacity="0.5"/>
+</svg>

@@ -6,12 +6,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use CosmicCAM_engine::Session;
-use CosmicCAM_engine::session::Entity;
-use CosmicCAM_engine::toolpath::Move;
-use CosmicCAM_engine::toolpath::contour::{self, COOLANTS, HEIGHTS, LEADS, RETRACTS};
-use CosmicCAM_engine::units::DisplayUnits;
-use CosmicCAM_geom::Vec3;
+use CosmicDMS_engine::Session;
+use CosmicDMS_engine::session::Entity;
+use CosmicDMS_engine::toolpath::Move;
+use CosmicDMS_engine::toolpath::contour::{self, COOLANTS, HEIGHTS, LEADS, RETRACTS};
+use CosmicDMS_engine::units::DisplayUnits;
+use CosmicDMS_geom::Vec3;
 use egui::{RichText, Ui};
 use serde_json::{Map, Value, json};
 
@@ -172,20 +172,20 @@ impl Strategy {
 
     /// The engine's strategy id, for its height defaults.
     fn engine_id(self) -> &'static str {
-        use CosmicCAM_engine::toolpath::finish as fin;
-        use CosmicCAM_engine::toolpath::strategies as st;
-        use CosmicCAM_engine::toolpath::twod as tw;
+        use CosmicDMS_engine::toolpath::finish as fin;
+        use CosmicDMS_engine::toolpath::strategies as st;
+        use CosmicDMS_engine::toolpath::twod as tw;
         match self {
             Self::Contour => "contour2d",
             Self::Face => st::FACE,
             Self::Pocket => st::POCKET,
-            Self::Drill => CosmicCAM_engine::toolpath::drill::DRILL,
+            Self::Drill => CosmicDMS_engine::toolpath::drill::DRILL,
             Self::Rough => st::ROUGH,
             Self::Waterline => st::WATERLINE,
             Self::Raster => st::RASTER,
-            Self::MultiAxis => CosmicCAM_engine::toolpath::multiaxis::MULTIAXIS,
-            Self::Bore => CosmicCAM_engine::toolpath::bore::BORE,
-            Self::Adaptive => CosmicCAM_engine::toolpath::adaptive::ADAPTIVE,
+            Self::MultiAxis => CosmicDMS_engine::toolpath::multiaxis::MULTIAXIS,
+            Self::Bore => CosmicDMS_engine::toolpath::bore::BORE,
+            Self::Adaptive => CosmicDMS_engine::toolpath::adaptive::ADAPTIVE,
             Self::Scallop => fin::SCALLOP,
             Self::SteepShallow => fin::STEEP_SHALLOW,
             Self::Pencil => fin::PENCIL,
@@ -236,7 +236,7 @@ impl Strategy {
 
     /// The tool types the strategy takes, best first.
     fn tool_kinds(self) -> &'static [&'static str] {
-        use CosmicCAM_engine::tooling as tl;
+        use CosmicDMS_engine::tooling as tl;
         match self {
             Self::Contour | Self::Bore => &["flat", "bull", "ball"],
             Self::Face => &["face_mill", "flat", "bull"],
@@ -245,26 +245,26 @@ impl Strategy {
             Self::Raster => &["ball", "flat", "tapered_ball", "lollipop"],
             Self::MultiAxis | Self::Pencil => tl::BALL_ENDED,
             Self::Scallop | Self::SteepShallow | Self::Spiral | Self::Radial => {
-                CosmicCAM_engine::toolpath::finish::SURFACE_TOOLS
+                CosmicDMS_engine::toolpath::finish::SURFACE_TOOLS
             }
             Self::Flat => &["flat", "bull", "face_mill"],
-            Self::Chamfer => CosmicCAM_engine::toolpath::twod::CHAMFER.kinds,
-            Self::Slot => CosmicCAM_engine::toolpath::twod::SLOT.kinds,
-            Self::Trace => CosmicCAM_engine::toolpath::twod::TRACE.kinds,
+            Self::Chamfer => CosmicDMS_engine::toolpath::twod::CHAMFER.kinds,
+            Self::Slot => CosmicDMS_engine::toolpath::twod::SLOT.kinds,
+            Self::Trace => CosmicDMS_engine::toolpath::twod::TRACE.kinds,
             Self::Thread => &["thread_mill"],
         }
     }
 
     /// (prefix, reference, offset mm) for each height the strategy uses.
     fn heights(self) -> Vec<(&'static str, &'static str, f64)> {
-        use CosmicCAM_engine::toolpath::strategies as st;
+        use CosmicDMS_engine::toolpath::strategies as st;
         match self {
             Self::Contour | Self::Chamfer | Self::Slot | Self::Trace => HEIGHTS.to_vec(),
-            Self::Thread => CosmicCAM_engine::toolpath::twod::THREAD_HEIGHTS.to_vec(),
+            Self::Thread => CosmicDMS_engine::toolpath::twod::THREAD_HEIGHTS.to_vec(),
             Self::Face => st::FACE_HEIGHTS.to_vec(),
             Self::Pocket => st::POCKET_HEIGHTS.to_vec(),
-            Self::Drill => CosmicCAM_engine::toolpath::drill::DRILL_HEIGHTS.to_vec(),
-            Self::Bore => CosmicCAM_engine::toolpath::bore::BORE_HEIGHTS.to_vec(),
+            Self::Drill => CosmicDMS_engine::toolpath::drill::DRILL_HEIGHTS.to_vec(),
+            Self::Bore => CosmicDMS_engine::toolpath::bore::BORE_HEIGHTS.to_vec(),
             Self::Rough | Self::Adaptive => st::ROUGH_HEIGHTS.to_vec(),
             Self::Waterline
             | Self::Raster
@@ -410,7 +410,7 @@ impl ToolpathPanel {
         let p = self.params();
         self.heights = match self.strategy {
             s if s.contour_family() => contour::preview_heights(session, &p),
-            other => CosmicCAM_engine::toolpath::strategies::preview_heights(other.engine_id(), session, &p),
+            other => CosmicDMS_engine::toolpath::strategies::preview_heights(other.engine_id(), session, &p),
         };
         let trial = session.clone();
         let command = self.strategy.command();
@@ -744,7 +744,7 @@ impl ToolpathPanel {
     /// "Start from" a saved template of this strategy: its settings replace the panel's.
     fn template_row(&mut self, ui: &mut Ui, session: &Session) -> bool {
         let command = self.strategy.command();
-        let templates: Vec<&CosmicCAM_engine::library::Template> =
+        let templates: Vec<&CosmicDMS_engine::library::Template> =
             session.library.templates.iter().filter(|t| t.command == command).collect();
         if templates.is_empty() {
             return false;
@@ -782,11 +782,11 @@ impl ToolpathPanel {
             return false;
         };
         let kinds = self.strategy.tool_kinds();
-        let fitting: Vec<&CosmicCAM_engine::library::Tool> =
+        let fitting: Vec<&CosmicDMS_engine::library::Tool> =
             machine.tools.iter().filter(|t| kinds.contains(&t.kind.as_str())).collect();
         if fitting.is_empty() {
             let names: Vec<&str> =
-                kinds.iter().filter_map(|k| CosmicCAM_engine::tooling::tool_type(k)).map(|t| t.label).collect();
+                kinds.iter().filter_map(|k| CosmicDMS_engine::tooling::tool_type(k)).map(|t| t.label).collect();
             ui.label(
                 RichText::new(format!(
                     "{} has no tool this strategy takes ({}). Add one on the Tooling tab, or load the sample library.",
@@ -1443,7 +1443,7 @@ impl ToolpathPanel {
     fn heights_tab(&mut self, ui: &mut Ui, session: &Session, tokens: &Tokens, u: DisplayUnits) -> bool {
         let mut changed = false;
         let defaults = if self.strategy == Strategy::Adaptive && self.takes_geometry() {
-            CosmicCAM_engine::toolpath::strategies::POCKET_HEIGHTS.to_vec()
+            CosmicDMS_engine::toolpath::strategies::POCKET_HEIGHTS.to_vec()
         } else {
             self.strategy.heights()
         };

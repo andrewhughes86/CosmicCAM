@@ -1,4 +1,4 @@
-# CosmicCAM demo part (cargo xtask demo), millimetres, Z up
+# CosmicDMS demo part (cargo xtask demo), millimetres, Z up
 v -70.000000 -45.000000 0.000000
 v -70.000000 45.000000 0.000000
 v 70.000000 45.000000 0.000000

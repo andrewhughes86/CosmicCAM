@@ -10,10 +10,10 @@
 //! - Verification: gouges are cells cut below the part surface; collisions are rapids that
 //!   remove material and cuts deeper than the tool's flutes (the shank would rub).
 
-use CosmicCAM_geom::cutter::DropCutter;
-use CosmicCAM_geom::voxel::{ToolShape, Voxels};
-use CosmicCAM_geom::zmap::ZMap;
-use CosmicCAM_geom::{Aabb, Vec3};
+use CosmicDMS_geom::cutter::DropCutter;
+use CosmicDMS_geom::voxel::{ToolShape, Voxels};
+use CosmicDMS_geom::zmap::ZMap;
+use CosmicDMS_geom::{Aabb, Vec3};
 use glam::{DVec2, DVec3};
 use serde_json::{Value, json};
 

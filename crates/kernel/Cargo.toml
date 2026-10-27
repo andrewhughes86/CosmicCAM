@@ -1,0 +1,15 @@
+[package]
+name = "CosmicDMS-kernel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+glam = { workspace = true }
+truck-modeling = { workspace = true }
+truck-shapeops = { workspace = true }
+truck-meshalgo = { workspace = true }

@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use CosmicCAM_engine::{Pane, Session, Theme, UiRequest, cmd};
+use CosmicDMS_engine::{Pane, Session, Theme, UiRequest, cmd};
 use egui::{Event, Key, KeyboardShortcut, Modifiers, RichText, Ui, UserData, ViewportCommand, vec2};
 use egui_dock::{DockArea, DockState, Style};
 use egui_wgpu::RenderState;
@@ -116,6 +116,8 @@ pub struct CosmicApp {
     /// The setup editor panel, while one is open.
     setup_panel: Option<crate::setup_panel::SetupPanel>,
     trim_panel: Option<crate::trim_panel::TrimPanel>,
+    sketch_panel: Option<crate::cad_panel::SketchPanel>,
+    feature_panel: Option<crate::cad_panel::FeaturePanel>,
     /// The tool library window: open or not, and its preview state.
     library_open: bool,
     settings_open: bool,
@@ -154,9 +156,11 @@ pub struct CosmicApp {
 }
 
 /// Storage key of the machine and tool library (a file on the desktop, localStorage on the web).
-const LIBRARY_KEY: &str = "cosmiccam.library";
+const LIBRARY_KEY: &str = "cosmicdms.library";
 /// Storage key of the preferences.
-const SETTINGS_KEY: &str = "cosmiccam.settings";
+const SETTINGS_KEY: &str = "cosmicdms.settings";
+/// Where settings were kept before the rename (CosmicCAM), still read.
+const LEGACY_SETTINGS_KEY: &str = "cosmiccam.settings";
 
 impl CosmicApp {
     pub fn new(cc: &eframe::CreationContext<'_>, mut session: Session, options: LaunchOptions) -> Self {
@@ -187,11 +191,13 @@ impl CosmicApp {
             startup_status = Some(format!("The demo project could not be opened: {e}"));
         }
         // Saved preferences: the display units and the theme.
-        if let Some(saved) =
-            cc.storage.and_then(|s| s.get_string(SETTINGS_KEY)).and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        if let Some(saved) = cc
+            .storage
+            .and_then(|s| s.get_string(SETTINGS_KEY).or_else(|| s.get_string(LEGACY_SETTINGS_KEY)))
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
         {
             if let Some(units) =
-                saved.get("units").and_then(Value::as_str).and_then(CosmicCAM_engine::units::DisplayUnits::from_id)
+                saved.get("units").and_then(Value::as_str).and_then(CosmicDMS_engine::units::DisplayUnits::from_id)
             {
                 session.prefs.units = units;
             }
@@ -208,13 +214,13 @@ impl CosmicApp {
             match ControlServer::start(port, move || ctx.request_repaint()) {
                 Ok(server) => {
                     // Scripts launching the app read the port from this line.
-                    println!("CosmicCAM control channel listening on 127.0.0.1:{}", server.port());
+                    println!("CosmicDMS control channel listening on 127.0.0.1:{}", server.port());
                     use std::io::Write as _;
                     let _ = std::io::stdout().flush();
                     Some(server)
                 }
                 Err(e) => {
-                    eprintln!("CosmicCAM: control channel not started: {e}");
+                    eprintln!("CosmicDMS: control channel not started: {e}");
                     None
                 }
             }
@@ -232,6 +238,8 @@ impl CosmicApp {
             toolpath_panel: None,
             setup_panel: None,
             trim_panel: None,
+            sketch_panel: None,
+            feature_panel: None,
             settings_open: false,
             saved_prefs,
             library: LibraryState::default(),
@@ -256,6 +264,94 @@ impl CosmicApp {
         }
     }
 
+    /// Closes every docked panel, before another opens.
+    fn close_panels(&mut self) {
+        self.toolpath_panel = None;
+        self.setup_panel = None;
+        self.trim_panel = None;
+        self.sketch_panel = None;
+        self.feature_panel = None;
+    }
+
+    /// Opens a CAD panel for `id` when it is a CAD command run without its settings (a ribbon
+    /// click) or a feature to edit. True when it did.
+    fn start_cad(&mut self, id: &str, params: &Value) -> bool {
+        use crate::cad_panel::{FeatureKind, FeaturePanel, SketchPanel, Tool};
+        let only = |keys: &[&str]| params.as_object().is_some_and(|p| p.keys().all(|k| keys.contains(&k.as_str())));
+        let selected = self.session.view.selection.clone();
+        let selected_sketch = selected
+            .as_deref()
+            .and_then(|s| self.session.job.part.find(s))
+            .filter(|f| f.kind == "sketch")
+            .map(|f| f.id.clone());
+        let plane = selected.as_deref().and_then(|s| s.strip_prefix("plane.")).map(str::to_owned);
+        if id == "cad.sketch" && (params.is_null() || only(&["plane"])) {
+            let plane = params.get("plane").and_then(Value::as_str).map(str::to_owned).or(plane);
+            self.close_panels();
+            self.sketch_panel = Some(SketchPanel::new(&self.session, None, plane.as_deref(), Tool::Line));
+            return true;
+        }
+        if let Some(tool) = Tool::from_command(id).filter(|_| params.is_null()) {
+            match &mut self.sketch_panel {
+                Some(p) => p.set_tool(tool),
+                None => {
+                    self.close_panels();
+                    self.sketch_panel =
+                        Some(SketchPanel::new(&self.session, selected_sketch.as_deref(), plane.as_deref(), tool));
+                }
+            }
+            return true;
+        }
+        if let Some((kind, op)) = FeatureKind::from_command(id).filter(|_| params.is_null() || only(&["sketch"])) {
+            let sketch = params.get("sketch").and_then(Value::as_str).map(str::to_owned).or(selected_sketch);
+            self.close_panels();
+            self.feature_panel = Some(FeaturePanel::new(&self.session, kind, op, None, sketch.as_deref()));
+            return true;
+        }
+        if id == "cad.feature.get" && only(&["id"]) {
+            let Some(f) = params.get("id").and_then(Value::as_str).and_then(|i| self.session.job.part.find(i)).cloned()
+            else {
+                self.status = Some("that feature no longer exists".into());
+                return true;
+            };
+            self.close_panels();
+            match f.kind.as_str() {
+                "sketch" => self.sketch_panel = Some(SketchPanel::new(&self.session, Some(&f.id), None, Tool::Line)),
+                "extrude" => {
+                    self.feature_panel =
+                        Some(FeaturePanel::new(&self.session, FeatureKind::Extrude, "join", Some(&f.id), None))
+                }
+                _ => {
+                    self.feature_panel =
+                        Some(FeaturePanel::new(&self.session, FeatureKind::Revolve, "join", Some(&f.id), None))
+                }
+            }
+            return true;
+        }
+        if id == "cad.mass.get" && params.is_null() {
+            match self.session.execute(id, params) {
+                Ok(m) => {
+                    let u = self.session.prefs.units;
+                    let per = u.mm_per_unit();
+                    let c = &m["center_of_mass"];
+                    let n = |v: &Value| v.as_f64().unwrap_or(0.0);
+                    self.status = Some(format!(
+                        "Volume {:.3} {l}³ · area {:.3} {l}² · centre of mass {} {} {}",
+                        n(&m["volume"]) / per.powi(3),
+                        n(&m["area"]) / per.powi(2),
+                        u.plain(n(&c[0])),
+                        u.plain(n(&c[1])),
+                        u.plain(n(&c[2])),
+                        l = u.length()
+                    ));
+                }
+                Err(e) => self.status = Some(e.to_string()),
+            }
+            return true;
+        }
+        false
+    }
+
     /// Runs a command; failures go to the status bar (and the console log). A command
     /// with an interactive tool, run without parameters (a toolbar click or shortcut),
     /// starts that tool instead.
@@ -269,6 +365,7 @@ impl CosmicApp {
                 return;
             }
             let strategy = strategy.unwrap_or(crate::toolpath_panel::Strategy::Contour);
+            self.close_panels();
             self.toolpath_panel = Some(crate::toolpath_panel::ToolpathPanel::new(&self.session, editing, strategy));
             self.setup_panel = None;
             self.trim_panel = None;
@@ -290,10 +387,16 @@ impl CosmicApp {
                     }
                 },
             };
+            self.close_panels();
             self.setup_panel = Some(SetupPanel::new(&self.session, target));
             self.toolpath_panel = None;
             self.trim_panel = None;
             self.status = None;
+            return;
+        }
+        // CAD: sketch tools open the sketch panel, features the feature panel; editing a
+        // feature opens its panel.
+        if self.start_cad(id, params) {
             return;
         }
         // Trim opens the trim panel, on the toolpaths named (from the explorer) or the selected one.
@@ -324,6 +427,7 @@ impl CosmicApp {
                 self.status = Some("select a toolpath to trim (Ctrl-click in the explorer for several)".into());
                 return;
             }
+            self.close_panels();
             self.trim_panel = Some(crate::trim_panel::TrimPanel::new(&self.session, targets));
             self.toolpath_panel = None;
             self.setup_panel = None;
@@ -334,6 +438,10 @@ impl CosmicApp {
         if params.is_null() && id == "settings.open" {
             self.settings_open = true;
             return;
+        }
+        // Changing mode puts the other mode's panels away.
+        if id == "ui.mode.set" {
+            self.close_panels();
         }
         // Space (or Play) while the simulation runs pauses it.
         if id == "sim.play" && params.is_null() && self.session.sim.as_ref().is_some_and(|s| s.playing) {
@@ -421,7 +529,7 @@ impl CosmicApp {
         let p = incoming.params.clone();
         match incoming.method.as_str() {
             "app.ping" => incoming.ok(json!({
-                "name": "CosmicCAM",
+                "name": "CosmicDMS",
                 "version": env!("CARGO_PKG_VERSION"),
                 "protocol": PROTOCOL_VERSION,
             })),
@@ -502,7 +610,21 @@ impl CosmicApp {
             "ui.start"
                 if matches!(
                     p.get("command").and_then(Value::as_str),
-                    Some("setup.create" | "setup.stock.box" | "toolpath.trim")
+                    Some(
+                        "setup.create"
+                            | "setup.stock.box"
+                            | "toolpath.trim"
+                            | "cad.sketch"
+                            | "cad.sketch.line"
+                            | "cad.sketch.rectangle"
+                            | "cad.sketch.circle"
+                            | "cad.sketch.arc"
+                            | "cad.sketch.polygon"
+                            | "cad.extrude"
+                            | "cad.extrude.cut"
+                            | "cad.revolve"
+                            | "cad.revolve.cut"
+                    )
                 ) =>
             {
                 let command = p.get("command").and_then(Value::as_str).unwrap_or_default().to_owned();
@@ -624,7 +746,7 @@ impl CosmicApp {
     /// The post-processor chooser: every post with its description, the machine's current one
     /// ticked, and where to put your own.
     fn show_post_chooser(&mut self, ctx: &egui::Context, tokens: &Tokens, requests: &mut Vec<Request>) {
-        let posts = CosmicCAM_engine::postproc::available();
+        let posts = CosmicDMS_engine::postproc::available();
         let machine = self.session.library.active_machine();
         let current = machine.map(|m| m.post.clone()).filter(|p| !p.is_empty()).unwrap_or_else(|| "generic".into());
         let machine_name = machine.map_or(String::new(), |m| m.name.clone());
@@ -647,7 +769,7 @@ impl CosmicApp {
             self.show_post_settings(ui, tokens, &current, requests);
             ui.separator();
             ui.add_space(4.0);
-            if let Some(dir) = CosmicCAM_engine::postproc::posts_dir() {
+            if let Some(dir) = CosmicDMS_engine::postproc::posts_dir() {
                 ui.label(
                     RichText::new(format!(
                         "Your own posts go in {}. Copy one from builtin/ there to change it.",
@@ -659,7 +781,7 @@ impl CosmicApp {
                 #[cfg(not(target_arch = "wasm32"))]
                 if ui.button("Open the posts folder").clicked() {
                     requests.push(("post.processor.folder".into(), Value::Null));
-                    let _ = CosmicCAM_engine::postproc::install_builtin(&dir);
+                    let _ = CosmicDMS_engine::postproc::install_builtin(&dir);
                     open_folder(&dir);
                 }
             }
@@ -675,7 +797,7 @@ impl CosmicApp {
 
     /// The settings the machine's post offers, grouped, each editable in place.
     fn show_post_settings(&mut self, ui: &mut Ui, tokens: &Tokens, post: &str, requests: &mut Vec<Request>) {
-        if post == CosmicCAM_engine::postproc::GENERIC {
+        if post == CosmicDMS_engine::postproc::GENERIC {
             ui.label(RichText::new("The generic post has no settings.").color(tokens.text_muted));
             return;
         }
@@ -1004,9 +1126,61 @@ impl eframe::App for CosmicApp {
                 self.trim_panel = None;
             }
         }
+        if let Some(panel) = &mut self.sketch_panel {
+            let (request, keep) = panel.show(ui, &self.session, tokens);
+            for (id, params) in panel.take_requests() {
+                let _ = self.session.execute(&id, &params);
+            }
+            if let Some((id, params)) = request {
+                match self.session.execute(&id, &params) {
+                    Ok(r) => {
+                        self.status = None;
+                        let extrude = panel.extrude_after;
+                        self.sketch_panel = None;
+                        if extrude {
+                            let sketch = r["feature"]["id"].as_str().map(str::to_owned);
+                            self.feature_panel = Some(crate::cad_panel::FeaturePanel::new(
+                                &self.session,
+                                crate::cad_panel::FeatureKind::Extrude,
+                                if self.session.job.part.model.is_some() { "join" } else { "new" },
+                                None,
+                                sketch.as_deref(),
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        panel.extrude_after = false;
+                        panel.fail(e.to_string());
+                    }
+                }
+            } else if !keep {
+                self.sketch_panel = None;
+            }
+        }
+        if let Some(panel) = &mut self.feature_panel {
+            let (request, keep) = panel.show(ui, &self.session, tokens);
+            if let Some((id, params)) = request {
+                panel.warm(&mut self.session.job.part);
+                match self.session.execute(&id, &params) {
+                    Ok(_) => {
+                        self.status = None;
+                        self.feature_panel = None;
+                    }
+                    Err(e) => panel.fail(e.to_string()),
+                }
+            } else if !keep {
+                self.feature_panel = None;
+            }
+        }
         self.viewport.stock_preview = self.setup_panel.as_ref().and_then(|p| p.preview_stock());
         let trim_mode = self.trim_panel.as_ref().map(|p| p.mode(&self.session, self.viewport.hover_point()));
+        let cad_mode = match (&self.sketch_panel, &self.feature_panel) {
+            (Some(p), _) => Some(p.mode(self.viewport.hover_point())),
+            (None, Some(p)) => Some(p.mode(&self.session)),
+            _ => None,
+        };
         self.viewport.pick_mode = match &self.toolpath_panel {
+            _ if cad_mode.is_some() => cad_mode,
             _ if trim_mode.is_some() => trim_mode,
             Some(panel) => Some(panel.mode(&self.session)),
             // The WCS tools work on the active WCS: it shows while they run.
@@ -1055,8 +1229,8 @@ impl eframe::App for CosmicApp {
                         ui,
                         |ui| {
                             for choice in [
-                                CosmicCAM_engine::units::DisplayUnits::Inches,
-                                CosmicCAM_engine::units::DisplayUnits::Millimetres,
+                                CosmicDMS_engine::units::DisplayUnits::Inches,
+                                CosmicDMS_engine::units::DisplayUnits::Millimetres,
                             ] {
                                 if ui.selectable_label(units == choice, choice.label()).clicked() && units != choice {
                                     requests.push(("settings.units.set".into(), json!({ "units": choice.id() })));
@@ -1191,10 +1365,14 @@ impl eframe::App for CosmicApp {
             storage.flush();
         }
         if let Some(hit) = self.viewport.take_pick() {
-            match (&mut self.trim_panel, &mut self.toolpath_panel) {
-                (Some(panel), _) => panel.picked(hit, &self.session),
-                (None, Some(panel)) => panel.picked(hit, &self.session),
-                (None, None) => self.tools.picked(hit, &self.session),
+            if let Some(panel) = &mut self.sketch_panel {
+                panel.picked(hit);
+            } else {
+                match (&mut self.trim_panel, &mut self.toolpath_panel) {
+                    (Some(panel), _) => panel.picked(hit, &self.session),
+                    (None, Some(panel)) => panel.picked(hit, &self.session),
+                    (None, None) => self.tools.picked(hit, &self.session),
+                }
             }
         }
         if let Some((id, params)) = self.tools.show(&ctx, tokens, &self.session) {

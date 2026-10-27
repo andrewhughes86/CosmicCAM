@@ -2,7 +2,7 @@
 //! the vertex, face and edge counts, the vertices, then each face as its corner count and
 //! indices. Colours, normals and texture coordinates after the needed values are ignored.
 
-use CosmicCAM_geom::{Mesh, Vec3};
+use CosmicDMS_geom::{Mesh, Vec3};
 
 use crate::{ImportError, Soup, finite};
 

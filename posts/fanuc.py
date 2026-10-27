@@ -6,7 +6,7 @@ dwell in milliseconds, tool preselect, G28 home. On 4/5-axis machines: tool cent
 both control options; or the machine's own positions with inverse-time feeds (G93).
 """
 
-from cosmiccam_post import Post
+from cosmicdms_post import Post
 
 
 class FanucPost(Post):

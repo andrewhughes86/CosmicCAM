@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use CosmicCAM_geom::{Mat4, Quat, Vec3};
+use CosmicDMS_geom::{Mat4, Quat, Vec3};
 
 use crate::{ImportError, Imported, Soup};
 

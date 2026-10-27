@@ -7,10 +7,10 @@ mod sim_ui;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use CosmicCAM_engine::session::Entity;
-use CosmicCAM_engine::{Display, Session, Theme};
-use CosmicCAM_geom::{Aabb, FaceKind, Vec3};
-use CosmicCAM_render::{OrbitCamera, SceneGeometry, TriadStyle, scene};
+use CosmicDMS_engine::session::Entity;
+use CosmicDMS_engine::{Display, Session, Theme};
+use CosmicDMS_geom::{Aabb, FaceKind, Vec3};
+use CosmicDMS_render::{OrbitCamera, SceneGeometry, TriadStyle, scene};
 use egui::{Color32, Pos2, Rect, Sense, Ui, pos2};
 use egui_wgpu::RenderState;
 use serde_json::Value;
@@ -55,21 +55,24 @@ pub struct PickMode {
     /// be parallel to one of them, nor lie along the line two of them share.
     pub independent_of: Vec<Vec3>,
     /// Toolpaths being edited, drawn over the scene: each one's start and moves.
-    pub paths: Vec<(Vec3, std::sync::Arc<Vec<CosmicCAM_engine::toolpath::Move>>)>,
+    pub paths: Vec<(Vec3, std::sync::Arc<Vec<CosmicDMS_engine::toolpath::Move>>)>,
     /// WCS the tool works in, drawn while it runs.
     pub wcs: Vec<String>,
     /// Where `Accept::Plane` clicks land: a point on the plane and its normal.
     pub plane: Option<(Vec3, Vec3)>,
     /// Lines the tool draws over the scene (a boundary being drawn), each a polyline.
     pub lines: Vec<Vec<Vec3>>,
-    /// Toolpaths not drawn from the job while the tool shows them as `paths`.
+    /// Toolpaths and models not drawn from the job while the tool shows them otherwise.
     pub hide: Vec<String>,
+    /// A solid the tool would make (a CAD feature being set up), drawn in place of the models
+    /// it hides.
+    pub solid: Option<std::sync::Arc<CosmicDMS_geom::Mesh>>,
 }
 
 /// Viewport colour class of a toolpath move.
-fn path_kind(k: CosmicCAM_engine::toolpath::MoveKind) -> CosmicCAM_render::PathKind {
-    use CosmicCAM_engine::toolpath::MoveKind as M;
-    use CosmicCAM_render::PathKind as P;
+fn path_kind(k: CosmicDMS_engine::toolpath::MoveKind) -> CosmicDMS_render::PathKind {
+    use CosmicDMS_engine::toolpath::MoveKind as M;
+    use CosmicDMS_render::PathKind as P;
     match k {
         M::Rapid => P::Rapid,
         M::Link => P::Link,
@@ -111,7 +114,7 @@ type Drawn = ((u64, u64), std::sync::Arc<Vec<f32>>);
 /// A comparison being worked out, for that key.
 type DrawnJob = ((u64, u64), std::sync::mpsc::Receiver<Option<Vec<f32>>>);
 /// The trail drawn while simulating: (move it reaches, start, moves).
-type Trail = (usize, Vec3, std::sync::Arc<Vec<CosmicCAM_engine::toolpath::Move>>);
+type Trail = (usize, Vec3, std::sync::Arc<Vec<CosmicDMS_engine::toolpath::Move>>);
 
 /// Inputs the highlight geometry was last built from.
 type HighlightKey = (Vec<(String, usize)>, Option<(usize, usize, bool)>, u64, Theme);
@@ -154,7 +157,7 @@ pub struct Viewport {
     fps: f32,
     cube_hover: Option<overlay::CubeHover>,
     /// Stock being defined, drawn as a see-through box over the scene.
-    pub stock_preview: Option<CosmicCAM_geom::Aabb>,
+    pub stock_preview: Option<CosmicDMS_geom::Aabb>,
     /// What the simulated stock was last drawn from: (cut revision, marks revision, theme,
     /// playing, the comparison drawn on it).
     sim_stock_key: Option<(u64, u64, Theme, bool, Option<u64>)>,
@@ -170,6 +173,8 @@ pub struct Viewport {
     in_process_job: Option<(InProcessKey, std::sync::mpsc::Receiver<SceneGeometry>)>,
     /// The in-process stock is on screen (its outline is then not drawn).
     in_process_shown: bool,
+    /// The previewed CAD solid on screen (its mesh's address).
+    solid_shown: Option<usize>,
     /// When the simulated stock was last rebuilt, seconds of app time, and how long to wait
     /// before rebuilding it while playing (longer for a bigger mesh).
     sim_stock_built: f64,
@@ -225,6 +230,7 @@ impl Viewport {
             in_process: None,
             in_process_job: None,
             in_process_shown: false,
+            solid_shown: None,
             pending_upload: None,
             animating: false,
         }
@@ -369,7 +375,7 @@ impl Viewport {
         let x = (p.x - rect.left()) / rect.width() * 2.0 - 1.0;
         let y = 1.0 - (p.y - rect.top()) / rect.height() * 2.0;
         let unproject = |z: f32| {
-            let h = inv * CosmicCAM_geom::Vec4::new(x, y, z, 1.0);
+            let h = inv * CosmicDMS_geom::Vec4::new(x, y, z, 1.0);
             (h.w.abs() > 1.0e-9).then(|| h.truncate() / h.w)
         };
         let (near, far) = (unproject(0.0)?, unproject(1.0)?);
@@ -597,6 +603,25 @@ impl Viewport {
         }
     }
 
+    /// Draws `solid` (a CAD feature's result being set up) in the simulated stock's place.
+    fn show_solid(&mut self, solid: &std::sync::Arc<CosmicDMS_geom::Mesh>, tokens: &Tokens) {
+        let key = std::sync::Arc::as_ptr(solid) as usize;
+        if self.solid_shown == Some(key) {
+            return;
+        }
+        let Some(gpu) = &mut self.gpu else { return };
+        let mut g = SceneGeometry::default();
+        g.push_mesh(
+            solid,
+            theme::linear(theme::blend(tokens.part, tokens.accent, 0.35)),
+            Some(tokens.scene_palette().part_edge),
+        );
+        let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_stock(&g)));
+        self.solid_shown = Some(key);
+        self.in_process = None;
+        self.in_process_shown = false;
+    }
+
     /// Colours for the simulated and in-process stock.
     fn sim_colours(tokens: &Tokens) -> sim::SimColours {
         sim::SimColours {
@@ -629,7 +654,18 @@ impl Viewport {
                 self.in_process = None;
                 self.in_process_shown = false;
             }
-            self.update_in_process(ui, session, colours);
+            if let Some(solid) = self.mode.as_ref().and_then(|m| m.solid.clone()) {
+                self.show_solid(&solid, tokens);
+            } else {
+                if self.solid_shown.take().is_some()
+                    && let Some(gpu) = &mut self.gpu
+                {
+                    let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_stock(&SceneGeometry::default())));
+                    self.in_process = None;
+                    self.in_process_shown = false;
+                }
+                self.update_in_process(ui, session, colours);
+            }
             return;
         };
         if self.in_process.take().is_some() || self.in_process_shown {
@@ -678,8 +714,8 @@ impl Viewport {
     }
 
     /// The current toolpath's moves up to the tool, when the simulation shows them that way.
-    fn update_trail(&mut self, sim: &CosmicCAM_engine::sim::Sim, due: bool) {
-        use CosmicCAM_engine::toolpath::Move;
+    fn update_trail(&mut self, sim: &CosmicDMS_engine::sim::Sim, due: bool) {
+        use CosmicDMS_engine::toolpath::Move;
         // The comparison's colours are not hidden under the trail.
         if sim.show_paths != "done" || sim.compare {
             self.sim_trail = None;
@@ -712,7 +748,7 @@ impl Viewport {
 
     /// The comparison to draw on the simulated stock, worked out in the background while the
     /// simulation is paused; None while it is off, playing or not ready.
-    fn update_comparison(&mut self, ui: &Ui, session: &Session, sim: &CosmicCAM_engine::sim::Sim) -> Option<Drawn> {
+    fn update_comparison(&mut self, ui: &Ui, session: &Session, sim: &CosmicDMS_engine::sim::Sim) -> Option<Drawn> {
         if !sim.compare || sim.voxels.is_some() || sim.playing {
             return None;
         }
@@ -737,7 +773,7 @@ impl Viewport {
             let trial = session.clone();
             let work = move || {
                 let sim = trial.sim.as_deref()?;
-                CosmicCAM_engine::sim::compare(&trial, sim).map(|c| c.thickness)
+                CosmicDMS_engine::sim::compare(&trial, sim).map(|c| c.thickness)
             };
             #[cfg(not(target_arch = "wasm32"))]
             {
@@ -762,7 +798,7 @@ impl Viewport {
     }
 
     /// What the readout says about the comparison while it is not drawn yet.
-    fn comparison_note(&self, sim: &CosmicCAM_engine::sim::Sim) -> Option<&'static str> {
+    fn comparison_note(&self, sim: &CosmicDMS_engine::sim::Sim) -> Option<&'static str> {
         let want = (sim.stock_revision(), sim.compare_tolerance.to_bits());
         if sim.voxels.is_some() {
             Some("Comparing needs a height-field simulation (toolpaths along one tool axis).")
@@ -825,7 +861,7 @@ impl Viewport {
         let trial = session.clone();
         let id = want.1.clone();
         let work = move || {
-            CosmicCAM_engine::sim::in_process(&trial, &id)
+            CosmicDMS_engine::sim::in_process(&trial, &id)
                 .map(|sim| sim::stock(&sim, &colours, None))
                 .unwrap_or_default()
         };
@@ -853,7 +889,7 @@ impl Viewport {
 
     /// The stock being defined: its faces that face the viewer, filled see-through so the
     /// part shows inside it, with its edges drawn over them.
-    fn paint_stock_preview(&self, painter: &egui::Painter, rect: Rect, b: CosmicCAM_geom::Aabb, tokens: &Tokens) {
+    fn paint_stock_preview(&self, painter: &egui::Painter, rect: Rect, b: CosmicDMS_geom::Aabb, tokens: &Tokens) {
         let cam = self.shown;
         let radius = self.scene_bounds.radius().max(b.radius()) + cam.target.distance(self.scene_bounds.center());
         let view_proj = cam.view_proj(rect.aspect_ratio(), radius);
@@ -930,7 +966,7 @@ impl Viewport {
             ),
         ];
         let eye = cam.eye();
-        let perspective = cam.projection == CosmicCAM_render::Projection::Perspective;
+        let perspective = cam.projection == CosmicDMS_render::Projection::Perspective;
         let fill = tokens.stock.gamma_multiply(0.22);
         let stroke = egui::Stroke::new(1.5, tokens.stock);
         for (normal, pts) in faces {
@@ -949,7 +985,7 @@ impl Viewport {
         &self,
         rect: Rect,
         pointer: Option<Pos2>,
-        model: &CosmicCAM_engine::Model,
+        model: &CosmicDMS_engine::Model,
         triangle: usize,
     ) -> Option<Vec3> {
         let pointer = pointer?;
@@ -1084,11 +1120,11 @@ impl Viewport {
     fn rebuild_scene_if_needed(&mut self, session: &mut Session, tokens: &Tokens) {
         let display = session.prefs.display;
         // The grid follows the units, so a units change counts as a setup change.
-        let units = u64::from(session.prefs.units == CosmicCAM_engine::units::DisplayUnits::Inches);
+        let units = u64::from(session.prefs.units == CosmicDMS_engine::units::DisplayUnits::Inches);
         // Only the selected toolpath and those switched on are drawn.
         let selected = session.view.selection.as_deref();
         let hidden = self.mode.as_ref().map(|m| m.hide.clone()).unwrap_or_default();
-        let shown: Vec<&CosmicCAM_engine::toolpath::Toolpath> = session
+        let shown: Vec<&CosmicDMS_engine::toolpath::Toolpath> = session
             .job
             .toolpaths
             .iter()
@@ -1109,7 +1145,7 @@ impl Viewport {
         // While simulating, the cut stock stands in for the part, its box and the toolpaths
         // (all the simulated toolpaths are drawn when the simulation asks for them).
         let simulating = session.sim.is_some();
-        let sim_paths: Vec<&CosmicCAM_engine::toolpath::Toolpath> = session
+        let sim_paths: Vec<&CosmicDMS_engine::toolpath::Toolpath> = session
             .sim
             .as_deref()
             .filter(|sim| sim.show_paths == "all")
@@ -1117,10 +1153,20 @@ impl Viewport {
                 sim.toolpaths.iter().filter_map(|(id, _)| session.job.toolpaths.iter().find(|t| &t.id == id)).collect()
             })
             .unwrap_or_default();
+        // CAD mode draws the part and its sketches; the CAM job's stock, toolpaths and WCS wait.
+        let cad = session.ui.mode == CosmicDMS_engine::Mode::Cad;
+        let hidden_key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            hidden.hash(&mut h);
+            h.finish()
+        };
         let shown_key = shown_key
             ^ u64::from(simulating)
             ^ (u64::from(self.in_process_shown) << 1)
-            ^ ((sim_paths.len() as u64) << 2);
+            ^ ((sim_paths.len() as u64) << 2)
+            ^ (u64::from(cad) << 40)
+            ^ hidden_key.rotate_left(17);
         let key =
             (session.prefs.theme, session.job.revision, session.job.setup_revision ^ (units << 63), display, shown_key);
         if self.scene_key == Some(key) {
@@ -1128,21 +1174,32 @@ impl Viewport {
         }
         let palette = tokens.scene_palette();
         let mut content = SceneGeometry::default();
-        for tp in shown.into_iter().filter(|_| !simulating).chain(sim_paths) {
+        for tp in shown.into_iter().filter(|_| !simulating && !cad).chain(sim_paths) {
             content.push_path(tp.start, tp.moves.iter().map(|m| (path_kind(m.kind), m.to)), &palette);
             if tp.multi_axis() {
                 push_tool_axes(&mut content, tp, palette.path_lead);
             }
         }
         if let Some(stock) = session.job.stock {
-            if display.stock && !simulating && !self.in_process_shown {
+            if display.stock && !simulating && !self.in_process_shown && !cad {
                 content.push_box_edges(&stock, palette.stock_edge);
             }
-            content.bounds.include(stock.min);
-            content.bounds.include(stock.max);
+            if !cad {
+                content.bounds.include(stock.min);
+                content.bounds.include(stock.max);
+            }
+        }
+        if cad {
+            let colour = theme::linear(tokens.accent);
+            for line in CosmicDMS_engine::cad::sketch_polylines(&session.job.part) {
+                for pair in line.windows(2) {
+                    content.push_line(pair[0].as_vec3(), pair[1].as_vec3(), colour);
+                    content.bounds.include(pair[0].as_vec3());
+                }
+            }
         }
         let edge = display.edges.then_some(palette.part_edge);
-        for model in session.job.models.iter().filter(|m| m.visible && !simulating) {
+        for model in session.job.models.iter().filter(|m| m.visible && !simulating && !hidden.contains(&m.id)) {
             content.push_mesh(&model.mesh, palette.part, edge);
         }
         let mut world =
@@ -1159,7 +1216,10 @@ impl Viewport {
             let world = if session.job.wcs.is_empty() { TriadStyle::Full } else { TriadStyle::Faint };
             frames.push((Vec3::ZERO, [Vec3::X, Vec3::Y, Vec3::Z], world));
         }
-        if display.wcs {
+        if cad {
+            frames.retain(|_| false);
+            frames.push((Vec3::ZERO, [Vec3::X, Vec3::Y, Vec3::Z], TriadStyle::Full));
+        } else if display.wcs {
             let active = session.job.active_wcs.as_deref();
             for w in session.job.wcs.iter().filter(|w| visible_wcs.contains(&w.id)) {
                 let style = if active == Some(w.id.as_str()) { TriadStyle::Full } else { TriadStyle::Dim };
@@ -1317,12 +1377,12 @@ const TOOL_GAP: f32 = 4.0;
 
 /// The row of view tools floating at the bottom centre of the viewport.
 fn view_tools(ui: &Ui, viewport: Rect, session: &Session, tokens: &Tokens, requests: &mut Vec<Request>) {
-    let tools = CosmicCAM_engine::cmd::VIEWPORT_TOOLS;
+    let tools = CosmicDMS_engine::cmd::VIEWPORT_TOOLS;
     let width = tools.len() as f32 * (TOOL_BUTTON + TOOL_GAP) - TOOL_GAP;
     let left = viewport.center().x - width / 2.0;
     let centre_y = viewport.bottom() - TOOL_MARGIN - TOOL_BUTTON / 2.0;
     for (n, (id, menu)) in tools.iter().enumerate() {
-        let Some(spec) = CosmicCAM_engine::cmd::find(id) else {
+        let Some(spec) = CosmicDMS_engine::cmd::find(id) else {
             continue;
         };
         let button = Rect::from_center_size(
@@ -1353,7 +1413,7 @@ fn view_tools(ui: &Ui, viewport: Rect, session: &Session, tokens: &Tokens, reque
         }
         if !menu.is_empty() {
             crate::ui_kit::Menu::below(&response).context(tokens, |ui| {
-                for item in menu.iter().filter_map(|m| CosmicCAM_engine::cmd::find(m)) {
+                for item in menu.iter().filter_map(|m| CosmicDMS_engine::cmd::find(m)) {
                     if ui.button(item.label).clicked() {
                         requests.push((item.id.to_owned(), Value::Null));
                     }
@@ -1365,7 +1425,7 @@ fn view_tools(ui: &Ui, viewport: Rect, session: &Session, tokens: &Tokens, reque
 
 /// Short lines up the tool axis along a multi-axis toolpath's cuts, spaced so about 800 show,
 /// so the tilt reads without hiding the path.
-fn push_tool_axes(content: &mut SceneGeometry, tp: &CosmicCAM_engine::toolpath::Toolpath, colour: scene::Rgba) {
+fn push_tool_axes(content: &mut SceneGeometry, tp: &CosmicDMS_engine::toolpath::Toolpath, colour: scene::Rgba) {
     const LENGTH: f32 = 8.0;
     const MOST: usize = 1_000;
     let (cut, _, _) = tp.stats(10_000.0);
@@ -1376,7 +1436,7 @@ fn push_tool_axes(content: &mut SceneGeometry, tp: &CosmicCAM_engine::toolpath::
     for (i, m) in tp.moves.iter().enumerate() {
         travelled += at.distance(m.to);
         at = m.to;
-        if m.kind != CosmicCAM_engine::toolpath::MoveKind::Cut || travelled < spacing || drawn >= MOST {
+        if m.kind != CosmicDMS_engine::toolpath::MoveKind::Cut || travelled < spacing || drawn >= MOST {
             continue;
         }
         travelled = 0.0;

@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use CosmicCAM_geom::{Mat4, Vec3};
+use CosmicDMS_geom::{Mat4, Vec3};
 
 use crate::{ImportError, Imported, Soup, Units};
 

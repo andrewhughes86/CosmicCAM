@@ -4,7 +4,7 @@
 
 use std::f32::consts::TAU;
 
-use CosmicCAM_geom::{Aabb, Mesh, Vec3};
+use CosmicDMS_geom::{Aabb, Mesh, Vec3};
 
 pub type Rgba = [f32; 4];
 
@@ -412,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn meshes_are_drawn_with_their_outline() -> Result<(), CosmicCAM_geom::MeshError> {
+    fn meshes_are_drawn_with_their_outline() -> Result<(), CosmicDMS_geom::MeshError> {
         let (a, b, c, d) = (Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::Z);
         let tetra = Mesh::from_soup([[a, c, b], [a, b, d], [b, c, d], [c, a, d]])?;
         let mut g = SceneGeometry::default();

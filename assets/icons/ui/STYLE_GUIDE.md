@@ -1,8 +1,8 @@
-# CosmicCAM icon style guide
+# CosmicDMS icon style guide
 
 > **Status: approved (2026-10-24).** The first 40 ribbon icons follow it.
 
-CosmicCAM icons are **"shop drawing"** icons: clean technical line work, like a sketch on a
+CosmicDMS icons are **"shop drawing"** icons: clean technical line work, like a sketch on a
 machinist's drawing, with a single accent that marks what the command does. They are drawn for
 this project; they are not modelled on any other product's icons.
 
@@ -90,5 +90,5 @@ Compare every new icon with these before drawing:
 4. `toolpath_pocket` — Path (offset loops)
 5. `sim_play` — Transport (play)
 
-Review sheet: `ICON_SHEET=/tmp/sheet.png cargo test -p CosmicCAM-ui-egui icon_sheet` renders every
+Review sheet: `ICON_SHEET=/tmp/sheet.png cargo test -p CosmicDMS-ui-egui icon_sheet` renders every
 icon at 64, 32 and 16 px in both themes.

@@ -1,5 +1,5 @@
 [package]
-name = "CosmicCAM-engine"
+name = "CosmicDMS-engine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,10 +9,11 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-CosmicCAM-geom = { workspace = true }
+CosmicDMS-geom = { workspace = true }
+CosmicDMS-kernel = { workspace = true }
 glam = { workspace = true }
-CosmicCAM-io = { workspace = true }
-CosmicCAM-render = { workspace = true }
+CosmicDMS-io = { workspace = true }
+CosmicDMS-render = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

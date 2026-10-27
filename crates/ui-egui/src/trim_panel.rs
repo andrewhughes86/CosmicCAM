@@ -5,10 +5,10 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_engine::Session;
-use CosmicCAM_engine::session::Entity;
-use CosmicCAM_engine::toolpath::{Move, MoveKind};
-use CosmicCAM_geom::Vec3;
+use CosmicDMS_engine::Session;
+use CosmicDMS_engine::session::Entity;
+use CosmicDMS_engine::toolpath::{Move, MoveKind};
+use CosmicDMS_geom::Vec3;
 use egui::{RichText, Ui};
 use serde_json::{Map, Value, json};
 
@@ -678,7 +678,7 @@ impl TrimPanel {
                 let index = i + 1;
                 ui.horizontal(|ui| {
                     let editing = self.index == Some(index);
-                    let text = format!("{index}. {}", CosmicCAM_engine::toolpath::trim::describe(t));
+                    let text = format!("{index}. {}", CosmicDMS_engine::toolpath::trim::describe(t));
                     ui.label(if editing { RichText::new(text).color(tokens.accent) } else { RichText::new(text) });
                     if !editing && ui.small_button("Edit").clicked() {
                         self.edit(t, index, session);

@@ -6,7 +6,7 @@ no tool tip control or tilted planes: rotary work is written in the machine's ow
 inverse-time feeds.
 """
 
-from cosmiccam_post import Post
+from cosmicdms_post import Post
 
 
 class MachPost(Post):

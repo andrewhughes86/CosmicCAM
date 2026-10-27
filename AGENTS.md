@@ -1,15 +1,26 @@
-# CosmicCAM — instructions for agents
+# CosmicDMS — instructions for agents
 
-CosmicCAM is a clean-room, open-source, pure-Rust Computer-Aided Manufacturing (CAM) engine and desktop application. 
+CosmicDMS (Cosmic Design and Manufacturing Suite) is a clean-room, open-source, pure-Rust
+design and manufacturing suite: one desktop application with four modes.
 
-The application transforms CAD geometry (B-Rep models, meshes, 2D boundaries) into physical CNC machining toolpaths, material removal simulations, and machine-specific G-Code.
+- **CAD**: parametric part modelling (sketches, extrusions, revolutions, a feature history).
+- **CAM**: CAD geometry (B-Rep models, meshes, 2D boundaries) into CNC toolpaths, material
+  removal simulations and machine-specific G-code.
+- **Drawings** (coming): 2D drawings of parts.
+- **Slicer** (coming): 3D-printer slicing.
+
+The mode switch sits at the far left of the ribbon; each mode has its own ribbon tabs.
 
 Any code adapted from other projects (MIT OR Apache-2.0) is noted in ATTRIBUTION.md.
 
 ## Product name
-CosmicCAM everywhere: crates `CosmicCAM-*`, binaries `CosmicCAM` and `CosmicCAM-cli`,
-`.cosmic` job files, the `CosmicCAM/N` format tag, `CosmicCAM_*` environment variables,
-settings and recovery folders, the MCP server name, docs, CI and packaging. 
+CosmicDMS everywhere: crates `CosmicDMS-*`, binaries `CosmicDMS` and `CosmicDMS-cli`,
+`.cosmic` job files, the `CosmicDMS/N` format tag, `CosmicDMS_*` environment variables,
+settings and recovery folders, the MCP server name, docs, CI and packaging. The project was
+called CosmicCAM before 2026-10-27: old job files (`CosmicCAM/1`), tool and machine library
+files, `CosmicCAM_*` environment variables, the old settings key, the `cosmiccam_post` module
+and the old data folder (moved on first start) are still read; nothing else uses the old name.
+The GitHub repository is still `tangency-labs/CosmicCAM` until it is renamed there.
 
 ## Start every session here
 1. Read `plan/STATUS.md` (current milestone, next task), then the task in `plan/execution-plan.md`
@@ -17,14 +28,14 @@ settings and recovery folders, the MCP server name, docs, CI and packaging.
 `plan/` is gitignored (local only).
 
 ## Never crash
-People trust CosmicCAM with their machining setups and physical machine code; a crash loses their work or risks machine collisions. **This outranks feature work.**
+People trust CosmicDMS with their machining setups and physical machine code; a crash loses their work or risks machine collisions. **This outranks feature work.**
 - **No panics in non-test code:** no `unwrap()`, `expect()`, `panic!`, `unreachable!`, `todo!`,
   `unimplemented!`; no `unsafe` (`unsafe_code = "forbid"`). The exceptions, in the app crate and in
   `crates/threedx-client` (which deny it instead), have no safe API: the macOS-only
   `crates/threedx-client/src/macos.rs`, two functions in
-  `apps/CosmicCAM/src/open_documents.rs`, the Windows-only `apps/CosmicCAM/src/native_crash.rs`,
-  the Windows-only `apps/CosmicCAM/src/native_frame.rs` and the Windows-only
-  `apps/CosmicCAM/src/space_mouse/windows_hid.rs`.
+  `apps/CosmicDMS/src/open_documents.rs`, the Windows-only `apps/CosmicDMS/src/native_crash.rs`,
+  the Windows-only `apps/CosmicDMS/src/native_frame.rs` and the Windows-only
+  `apps/CosmicDMS/src/space_mouse/windows_hid.rs`.
 - **Errors are `Result<T, E>`** through the crate's error type and `?`. An unfinished feature
   returns an error ("not supported yet: …"); it never panics.
 - **Input-derived numbers are hostile** (command parameters, job files, control-channel
@@ -33,8 +44,8 @@ People trust CosmicCAM with their machining setups and physical machine code; a 
 - **Last-resort guard:** `Session::execute` runs every command under `catch_unwind`; an escaped
   panic restores the session and reports `EngineError::Internal`.
 - **Crash reports:** the desktop app writes every panic and every unclean exit to a local crash folder,
-  with the job and the commands that reproduce it (`CosmicCAM_engine::crash`, docs/crash-reports.md).
-  When someone says the app crashed, look there first: `CosmicCAM-cli crashes`, `crashes show <id>`,
+  with the job and the commands that reproduce it (`CosmicDMS_engine::crash`, docs/crash-reports.md).
+  When someone says the app crashed, look there first: `CosmicDMS-cli crashes`, `crashes show <id>`,
   `crashes replay <id>` (or the `diagnostics.crash_reports` command / MCP `crash_reports` tool).
 - **Prove it:** every crash fix lands with a regression test (see `hostile_params_never_panic`); a
   crash report's job file + `replay.json` is the test's starting point.
@@ -43,7 +54,7 @@ People trust CosmicCAM with their machining setups and physical machine code; a 
   `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]`.
 
 ## Non-negotiables
-- **Independent.** CosmicCAM is independent. Behaviour is designed from public documentation,
+- **Independent.** CosmicDMS is independent. Behaviour is designed from public documentation,
   general CAM conventions and user feedback. Reference tests use analytic values and open-source
   CAM tools. Never copy another product's code, icons, artwork, help text, tooltips, templates or
   materials. File formats come from public specifications.
@@ -51,7 +62,7 @@ People trust CosmicCAM with their machining setups and physical machine code; a 
   commercial CAM products (Powermill, Fusion, MasterCAM, …) for this project: no test data,
   measurements, command lists, ids or files produced with them.
 - **Never read, copy or link GPL/LGPL/AGPL code**
-- **Assets — absolutely essential.** CosmicCAM contains **no iconography, images, fonts or
+- **Assets — absolutely essential.** CosmicDMS contains **no iconography, images, fonts or
   artwork from commercial CAM products — ever.** Command icons are the original SVG masters in
   `assets/icons/ui/design/svg/`, compiled through `crates/ui-egui/src/icon_svg.rs`.
   **Before any icon, icon assignment or media edit, read `assets/AGENTS.md`,
@@ -93,12 +104,12 @@ People trust CosmicCAM with their machining setups and physical machine code; a 
     interpreter or a faulty post is reported as an error, never a crash. Posts run out of
     process: `crate::postproc` starts `python3 -I posts/run_post.py` and feeds it CL-data JSON
     (docs/posts.md); the shipped posts live in `posts/`.
-  - **The Python API client** in `python/cosmiccam` is a separate, stdlib-only package that talks
+  - **The Python API client** in `python/cosmicdms` is a separate, stdlib-only package that talks
     to the app over the control channel; the app never depends on it.
   - Local asset authoring, lint and review tools use Python 3.11+ as documented in
     `assets/AGENTS.md`.
   - The only other non-Rust application code is JavaScript the browser requires: the service
-    worker `apps/CosmicCAM-web/sw.js` and small inline scripts in `apps/CosmicCAM-web/index.html`.
+    worker `apps/CosmicDMS-web/sw.js` and small inline scripts in `apps/CosmicDMS-web/index.html`.
 - **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests,
   assets, layers, ui-containers, `api --check`, Python tests, wasm). Commit after every feature arc that builds.
 - **Publishing**: the repository is github.com/tangency-labs/CosmicCAM. Changes land through
@@ -160,21 +171,21 @@ People trust CosmicCAM with their machining setups and physical machine code; a 
   and wait while it is over 24; build with `nice`.
 
 ## Python API — every feature ships with it
-CosmicCAM is fully scriptable from Python. A feature is not done until it is in the API and its guide.
+CosmicDMS is fully scriptable from Python. A feature is not done until it is in the API and its guide.
 - **Commands are the API.** Every feature is a command with a typed parameter schema
   (`params: &[Param]`, checked by the engine; unknown or mistyped parameters are rejected) and a
   `returns` description. UI-only state (panes, ribbon tab, window, display toggles) gets commands
   too, and new state a script would want to read gets a `*.get` command.
-- **Regenerate** with `cargo xtask api`: it writes `python/cosmiccam/_commands.py` (one typed method
+- **Regenerate** with `cargo xtask api`: it writes `python/cosmicdms/_commands.py` (one typed method
   per command) and `docs/api/python.md` (the API guide) from the registry and the hand-written
   `docs/api/_intro.md`. Never edit the generated files; add workflow sections and examples to
   `_intro.md`. CI fails when they are stale.
 - **Test from Python**: extend `python/tests/` (stdlib `unittest`, run by `cargo xtask python`) and,
-  for visible features, `python/examples/`. `cosmiccam.launch()` starts the app with the control
+  for visible features, `python/examples/`. `cosmicdms.launch()` starts the app with the control
   channel open; `cc.screenshot(path)` captures evidence.
-- **Control channel**: `CosmicCAM --control PORT`, token-authenticated JSON lines on 127.0.0.1
+- **Control channel**: `CosmicDMS --control PORT`, token-authenticated JSON lines on 127.0.0.1
   (`docs/control-protocol.md`). New protocol methods are documented there and wrapped in
-  `python/cosmiccam/client.py`.
+  `python/cosmicdms/client.py`.
 
 ## Job file format
 A change that saves something new in a job file adds ONE file, `crates/doc/src/format/pending/<name>.rs`
@@ -193,28 +204,28 @@ version bumps solely from commit prefixes, overwrite published versions, or push
 before the draft is verified.
 
 ## Running and looking at the app
-- `cargo run --release -p CosmicCAM -- --control PORT` (opens the demo project, `samples/demo.cosmic`,
+- `cargo run --release -p CosmicDMS -- --control PORT` (opens the demo project, `samples/demo.cosmic`,
   plus the control channel; `--empty` for a blank job, `--sample` for the simple sample part).
   Pick a free port. Without a display, run it under `Xvfb :99` with `DISPLAY=:99`.
 - Drive it with JSON lines on `127.0.0.1:PORT` (see `docs/control-protocol.md`). The first
   request on a connection carries the launch's token as `"token"`: read it from
-  `~/.local/share/CosmicCAM/control/PORT.token`, or start the app with
-  `CosmicCAM_CONTROL_TOKEN=$(openssl rand -hex 32)` and send that.
+  `~/.local/share/CosmicDMS/control/PORT.token`, or start the app with
+  `CosmicDMS_CONTROL_TOKEN=$(openssl rand -hex 32)` and send that.
 - `{"id":1,"method":"engine.execute","params":{"command":"toolpath.adaptive","params":{"stepover":2.5}}}`
 - `{"id":2,"method":"ui.start","params":{"command":"setup.wcs.create"}}` then `ui.click {x, y}`
 - `{"id":3,"method":"ui.screenshot","params":{"path":"/tmp/shot.png"}}` then read the PNG.
 - **For UI work, look at the result** (screenshot, read the PNG). Without a window use
-  `ui.render` or `CosmicCAM-cli snapshot`.
-- Headless: `CosmicCAM-cli run script.json --out output.nc`, `CosmicCAM-cli eval job.CosmicCAM`,
-  `CosmicCAM-cli snapshot script.json --out shot.png`, `CosmicCAM-cli commands`.
+  `ui.render` or `CosmicDMS-cli snapshot`.
+- Headless: `CosmicDMS-cli run script.json --out output.nc`, `CosmicDMS-cli eval job.CosmicDMS`,
+  `CosmicDMS-cli snapshot script.json --out shot.png`, `CosmicDMS-cli commands`.
 - Reference tests: `cargo xtask oracle` replays `tests/oracle/*/recipe.json` and compares with
   each case's `expected.json` (analytic or open-source CAM values; writes `docs/oracle.md`). Expected
   values never come from a commercial CAM product.
-- Build with `CARGO_TARGET_DIR=<repo>/target`. Windows: `cargo xwin build --release --target x86_64-pc-windows-msvc -p CosmicCAM`.
+- Build with `CARGO_TARGET_DIR=<repo>/target`. Windows: `cargo xwin build --release --target x86_64-pc-windows-msvc -p CosmicDMS`.
 
 ## Roadmap
 `ROADMAP.md` (committed) tracks status, milestones and estimates. Update it whenever a
-milestone task lands. `docs/features.md` (CosmicCAM's commands by area, from the registry) and
+milestone task lands. `docs/features.md` (CosmicDMS's commands by area, from the registry) and
 `THIRD-PARTY-LICENSES.txt` are regenerated on `main` after each merge by the Generated files
 workflow; never regenerate them in a PR.
 

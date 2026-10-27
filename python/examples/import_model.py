@@ -2,7 +2,7 @@
 
 Writes a small binary STL (a stepped block with a through hole, built with the standard
 library), imports it and saves screenshots. Run from the repository root after
-`cargo build --release -p CosmicCAM`:
+`cargo build --release -p CosmicDMS`:
 
     python3 python/examples/import_model.py out/
 """
@@ -13,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-import cosmiccam
+import cosmicdms
 
 
 def box(x0, y0, z0, x1, y1, z1):
@@ -39,7 +39,7 @@ def cylinder(cx, cy, z0, z1, r, n=48):
 def write_stl(path, triangles):
     triangles = list(triangles)
     with open(path, "wb") as f:
-        f.write(b"CosmicCAM example".ljust(80, b"\0"))
+        f.write(b"CosmicDMS example".ljust(80, b"\0"))
         f.write(struct.pack("<I", len(triangles)))
         for tri in triangles:
             f.write(struct.pack("<3f", 0, 0, 0))
@@ -54,7 +54,7 @@ def main(out_dir: str = ".") -> None:
     with tempfile.TemporaryDirectory() as tmp:
         stl = Path(tmp) / "stepped-block.stl"
         write_stl(stl, [*box(0, 0, 0, 80, 50, 15), *box(0, 0, 15, 40, 50, 30), *cylinder(60, 25, 15, 40, 8)])
-        with cosmiccam.launch() as cc:
+        with cosmicdms.launch() as cc:
             cc.ui_window_size_set(width=1400, height=900)
             model = cc.model_import(path=str(stl))
             print("imported", model["id"], model["triangles"], "triangles, bounds", model["bounds"])

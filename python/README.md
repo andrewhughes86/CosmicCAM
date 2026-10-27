@@ -1,6 +1,6 @@
-# cosmiccam — Python API for CosmicCAM
+# cosmicdms — Python API for CosmicDMS
 
-Drive a running CosmicCAM desktop app from Python: every command the ribbon, console and
+Drive a running CosmicDMS desktop app from Python: every command the ribbon, console and
 shortcuts can run, plus state queries and screenshots.
 
 ```bash
@@ -8,9 +8,9 @@ pip install -e python/
 ```
 
 ```python
-import cosmiccam
+import cosmicdms
 
-with cosmiccam.launch(sample=True) as cc:
+with cosmicdms.launch(sample=True) as cc:
     cc.view_camera_preset(preset="top")
     cc.screenshot("top.png")
 ```

@@ -6,9 +6,9 @@
 
 use std::collections::BTreeMap;
 
-use CosmicCAM_engine::session::{edge_ref, face_ref};
-use CosmicCAM_engine::{Session, cmd};
-use CosmicCAM_geom::Vec3;
+use CosmicDMS_engine::session::{edge_ref, face_ref};
+use CosmicDMS_engine::{Session, cmd};
+use CosmicDMS_geom::Vec3;
 use egui::{RichText, Ui};
 use serde_json::{Map, Value, json};
 
@@ -42,7 +42,7 @@ enum Picked {
 }
 
 impl Picked {
-    fn describe(&self, units: CosmicCAM_engine::units::DisplayUnits) -> String {
+    fn describe(&self, units: CosmicDMS_engine::units::DisplayUnits) -> String {
         match self {
             Self::Face { model, face, .. } => format!("{model} face {face}"),
             Self::Edge { model, edge } => format!("{model} edge {edge}"),
@@ -69,7 +69,7 @@ pub struct WcsTool {
     error: Option<String>,
     open: bool,
     /// The user's display units, for picked points.
-    units: CosmicCAM_engine::units::DisplayUnits,
+    units: CosmicDMS_engine::units::DisplayUnits,
 }
 
 impl WcsTool {

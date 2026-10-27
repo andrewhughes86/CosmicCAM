@@ -50,7 +50,7 @@ impl W {
             "1H,,1H;,4Htest,8Htest.igs,4Htest,3H1.0,32,38,6,308,15,4Htest,1.,{},{},1,1.,15H20261025.120000,0.001,1000.,4Hauth,3Horg,11,0;",
             self.units.0, self.units.1
         );
-        let mut out = format!("{:<72}S{:>7}\n", "CosmicCAM test", 1);
+        let mut out = format!("{:<72}S{:>7}\n", "CosmicDMS test", 1);
         for (i, c) in g.chars().collect::<Vec<_>>().chunks(72).enumerate() {
             out.push_str(&format!("{:<72}G{:>7}\n", c.iter().collect::<String>(), i + 1));
         }
@@ -72,7 +72,7 @@ impl W {
     }
 }
 
-fn area(m: &CosmicCAM_geom::Mesh) -> f64 {
+fn area(m: &CosmicDMS_geom::Mesh) -> f64 {
     m.triangles()
         .iter()
         .map(|t| {

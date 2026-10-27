@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use CosmicCAM_io::{DEFAULT_TOLERANCE, ModelFormat, Options, Units, import_mesh, import_mesh_bytes};
+use CosmicDMS_io::{DEFAULT_TOLERANCE, ModelFormat, Options, Units, import_mesh, import_mesh_bytes};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, Param, ParamKind, Placement, RibbonTab, always};

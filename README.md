@@ -1,18 +1,26 @@
-# CosmicCAM
+# CosmicDMS — Cosmic Design and Manufacturing Suite
 
-CosmicCAM is an open-source, pure-Rust **Computer-Aided Manufacturing (CAM)** application. It is
-being built to turn CAD geometry (B-Rep models, meshes and 2D boundaries) into CNC toolpaths,
-material-removal simulations and machine-specific G-code. Everything it does can be driven from
-Python.
+CosmicDMS is an open-source, pure-Rust **design and manufacturing suite**: one application with
+four modes, switched from the button at the far left of the ribbon.
 
-![CosmicCAM: a new job, importing a model, creating a WCS, a setup with its stock and a 2D contour toolpath](docs/images/cosmiccam-workflow.gif)
+| Mode | What it does | Status |
+| --- | --- | --- |
+| **CAD** | Model parts: sketches on planes, extrusions and revolutions that add or cut, a feature history you can edit | First release |
+| **CAM** | Turn CAD geometry (B-Rep models, meshes and 2D boundaries) into CNC toolpaths, material-removal simulations and machine-specific G-code | In development (most of the suite) |
+| **Drawings** | 2D drawings of parts | Coming soon |
+| **Slicer** | 3D-printer slicing | Coming soon |
+
+Everything it does can be driven from Python. CosmicDMS was called CosmicCAM until
+2026-10-27; job files, libraries and settings from CosmicCAM open as they are.
+
+![CosmicDMS: a new job, importing a model, creating a WCS, a setup with its stock and a 2D contour toolpath](docs/images/cosmicdms-workflow.gif)
 
 *A new job, start to finish: import a model, create a WCS from a face and an edge, create a
 setup with fitted stock, then a 2D contour around the part and 3D roughing of the stock.*
 
 ## Where the project is
 
-**Early development.** Phases 1 to 4 are complete. CosmicCAM imports CAD models (STEP, IGES, ACIS SAT) and
+**Early development.** Phases 1 to 4 are complete. CosmicDMS imports CAD models (STEP, IGES, ACIS SAT) and
 meshes, defines WCS, setups, stock, machines and tools, makes 2.5D and
 3D toolpaths (with 3+2 and simultaneous 4/5-axis work), simulates the stock removal and posts
 G-code for Fanuc, Haas, LinuxCNC, Grbl and Mach controls. The posts follow published controller documentation and there is no full machine
@@ -38,6 +46,9 @@ simulation yet, so **check its G-code before running it on a machine**.
     icons; the tab strip doubles as the title bar, with document tabs and the window controls.
   - Viewport, Explorer, Inspector and Console panes you can drag, stack and resize.
   - A dark theme (default) and a high-contrast light theme, chosen in Preferences.
+- **CAD mode:** switch the ribbon to CAD to model the part: sketch on a plane (lines,
+  rectangles, circles, arcs, polygons), then extrude or revolve to add or cut, with a feature
+  tree you can edit, suppress and rebuild. The part goes straight to CAM as a model.
 - **Model import:** from the Import model button (Ctrl+I), drag-and-drop onto the window or
   `model.import` in scripts.
   - CAD: STEP (AP203, AP214, AP242, with assemblies), IGES and ACIS SAT. Their exact surfaces are
@@ -87,8 +98,8 @@ simulation yet, so **check its G-code before running it on a machine**.
   rebuilds it.
 - **Job files:** save and open jobs as `.cosmic` files, each open job in its own tab, carrying the
   tools their toolpaths use; on Linux,
-  `packaging/linux/install-file-type.sh` installs the CosmicCAM launcher and icon (so the
-  taskbar shows it), gives `.cosmic` files their own icon and opens them in CosmicCAM.
+  `packaging/linux/install-file-type.sh` installs the CosmicDMS launcher and icon (so the
+  taskbar shows it), gives `.cosmic` files their own icon and opens them in CosmicDMS.
 - **Post-processors:** Python posts for Fanuc, Haas, LinuxCNC/PathPilot, Grbl and Mach3/Mach4
   (or the built-in generic writer), chosen per machine on the Export tab: arcs (G2/G3, helical)
   fitted within a tolerance, each controller's work offsets, canned cycles, tool changes and
@@ -125,7 +136,7 @@ simulation yet, so **check its G-code before running it on a machine**.
 - **Everything is a command:** the ribbon, console, shortcuts, scripts and the Python API all run
   the same 187 commands. Each command has a typed parameter schema that the engine checks before
   running it.
-- **Python API:** a stdlib-only client (`python/cosmiccam`) drives the running app over a
+- **Python API:** a stdlib-only client (`python/cosmicdms`) drives the running app over a
   token-protected localhost control channel.
 - **Robustness:**
   - Commands run under a panic guard that restores the session if one fails.
@@ -140,7 +151,7 @@ full surface is visible and scriptable ahead of time.
 
 ## In the browser
 
-CosmicCAM also runs as a web app (`apps/CosmicCAM-web`): the same application compiled to
+CosmicDMS also runs as a web app (`apps/CosmicDMS-web`): the same application compiled to
 WebAssembly, drawing with WebGPU, or WebGL 2 where WebGPU is not available. Import models
 with the Import button or by dropping files on the page; everything stays in the browser.
 The Python control channel and window screenshots are desktop-only.
@@ -148,9 +159,9 @@ The Python control channel and window screenshots are desktop-only.
 ```bash
 rustup target add wasm32-unknown-unknown
 cargo install --locked trunk
-cd apps/CosmicCAM-web
+cd apps/CosmicDMS-web
 trunk serve --open                     # local build at http://127.0.0.1:8080
-trunk build --release                  # static site in apps/CosmicCAM-web/dist
+trunk build --release                  # static site in apps/CosmicDMS-web/dist
 ```
 
 `.github/workflows/pages.yml` builds it on every push to `main` and publishes it to GitHub
@@ -161,10 +172,10 @@ Pages. To turn that on, set **Settings → Pages → Source** to **GitHub Action
 You need Rust 1.88+ and a GPU with Vulkan, Metal or DirectX 12. Python 3.9+ is only needed for the API.
 
 ```bash
-cargo run --release -p CosmicCAM
+cargo run --release -p CosmicDMS
 ```
 
-While CosmicCAM is in pre-release it opens with a **demo project** (`samples/demo.cosmic`): a
+While CosmicDMS is in pre-release it opens with a **demo project** (`samples/demo.cosmic`): a
 5-axis part with a dome, an angled face and hole and a bore, on a trunnion machine with the sample
 tool library and toolpaths from facing to 5-axis finishing, ready to inspect, change and post. Reopen it any time
 with `job.demo.open` in the console; its tools are added to your library if they are missing.
@@ -188,9 +199,9 @@ pip install -e python/
 ```
 
 ```python
-import cosmiccam
+import cosmicdms
 
-with cosmiccam.launch(sample=True) as cc:      # starts the app; quits it on exit
+with cosmicdms.launch(sample=True) as cc:      # starts the app; quits it on exit
     cc.view_theme_set(theme="light")
     cc.view_camera_set(yaw=-60, pitch=25)
     cc.view_fit()
@@ -212,9 +223,9 @@ with cosmiccam.launch(sample=True) as cc:      # starts the app; quits it on exi
 | `crates/io` | L3 — model file readers (STEP, IGES, SAT and the mesh formats) |
 | `crates/engine` | L4 — session, command registry and parameter schemas |
 | `crates/ui-egui` | L5 — theme, ribbon, dock, wgpu viewport, icons, control channel |
-| `apps/CosmicCAM` | The desktop application |
+| `apps/CosmicDMS` | The desktop application |
 | `xtask` | Repository checks and generators (`cargo xtask …`) |
-| `python/` | The `cosmiccam` Python client, its tests and examples |
+| `python/` | The `cosmicdms` Python client, its tests and examples |
 | `assets/icons/ui` | Icon SVG masters and the icon style guide |
 | `docs/` | API guide and control protocol |
 
@@ -238,7 +249,7 @@ Progress is tracked in [ROADMAP.md](ROADMAP.md).
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT licence](LICENSE-MIT)
 at your option. Unless you explicitly state otherwise, any contribution you submit for inclusion
-in CosmicCAM is dual licensed as above, without additional terms.
+in CosmicDMS is dual licensed as above, without additional terms.
 
 All icons and artwork are original. Third-party code and assets are listed in
 [ATTRIBUTION.md](ATTRIBUTION.md).

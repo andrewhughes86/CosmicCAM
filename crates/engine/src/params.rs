@@ -72,7 +72,7 @@ pub fn str_list(params: &Value, key: &str) -> EngineResult<Vec<String>> {
 }
 
 /// `[x, y, z]` with finite components.
-pub fn opt_vec3(params: &Value, key: &str) -> EngineResult<Option<CosmicCAM_geom::Vec3>> {
+pub fn opt_vec3(params: &Value, key: &str) -> EngineResult<Option<CosmicDMS_geom::Vec3>> {
     match field(params, key)? {
         None => Ok(None),
         Some(Value::Array(a)) if a.len() == 3 => {
@@ -83,7 +83,7 @@ pub fn opt_vec3(params: &Value, key: &str) -> EngineResult<Option<CosmicCAM_geom
                 })?;
                 *slot = n as f32;
             }
-            Ok(Some(CosmicCAM_geom::Vec3::from(out)))
+            Ok(Some(CosmicDMS_geom::Vec3::from(out)))
         }
         Some(_) => Err(EngineError::InvalidParams(format!("`{key}` must be [x, y, z]"))),
     }

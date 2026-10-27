@@ -11,9 +11,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use CosmicCAM_geom::brep::{Axes, Curve, Surface, adaptive_points};
-use CosmicCAM_geom::nurbs::{NurbsCurve, NurbsSurface};
-use CosmicCAM_geom::{DMat4, DVec3, Vec3};
+use CosmicDMS_geom::brep::{Axes, Curve, Surface, adaptive_points};
+use CosmicDMS_geom::nurbs::{NurbsCurve, NurbsSurface};
+use CosmicDMS_geom::{DMat4, DVec3, Vec3};
 
 use crate::brep::{FaceJob, orient_outward, tessellate_faces, warnings};
 use crate::{ImportError, Imported, Options, Soup, Units};

@@ -2,8 +2,8 @@
 
 use std::f32::consts::FRAC_PI_2;
 
-use CosmicCAM_render::camera::{MAX_DISTANCE, MIN_DISTANCE, wrap_angle};
-use CosmicCAM_render::{Projection, ViewPreset};
+use CosmicDMS_render::camera::{MAX_DISTANCE, MIN_DISTANCE, wrap_angle};
+use CosmicDMS_render::{Projection, ViewPreset};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, Param, ParamKind, always};

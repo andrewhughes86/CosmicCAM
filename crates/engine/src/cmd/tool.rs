@@ -21,7 +21,9 @@ const TOOL_RETURNS: &str = "the tool {id, machine, number, name, type, type_labe
                             stepdown, presets, length_offset, diameter_offset, notes}";
 const HOLDER_RETURNS: &str =
     "the holder {id, name, vendor, product_id, segments: [{lower_diameter, upper_diameter, height}], height}";
-const TOOLS_FORMAT: &str = "CosmicCAM-tools/1";
+const TOOLS_FORMAT: &str = "CosmicDMS-tools/1";
+/// Tool files written before the rename (CosmicCAM), still read.
+const LEGACY_TOOLS_FORMAT: &str = "CosmicCAM-tools/1";
 
 /// Every tool type, offered from the New tool button's menu.
 const TOOL_MENU: &[&str] = &[
@@ -1206,8 +1208,8 @@ fn import(s: &mut Session, p: &Value) -> EngineResult<Value> {
         std::fs::read_to_string(path).map_err(|e| EngineError::InvalidParams(format!("could not read {path}: {e}")))?;
     let doc: Value =
         serde_json::from_str(&text).map_err(|e| EngineError::InvalidParams(format!("{path} is not JSON: {e}")))?;
-    if doc.get("format").and_then(Value::as_str) != Some(TOOLS_FORMAT) {
-        return Err(EngineError::InvalidParams(format!("{path} is not a CosmicCAM tool library ({TOOLS_FORMAT})")));
+    if !matches!(doc.get("format").and_then(Value::as_str), Some(TOOLS_FORMAT | LEGACY_TOOLS_FORMAT)) {
+        return Err(EngineError::InvalidParams(format!("{path} is not a CosmicDMS tool library ({TOOLS_FORMAT})")));
     }
     let mut tools = Vec::new();
     for (i, raw) in doc.get("tools").and_then(Value::as_array).into_iter().flatten().enumerate().take(MAX_TOOLS) {

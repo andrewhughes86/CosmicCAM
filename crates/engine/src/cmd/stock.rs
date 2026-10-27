@@ -74,8 +74,8 @@ fn fit(s: &mut Session, p: &Value) -> EngineResult<Value> {
     let margin = |key: &str| params::opt_f64(p, key, 0.0, MAX_MARGIN).map(|m| m.unwrap_or(0.0) as f32);
     let (sides, top, bottom) = (margin("margin_sides")?, margin("margin_top")?, margin("margin_bottom")?);
     let mut stock = bounds;
-    stock.min -= CosmicCAM_geom::Vec3::new(sides, sides, bottom);
-    stock.max += CosmicCAM_geom::Vec3::new(sides, sides, top);
+    stock.min -= CosmicDMS_geom::Vec3::new(sides, sides, bottom);
+    stock.max += CosmicDMS_geom::Vec3::new(sides, sides, top);
     if !(stock.min.is_finite() && stock.max.is_finite()) {
         return Err(EngineError::InvalidParams("the stock would be out of range".into()));
     }

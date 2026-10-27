@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use CosmicCAM_render::{Projection, ViewPreset};
+use CosmicDMS_render::{Projection, ViewPreset};
 use serde_json::{Value, json};
 
 use crate::cmd::{self, RibbonTab};
@@ -277,7 +277,7 @@ impl TempFile {
     fn new(name: &str, contents: &[u8]) -> Self {
         static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("cosmiccam-engine-{}-{n}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("cosmicdms-engine-{}-{n}", std::process::id()));
         let path = dir.join(name);
         let _ = std::fs::create_dir_all(&dir);
         let _ = std::fs::write(&path, contents);
@@ -1059,7 +1059,7 @@ fn libraries_save_load_import_and_export() {
     assert_eq!(r["imported"], 2);
     assert!(s.execute("tool.library.import", &json!({"path": dir.path()})).is_err(), "numbers already taken");
     assert!(s.execute("tool.library.import", &json!({"path": dir.path(), "replace": true})).is_ok());
-    let garbage = TempFile::new("bad.json", b"{\"format\": \"CosmicCAM-tools/1\", \"tools\": [{\"number\": 1}]}");
+    let garbage = TempFile::new("bad.json", b"{\"format\": \"CosmicDMS-tools/1\", \"tools\": [{\"number\": 1}]}");
     assert!(s.execute("tool.library.import", &json!({"path": garbage.path()})).is_err());
     assert!(s.execute("tool.library.import", &json!({"path": "/dev/zero"})).is_err());
 }
@@ -1405,14 +1405,14 @@ fn hostile_job_files_are_refused() {
         String::new(),
         "{".into(),
         "{}".into(),
-        r#"{"format":"CosmicCAM/99","job":{}}"#.into(),
-        r#"{"format":"CosmicCAM/1"}"#.into(),
+        r#"{"format":"CosmicDMS/99","job":{}}"#.into(),
+        r#"{"format":"CosmicDMS/1"}"#.into(),
         good.replace("\"positions\":\"", "\"positions\":\"*"),
         good.replace("\"triangles\":\"", "\"triangles\":\"AAAA"),
-        r#"{"format":"CosmicCAM/1","job":{"name":"x","stock":{"min":[1,1,1],"max":[0,0,0]}}}"#.into(),
-        r#"{"format":"CosmicCAM/1","job":{"name":"x","wcs":[{"id":"w","name":"w","origin":[0,0,0],"x_axis":[1,0,0],"z_axis":[1,0,0]}]}}"#.into(),
-        r#"{"format":"CosmicCAM/1","job":{"name":"x","models":[{"id":"m","name":"m","positions":"AAAAAAAAAAAAAAAA","triangles":"AQAAAAIAAAADAAAA"}]}}"#.into(),
-        r#"{"format":"CosmicCAM/1","job":{"name":"x","toolpaths":[{"id":"t","name":"t","strategy":"s","machine":"m","tool":1,"start":[0,0,0],"moves":"Bw=="}]}}"#.into(),
+        r#"{"format":"CosmicDMS/1","job":{"name":"x","stock":{"min":[1,1,1],"max":[0,0,0]}}}"#.into(),
+        r#"{"format":"CosmicDMS/1","job":{"name":"x","wcs":[{"id":"w","name":"w","origin":[0,0,0],"x_axis":[1,0,0],"z_axis":[1,0,0]}]}}"#.into(),
+        r#"{"format":"CosmicDMS/1","job":{"name":"x","models":[{"id":"m","name":"m","positions":"AAAAAAAAAAAAAAAA","triangles":"AQAAAAIAAAADAAAA"}]}}"#.into(),
+        r#"{"format":"CosmicDMS/1","job":{"name":"x","toolpaths":[{"id":"t","name":"t","strategy":"s","machine":"m","tool":1,"start":[0,0,0],"moves":"Bw=="}]}}"#.into(),
     ];
     for (i, text) in cases.iter().enumerate() {
         let file = TempFile::new(&format!("bad{i}.cosmic"), text.as_bytes());
@@ -2458,7 +2458,7 @@ fn machines_choose_their_post_and_generic_needs_no_python() {
     assert_eq!(r["operations"], 1);
     let text = std::fs::read_to_string(file.path()).unwrap_or_default();
     let cl: Value = serde_json::from_str(&text).unwrap_or_default();
-    assert_eq!(cl["format"], "CosmicCAM-CL/1");
+    assert_eq!(cl["format"], "CosmicDMS-CL/1");
     assert!(cl["operations"][0]["moves"].as_array().is_some_and(|m| m.iter().any(|m| m["type"] == "arc")));
 }
 
@@ -2578,7 +2578,7 @@ fn multi_axis_finish_tilts_a_ball_over_the_part_without_gouging() {
         .iter()
         .flat_map(|m| m.mesh.triangles().iter().map(|t| m.mesh.corners(*t).map(|p| p.as_dvec3())).collect::<Vec<_>>())
         .collect();
-    let index = CosmicCAM_geom::collide::MeshIndex::new(tris, 3.0);
+    let index = CosmicDMS_geom::collide::MeshIndex::new(tris, 3.0);
     for m in &cuts {
         let centre = tip(m) + axis(m) * 3.0;
         let d = index.distance(centre, centre, 3.0);
@@ -2846,7 +2846,7 @@ fn strategies_take_the_tools_that_suit_them_and_helical_boring_opens_holes() {
     let Some(bore) = bore else { return };
     // The Ø24 hole at (15, 0), 20 deep from z 45, bored with the Ø12 end mill: the tool centre
     // stays within 6 mm of the hole's axis and reaches the floor.
-    let cuts: Vec<CosmicCAM_geom::Vec3> =
+    let cuts: Vec<CosmicDMS_geom::Vec3> =
         bore.moves.iter().filter(|m| m.kind == crate::toolpath::MoveKind::Cut).map(|m| m.to).collect();
     assert!(cuts.iter().all(|p| ((p.x - 15.0).hypot(p.y) - 6.0) < 1.0e-3), "beyond the hole");
     assert!(cuts.iter().any(|p| (p.z - 25.0).abs() < 1.0e-3) && cuts.iter().all(|p| p.z >= 25.0 - 1.0e-3));
@@ -2865,4 +2865,183 @@ fn strategies_take_the_tools_that_suit_them_and_helical_boring_opens_holes() {
     let tap = s.execute("toolpath.drill", &json!({"geometry": geometry, "tool": 34})).unwrap_or_default();
     assert_eq!(tap["params"]["tool"], 34);
     assert!(s.job.toolpaths.last().and_then(|t| t.drill.as_ref()).is_some_and(|d| d.cycle == "tap" && d.pitch == 1.5));
+}
+
+#[test]
+fn cad_and_cam_modes_have_their_own_ribbons() {
+    let mut s = Session::new();
+    let r = s.execute("ui.mode.set", &json!({"mode": "cad"})).unwrap_or_default();
+    assert_eq!((r["mode"].as_str(), r["tab"].as_str()), (Some("cad"), Some("features")));
+    assert_eq!(cmd::Mode::Cad.tabs(), [RibbonTab::Features, RibbonTab::Sketch, RibbonTab::Evaluate]);
+    assert!(cmd::ribbon(RibbonTab::Sketch).iter().any(|(_, c)| c.iter().any(|(s, _)| s.id == "cad.sketch.line")));
+    for coming in ["drawings", "slicer"] {
+        assert!(matches!(s.execute("ui.mode.set", &json!({"mode": coming})), Err(EngineError::NotSupported(_))));
+    }
+    // In CAD mode the explorer shows the part's tree; a CAM tab switches back to CAM.
+    assert_eq!(s.outline().first().map(|n| n.id.as_str()), Some("part"));
+    let r = s.execute("ui.ribbon.tab.set", &json!({"tab": "toolpaths"})).unwrap_or_default();
+    assert_eq!(r["mode"], "cam");
+    assert_eq!(s.outline().first().map(|n| n.id.as_str()), Some("job"));
+    assert!(!s.job.is_modified(), "switching modes is not a change to the job");
+}
+
+#[test]
+fn a_part_is_sketched_extruded_cut_and_revolved() {
+    let mut s = Session::new();
+    let volume =
+        |s: &mut Session| s.execute("cad.mass.get", &Value::Null).unwrap_or_default()["volume"].as_f64().unwrap_or(0.0);
+    // A 40 × 30 rectangle on the top plane, extruded 10 up: a block, and the job's model.
+    let r = s.execute(
+        "cad.sketch",
+        &json!({"plane": "top", "entities": [{"type": "rectangle", "corner": [0, 0], "opposite": [40, 30]}]}),
+    );
+    assert!(r.is_ok(), "{r:?}");
+    let sketch = r.unwrap_or_default()["feature"]["id"].as_str().unwrap_or_default().to_owned();
+    assert!(s.job.part.model.is_none(), "a sketch alone makes no solid");
+    let r = s.execute("cad.extrude", &json!({"distance": 10}));
+    assert!(r.is_ok(), "{r:?}");
+    let extrude = r.unwrap_or_default()["feature"]["id"].as_str().unwrap_or_default().to_owned();
+    assert!((volume(&mut s) - 12_000.0).abs() < 1.0);
+    assert_eq!(s.job.models.len(), 1);
+    assert_eq!(s.job.part.features[1].name, "Extrude1");
+    assert!(s.job.is_modified());
+    // A Ø10 hole cut right through it, sketched on the block's top.
+    assert!(s.execute("cad.sketch", &json!({"plane": "top", "offset": 10, "entities": []})).is_ok());
+    let hole_sketch = s.job.part.features[2].id.clone();
+    let r = s.execute("cad.sketch.circle", &json!({"id": hole_sketch, "center": [20, 15, 0], "radius": 5}));
+    assert_eq!(r.unwrap_or_default()["entity"], 0);
+    let r = s.execute("cad.extrude.cut", &json!({"through_all": true}));
+    assert!(r.is_ok(), "{r:?}");
+    let cut = r.unwrap_or_default()["feature"]["id"].as_str().unwrap_or_default().to_owned();
+    let holed = 12_000.0 - std::f64::consts::PI * 25.0 * 10.0;
+    assert!((volume(&mut s) - holed).abs() / holed < 0.005, "{}", volume(&mut s));
+    // Changing the block's height rebuilds the features after it.
+    assert!(s.execute("cad.extrude", &json!({"id": extrude, "sketch": sketch, "distance": 20})).is_ok());
+    let taller = 24_000.0 - std::f64::consts::PI * 25.0 * 20.0;
+    assert!((volume(&mut s) - taller).abs() / taller < 0.005, "{}", volume(&mut s));
+    // Suppressing the cut fills the hole; putting it back opens it again.
+    assert!(s.execute("cad.feature.suppress", &json!({"id": cut})).is_ok());
+    assert!((volume(&mut s) - 24_000.0).abs() < 1.0);
+    assert!(s.execute("cad.feature.suppress", &json!({"id": cut, "suppressed": false})).is_ok());
+    // A ring beside it, turned about the front plane's vertical axis, as a separate body.
+    let r = s.execute(
+        "cad.sketch",
+        &json!({"plane": "front", "entities": [{"type": "rectangle", "corner": [60, 0], "opposite": [70, 20]}]}),
+    );
+    assert!(r.is_ok());
+    let r = s.execute("cad.revolve", &json!({"angle": 360}));
+    assert!(r.is_ok(), "{r:?}");
+    let ring = std::f64::consts::PI * (70.0f64.powi(2) - 60.0f64.powi(2)) * 20.0;
+    // The ring passes through the block: joined, the overlap counts once; the volume grows.
+    assert!(volume(&mut s) > taller + ring * 0.8, "{}", volume(&mut s));
+    // A sketch in use cannot be deleted; nothing changes.
+    let before = s.job.part.features.len();
+    assert!(s.execute("cad.feature.remove", &json!({"id": sketch})).is_err());
+    assert_eq!(s.job.part.features.len(), before);
+    // Bad settings change nothing either.
+    for bad in [
+        json!({"entities": [{"type": "line", "from": [0, 0], "to": [0, 0]}]}),
+        json!({"entities": [{"type": "spline"}]}),
+        json!({"plane": "custom"}),
+        json!({"entities": [{"type": "circle", "center": [0, 0], "radius": -1}]}),
+    ] {
+        assert!(s.execute("cad.sketch", &bad).is_err(), "{bad}");
+    }
+    let open = s.execute("cad.sketch", &json!({"entities": [{"type": "line", "from": [0, 0], "to": [5, 0]}]}));
+    assert!(open.is_ok(), "an open sketch is fine until it is used");
+    assert!(s.execute("cad.extrude", &json!({"distance": 5})).is_err(), "but it cannot be extruded");
+    assert_eq!(s.job.part.features.len(), before + 1);
+    // Saved and opened again, the history comes back and still rebuilds.
+    let v = volume(&mut s);
+    let text = crate::jobfile::to_string(&s.job, &s.view.camera, &s.library);
+    let back = crate::jobfile::from_str(&text).map(|f| f.job);
+    assert!(back.is_ok());
+    if let Ok(job) = back {
+        s.job = job;
+    }
+    assert_eq!(s.job.part.features.len(), before + 1);
+    assert!(s.execute("cad.rebuild", &Value::Null).is_ok());
+    assert!((volume(&mut s) - v).abs() / v < 0.001);
+    assert_eq!(s.job.models.len(), 1, "the part's model is replaced, not added again");
+}
+
+#[test]
+fn features_flush_with_the_part_still_join_and_cut() {
+    let mut s = Session::new();
+    let volume =
+        |s: &mut Session| s.execute("cad.mass.get", &Value::Null).unwrap_or_default()["volume"].as_f64().unwrap_or(0.0);
+    let sketch = |s: &mut Session, offset: f64, e: Value| {
+        let r = s.execute("cad.sketch", &json!({"plane": "top", "offset": offset, "entities": [e]}));
+        assert!(r.is_ok(), "{r:?}");
+        r.unwrap_or_default()["feature"]["id"].as_str().unwrap_or_default().to_owned()
+    };
+    let pi = std::f64::consts::PI;
+    let base = sketch(&mut s, 0.0, json!({"type": "rectangle", "corner": [0, 0], "opposite": [40, 30]}));
+    assert!(s.execute("cad.extrude", &json!({"sketch": base, "distance": 10})).is_ok());
+    // A boss standing on the top face: its bottom is flush with the block's top.
+    let boss = sketch(&mut s, 10.0, json!({"type": "circle", "center": [20, 15], "radius": 5}));
+    let r = s.execute("cad.extrude", &json!({"sketch": boss, "distance": 5}));
+    assert!(r.is_ok(), "{r:?}");
+    let want = 12_000.0 + pi * 25.0 * 5.0;
+    assert!((volume(&mut s) - want).abs() / want < 0.005, "{} vs {want}", volume(&mut s));
+    // A pocket down from the boss's top: its top is flush with the boss's.
+    let pocket = sketch(&mut s, 15.0, json!({"type": "circle", "center": [20, 15], "radius": 3}));
+    let r = s.execute("cad.extrude.cut", &json!({"sketch": pocket, "distance": 4, "direction": "reverse"}));
+    assert!(r.is_ok(), "{r:?}");
+    let want = want - pi * 9.0 * 4.0;
+    assert!((volume(&mut s) - want).abs() / want < 0.005, "{} vs {want}", volume(&mut s));
+    // A cylinder exactly as tall as the block, inside it: joined, nothing changes.
+    let inner = sketch(&mut s, 0.0, json!({"type": "circle", "center": [8, 8], "radius": 3}));
+    let r = s.execute("cad.extrude", &json!({"sketch": inner, "distance": 10}));
+    assert!(r.is_ok(), "{r:?}");
+    assert!((volume(&mut s) - want).abs() / want < 0.005, "{} vs {want}", volume(&mut s));
+}
+
+#[test]
+fn parameter_names_are_not_python_keywords() {
+    // The Python client takes every parameter as a keyword argument.
+    const KEYWORDS: &[&str] = &[
+        "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
+        "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal",
+        "not", "or", "pass", "raise", "return", "try", "while", "with", "yield",
+    ];
+    for c in cmd::all() {
+        for p in c.params {
+            assert!(!KEYWORDS.contains(&p.name), "{}: `{}` is a Python keyword", c.id, p.name);
+        }
+    }
+}
+
+#[test]
+fn a_through_all_cut_in_the_middle_of_a_block_leaves_the_block() {
+    let mut s = Session::new();
+    let volume =
+        |s: &mut Session| s.execute("cad.mass.get", &Value::Null).unwrap_or_default()["volume"].as_f64().unwrap_or(0.0);
+    let r =
+        s.execute("cad.sketch", &json!({"entities": [{"type": "rectangle", "corner": [0, 0], "opposite": [80, 50]}]}));
+    assert!(r.is_ok());
+    assert!(s.execute("cad.extrude", &json!({"distance": 20})).is_ok());
+    let r =
+        s.execute("cad.sketch", &json!({"entities": [{"type": "circle", "center": [40.64, 25.4], "radius": 12.7}]}));
+    assert!(r.is_ok());
+    let r = s.execute("cad.extrude.cut", &json!({"through_all": true}));
+    assert!(r.is_ok(), "{r:?}");
+    let want = 80.0 * 50.0 * 20.0 - std::f64::consts::PI * 12.7 * 12.7 * 20.0;
+    assert!((volume(&mut s) - want).abs() / want < 0.005, "{} vs {want}", volume(&mut s));
+}
+
+#[test]
+fn files_saved_under_the_former_name_still_open() {
+    // Job files and libraries written before CosmicCAM became CosmicDMS carry the old tags.
+    let mut s = sample_with_tool();
+    assert!(s.execute("toolpath.face", &json!({"stepover": 4})).is_ok());
+    let text = crate::jobfile::to_string(&s.job, &s.view.camera, &s.library);
+    assert!(text.contains("\"CosmicDMS/1\""));
+    let old = text.replace("\"CosmicDMS/1\"", "\"CosmicCAM/1\"");
+    let back = crate::jobfile::from_str(&old);
+    assert!(back.as_ref().is_ok_and(|l| l.job.toolpaths.len() == 1), "{:?}", back.err());
+    assert!(crate::jobfile::from_str(&text.replace("\"CosmicDMS/1\"", "\"CosmicCAM/9\"")).is_err());
+    let lib = s.library.to_json().to_string().replace("CosmicDMS-library/1", "CosmicCAM-library/1");
+    let parsed: Value = serde_json::from_str(&lib).unwrap_or_default();
+    assert!(crate::library::MachineLibrary::from_json(&parsed).is_ok());
 }

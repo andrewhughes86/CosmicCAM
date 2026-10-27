@@ -13,9 +13,9 @@ pub mod p21;
 
 use std::collections::{HashMap, HashSet};
 
-use CosmicCAM_geom::brep::{Axes, Curve, Surface};
-use CosmicCAM_geom::nurbs::{NurbsCurve, NurbsSurface};
-use CosmicCAM_geom::{DMat4, DVec3, Vec3};
+use CosmicDMS_geom::brep::{Axes, Curve, Surface};
+use CosmicDMS_geom::nurbs::{NurbsCurve, NurbsSurface};
+use CosmicDMS_geom::{DMat4, DVec3, Vec3};
 use p21::{Instance, P};
 
 use crate::brep::{FaceJob, tessellate_faces, warnings};

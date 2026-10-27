@@ -5,7 +5,7 @@
 //! / three `vertex x y z` / `endloop` / `endfacet` … `endsolid`. Stored normals are ignored;
 //! the winding defines the facet's side.
 
-use CosmicCAM_geom::{Mesh, Vec3};
+use CosmicDMS_geom::{Mesh, Vec3};
 
 use crate::{ImportError, MAX_TRIANGLES, finite};
 

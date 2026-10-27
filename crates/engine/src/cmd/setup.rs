@@ -1,7 +1,7 @@
 //! Setups: how the part is held on a machine, the WCS it is programmed in and the stock it is
 //! cut from. The active setup's stock is the job's stock and its WCS the active one.
 
-use CosmicCAM_geom::{Aabb, Vec3};
+use CosmicDMS_geom::{Aabb, Vec3};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, Param, ParamKind, Placement, RibbonTab, always};

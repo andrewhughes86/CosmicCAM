@@ -1,16 +1,17 @@
 [workspace]
 resolver = "3"
 members = [
-    "apps/CosmicCAM",
-    "apps/CosmicCAM-web",
+    "apps/CosmicDMS",
+    "apps/CosmicDMS-web",
     "crates/engine",
     "crates/geom",
     "crates/io",
+    "crates/kernel",
     "crates/render",
     "crates/ui-egui",
     "xtask",
 ]
-default-members = ["apps/CosmicCAM"]
+default-members = ["apps/CosmicDMS"]
 
 [workspace.package]
 version = "0.1.0"
@@ -31,11 +32,12 @@ todo = "deny"
 unreachable = "deny"
 
 [workspace.dependencies]
-CosmicCAM-engine = { path = "crates/engine" }
-CosmicCAM-geom = { path = "crates/geom" }
-CosmicCAM-io = { path = "crates/io" }
-CosmicCAM-render = { path = "crates/render" }
-CosmicCAM-ui-egui = { path = "crates/ui-egui" }
+CosmicDMS-engine = { path = "crates/engine" }
+CosmicDMS-geom = { path = "crates/geom" }
+CosmicDMS-io = { path = "crates/io" }
+CosmicDMS-kernel = { path = "crates/kernel" }
+CosmicDMS-render = { path = "crates/render" }
+CosmicDMS-ui-egui = { path = "crates/ui-egui" }
 
 bytemuck = { version = "1.25", features = ["derive"] }
 eframe = { version = "0.36.2", default-features = false }
@@ -56,6 +58,9 @@ spade = "2.15"
 png = "0.18"
 quick-xml = "0.41"
 thiserror = "2"
+truck-meshalgo = { version = "0.4", default-features = false, features = ["tessellation"] }
+truck-modeling = "0.6"
+truck-shapeops = "0.4"
 wgpu = { version = "30", default-features = false }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
@@ -66,12 +71,46 @@ debug = "line-tables-only"
 
 # The geometry kernels (drop cutters, voxel stock, collision checks) run thousands of times per
 # toolpath and simulation; unoptimised they make debug runs and tests crawl.
-[profile.dev.package.CosmicCAM-geom]
+[profile.dev.package.CosmicDMS-geom]
 opt-level = 2
 
 # Model import tessellates whole CAD files; the triangulator and readers too.
-[profile.dev.package.CosmicCAM-io]
+[profile.dev.package.CosmicDMS-io]
 opt-level = 2
 
 [profile.dev.package.spade]
+opt-level = 2
+
+# CAD mode's solid booleans and tessellation (the truck kernel) crawl unoptimised.
+[profile.dev.package.CosmicDMS-kernel]
+opt-level = 2
+
+[profile.dev.package.truck-base]
+opt-level = 2
+
+[profile.dev.package.truck-geometry]
+opt-level = 2
+
+[profile.dev.package.truck-geotrait]
+opt-level = 2
+
+[profile.dev.package.truck-topology]
+opt-level = 2
+
+[profile.dev.package.truck-modeling]
+opt-level = 2
+
+[profile.dev.package.truck-shapeops]
+opt-level = 2
+
+[profile.dev.package.truck-meshalgo]
+opt-level = 2
+
+[profile.dev.package.truck-polymesh]
+opt-level = 2
+
+[profile.dev.package.cgmath]
+opt-level = 2
+
+[profile.dev.package.rustc-hash]
 opt-level = 2

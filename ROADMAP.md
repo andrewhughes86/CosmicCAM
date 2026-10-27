@@ -1,4 +1,8 @@
-# CosmicCAM roadmap
+# CosmicDMS roadmap
+
+CosmicDMS, the Cosmic Design and Manufacturing Suite (formerly CosmicCAM), brings CAD, CAM,
+drawings and 3D-printer slicing into one application. The phases below are the CAM suite's;
+the CAD, Drawings and Slicer modes follow at the end.
 
 | Phase | Milestone | Status |
 | --- | --- | --- |
@@ -38,7 +42,7 @@
 - Posts are Python modules run out of process (`python3 -I`, CL data JSON on stdin, two-minute
   timeout): a broken or missing post is an error, never a crash. The shipped posts (`posts/`)
   are copied to `<data folder>/posts/builtin/`; your own go in `<data folder>/posts/`.
-- `cosmiccam_post.Post`: configuration as class attributes (units, framing, line numbers,
+- `cosmicdms_post.Post`: configuration as class attributes (units, framing, line numbers,
   comments, number formats, modal output, arcs IJK/R and helical, linearising, tool changes and
   preselect, length offsets, spindle and coolant codes, work offsets incl. extended ones, canned
   cycles or expanded drilling, rigid tapping, dwell units, homing) and overridable hooks.
@@ -136,7 +140,7 @@
 ## Demo project (2026-10-25)
 
 - `samples/demo.cosmic` (from `samples/demo-part.obj`) is built in and opens at start-up while
-  CosmicCAM is pre-release; `job.demo.open` (Home → Demo project) reopens it; `--empty` starts
+  CosmicDMS is pre-release; `job.demo.open` (Home → Demo project) reopens it; `--empty` starts
   blank.
 - Job files save the tools their toolpaths use; opening adds missing ones to the library and moves
   toolpaths on unknown machines to the active one.
@@ -186,7 +190,7 @@ CAM practice; no product's behaviour, text or names copied):
 
 ## Job files and document tabs (2026-10-24)
 
-- `.cosmic` job files (`CosmicCAM/1`, JSON with packed meshes and toolpath moves): `job.open`,
+- `.cosmic` job files (`CosmicDMS/1`, JSON with packed meshes and toolpath moves): `job.open`,
   `job.save`, `job.save.as`. Open, Save and Save as on Home (Ctrl+O, Ctrl+S, Ctrl+Shift+S);
   `.cosmic` files dropped on the window open too. Hostile files are refused, never crash.
 - Each open document is a tab in the centre of the title strip; hovering shows its close
@@ -194,8 +198,8 @@ CAM practice; no product's behaviour, text or names copied):
   `job.tab.activate`, `job.tab.close`.
 - Grid and projection moved to the viewport's button row; layout restore moved to Preferences.
 - `.cosmic` files have their own file-type icon (`assets/icons/file/cosmic-job.svg`);
-  `packaging/linux/install-file-type.sh` registers it and CosmicCAM as their program, and
-  `CosmicCAM job.cosmic` opens a file from the command line.
+  `packaging/linux/install-file-type.sh` registers it and CosmicDMS as their program, and
+  `CosmicDMS job.cosmic` opens a file from the command line.
 - 2D contour: entry point (automatic, nearest the origin, the WCS origin or a picked point);
   G-code names G0 / G1 on every line that moves.
 
@@ -203,7 +207,7 @@ CAM practice; no product's behaviour, text or names copied):
 
 - Control channel (`--control PORT`, token-authenticated JSON lines on 127.0.0.1); see
   `docs/control-protocol.md`.
-- `python/cosmiccam`: stdlib-only client with `launch()` / `connect()` and one typed method per
+- `python/cosmicdms`: stdlib-only client with `launch()` / `connect()` and one typed method per
   command, generated from the command registry by `cargo xtask api`.
 - `docs/api/python.md`: the API guide, regenerated with the commands; CI fails when it is stale.
 - Commands carry typed parameter schemas; unknown or mistyped parameters are rejected.
@@ -213,7 +217,7 @@ CAM practice; no product's behaviour, text or names copied):
 
 ## Phase 2 — model import (2026-10-24)
 
-- New L3 crate `CosmicCAM-io`: hostile-input-safe readers for binary and ASCII STL and
+- New L3 crate `CosmicDMS-io`: hostile-input-safe readers for binary and ASCII STL and
   Wavefront OBJ (polygons fanned, negative indices, `v/vt/vn` corners). File size, triangle and
   face-corner counts are capped; non-finite numbers and bad indices are errors naming the line.
 - `geom::Mesh`: indexed triangle mesh with vertex welding, face normals and feature edges.
@@ -339,7 +343,7 @@ CAM practice; no product's behaviour, text or names copied):
 
 ## Web app (2026-10-24)
 
-- `apps/CosmicCAM-web`: the app compiled to WebAssembly with eframe's web runner, drawing with
+- `apps/CosmicDMS-web`: the app compiled to WebAssembly with eframe's web runner, drawing with
   wgpu (WebGPU, or WebGL 2). Built with trunk from `index.html`.
 - Browser file import: the Import button opens the browser's file picker and dropped files are
   read in the page; their bytes are staged in the session and imported as `upload://<name>`.
@@ -354,7 +358,7 @@ CAM practice; no product's behaviour, text or names copied):
 
 ## Not started yet (from AGENTS.md)
 
-Crash reports, `CosmicCAM-cli`, job file format.
+Crash reports, `CosmicDMS-cli`, job file format.
 
 ## Ribbon icons (2026-10-24)
 
@@ -396,7 +400,7 @@ Crash reports, `CosmicCAM-cli`, job file format.
   A WCS only a toolpath uses is part of it and not listed. One WCS marker shows at a time: the
   one in use (the toolpath being edited, the WCS tools), else the selection's, else the one
   switched on (`view.wcs.visibility.set`). Right-click Simulate runs one toolpath alone.
-- CosmicCAM has its own application icon (window and taskbar; on Linux the install script adds
+- CosmicDMS has its own application icon (window and taskbar; on Linux the install script adds
   the launcher entry and icon).
 
 ## Toolpath trimming (2026-10-26)
@@ -434,3 +438,31 @@ Crash reports, `CosmicCAM-cli`, job file format.
   spline carries, `ref` subtypes followed); line, circle, ellipse and B-spline edges. Units from
   the header. Solids come in watertight, through the same tessellator as STEP and IGES.
 - Not yet: binary `.sab` files, procedural surfaces without a spline approximation.
+
+## Modes and CAD (2026-10-26)
+
+- Mode button at the far left of the ribbon: CAD and CAM, each with its own ribbon (DRAW and
+  SLICER coming soon); `ui.mode.set`, `ui.mode.get`.
+- New L1 crate `CosmicDMS-kernel` on the `truck` B-rep kernel (Apache-2.0): closed sketch
+  profiles (with holes) extruded or revolved into exact solids, joined, cut or kept as bodies,
+  and tessellated; every kernel call guarded.
+- The part: a feature history (sketch, extrude, revolve, with add / cut / new body) rebuilt from
+  the changed feature on, cached per feature; its solid is the job model "Part" for CAM; saved
+  in the job file. Commands `cad.sketch` (+ line, rectangle, circle, arc, polygon),
+  `cad.extrude`, `cad.extrude.cut`, `cad.revolve`, `cad.revolve.cut`, `cad.feature.*`,
+  `cad.rebuild`, `cad.mass.get`.
+- CAD ribbon (Features, Sketch, Evaluate) and feature tree; sketching by clicking on the plane
+  with grid and point snapping and editable numbers; extrude/revolve panel with a live preview.
+- Next: sketch constraints and driving dimensions, fillets and chamfers, shells, patterns and
+  mirrors, sketching on part faces, reference planes.
+
+## The rename to CosmicDMS (2026-10-27)
+
+- CosmicCAM is now CosmicDMS, the Cosmic Design and Manufacturing Suite: CAD, CAM, Drawings
+  (coming) and a 3D-printer slicer (coming) in one application. Crates, binaries, the Python
+  package (`cosmicdms`, class `CosmicDMS`), environment variables, the data folder, the job
+  format tag (`CosmicDMS/1`), the Linux launcher and file type, docs and icons carry the new
+  name.
+- Nothing saved under the old name is lost: `CosmicCAM/1` job files, tool and machine library
+  files, settings, `CosmicCAM_*` environment variables and posts importing `cosmiccam_post` are
+  still read, and the old data folder is moved to the new one on first start.

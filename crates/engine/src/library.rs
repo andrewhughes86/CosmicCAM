@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Format tag written into saved libraries.
-pub const LIBRARY_FORMAT: &str = "CosmicCAM-library/1";
+pub const LIBRARY_FORMAT: &str = "CosmicDMS-library/1";
+/// Libraries saved before the rename (CosmicCAM), still read.
+const LEGACY_LIBRARY_FORMAT: &str = "CosmicCAM-library/1";
 /// Most machines one library holds.
 pub const MAX_MACHINES: usize = 64;
 /// Most tools one machine's library holds.
@@ -60,8 +62,8 @@ impl RotaryAxis {
         if self.reversed { -d } else { d }
     }
 
-    fn joint(&self) -> CosmicCAM_geom::kinematics::Joint {
-        CosmicCAM_geom::kinematics::Joint {
+    fn joint(&self) -> CosmicDMS_geom::kinematics::Joint {
+        CosmicDMS_geom::kinematics::Joint {
             axis: self.direction(),
             min: self.min.to_radians(),
             max: self.max.to_radians(),
@@ -132,10 +134,10 @@ impl Kinematics {
         })
     }
 
-    pub fn geom(&self) -> CosmicCAM_geom::kinematics::Kinematics {
-        use CosmicCAM_geom::kinematics::Layout;
+    pub fn geom(&self) -> CosmicDMS_geom::kinematics::Kinematics {
+        use CosmicDMS_geom::kinematics::Layout;
         let v = |a: [f64; 3]| glam::DVec3::from_array(a);
-        CosmicCAM_geom::kinematics::Kinematics {
+        CosmicDMS_geom::kinematics::Kinematics {
             layout: match self.layout.as_str() {
                 "head_head" => Layout::HeadHead,
                 "head_table" => Layout::HeadTable,
@@ -409,8 +411,8 @@ impl MachineLibrary {
     /// Reads a saved library. Machines and tools that fail their checks are dropped and
     /// reported; a file that is not a library at all is an error.
     pub fn from_json(v: &Value) -> Result<(Self, Vec<String>), String> {
-        if v.get("format").and_then(Value::as_str) != Some(LIBRARY_FORMAT) {
-            return Err(format!("not a CosmicCAM library (expected format {LIBRARY_FORMAT})"));
+        if !matches!(v.get("format").and_then(Value::as_str), Some(LIBRARY_FORMAT | LEGACY_LIBRARY_FORMAT)) {
+            return Err(format!("not a CosmicDMS library (expected format {LIBRARY_FORMAT})"));
         }
         let mut dropped = Vec::new();
         let mut machines: Vec<Machine> = Vec::new();

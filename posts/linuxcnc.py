@@ -18,7 +18,7 @@ Written from LinuxCNC's G-code reference. Settings (Export -> Post-processor) co
   switchable TCP kinematics, with the codes that switch it set in the post's settings.
 """
 
-from cosmiccam_post import Post, PostError, Property
+from cosmicdms_post import Post, PostError, Property
 
 
 class LinuxCNCPost(Post):

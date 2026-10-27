@@ -11,6 +11,7 @@
 
 mod app;
 mod automation;
+mod cad_panel;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod control;
 #[cfg(target_arch = "wasm32")]
@@ -32,7 +33,7 @@ pub mod ui_kit;
 mod viewport;
 mod wcs_tool;
 
-pub use CosmicCAM_engine::Session;
+pub use CosmicDMS_engine::Session;
 pub use app::{CosmicApp, LaunchOptions};
 pub use automation::Automation;
 pub use panes::parse_console_line;
@@ -40,10 +41,10 @@ pub use panes::parse_console_line;
 /// A command for the app to run after this frame: id and JSON parameters.
 pub type Request = (String, serde_json::Value);
 
-pub const APP_ID: &str = "CosmicCAM";
+pub const APP_ID: &str = "CosmicDMS";
 
-/// The application icon's master (`assets/icons/app/cosmiccam.svg`, a 256-unit square).
-pub const APP_ICON_SVG: &str = include_str!("../../../assets/icons/app/cosmiccam.svg");
+/// The application icon's master (`assets/icons/app/cosmicdms.svg`, a 256-unit square).
+pub const APP_ICON_SVG: &str = include_str!("../../../assets/icons/app/cosmicdms.svg");
 
 /// The application icon for the window and the taskbar, rendered at `px` pixels; None if it
 /// cannot be drawn (the window then has the system's default).
@@ -76,7 +77,7 @@ pub fn native_options() -> eframe::NativeOptions {
     };
     eframe::NativeOptions {
         viewport: viewport
-            .with_title("CosmicCAM")
+            .with_title("CosmicDMS")
             // The ribbon's tab strip is the title bar, with its own window controls.
             .with_decorations(false)
             .with_app_id(APP_ID)

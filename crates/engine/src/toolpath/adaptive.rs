@@ -1,4 +1,4 @@
-//! Adaptive clearing: roughing with a steady tool load ([`CosmicCAM_geom::adaptive`]), level
+//! Adaptive clearing: roughing with a steady tool load ([`CosmicDMS_geom::adaptive`]), level
 //! by level, deep and fast where an offset or zigzag path would bury the tool in corners.
 //!
 //! In 3D it clears the stock around the model; with `boundary: "selection"` it clears the
@@ -9,10 +9,10 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_geom::FaceKind;
-use CosmicCAM_geom::adaptive::{self as core, Entry, Grid, Settings};
-use CosmicCAM_geom::region::{self, Shape};
-use CosmicCAM_geom::zmap::ZMap;
+use CosmicDMS_geom::FaceKind;
+use CosmicDMS_geom::adaptive::{self as core, Entry, Grid, Settings};
+use CosmicDMS_geom::region::{self, Shape};
+use CosmicDMS_geom::zmap::ZMap;
 use glam::{DVec2, DVec3};
 use serde_json::Value;
 
@@ -222,7 +222,7 @@ pub fn adaptive(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
             let allowed = region::offset(&selection_shapes, -(r + c.stock_radial), c.tolerance);
             (selection_shapes.clone(), allowed)
         } else {
-            let shadow = CosmicCAM_geom::cutter::shadow_above(&tris, z - c.stock_axial);
+            let shadow = CosmicDMS_geom::cutter::shadow_above(&tris, z - c.stock_axial);
             let part = region::offset(&shadow, c.stock_radial, c.tolerance);
             let material = region::boolean(std::slice::from_ref(&stock_rect), &part, region::Op::Difference);
             let keep_out = region::offset(&shadow, r + c.stock_radial, c.tolerance);

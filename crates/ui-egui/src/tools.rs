@@ -7,7 +7,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 
 use serde_json::json;
 
-use CosmicCAM_engine::{Session, cmd};
+use CosmicDMS_engine::{Session, cmd};
 
 use crate::Request;
 use crate::param_form::ParamForm;
@@ -53,7 +53,7 @@ const FORM_COMMANDS: &[&str] = &[
 
 /// File types offered by the model import dialog: (label, extensions), every model first.
 fn model_filters() -> Vec<(String, Vec<String>)> {
-    use CosmicCAM_engine::ModelFormat;
+    use CosmicDMS_engine::ModelFormat;
     let both =
         |exts: &[&str]| -> Vec<String> { exts.iter().flat_map(|e| [e.to_string(), e.to_ascii_uppercase()]).collect() };
     let group = |label: &str, pick: &dyn Fn(&ModelFormat) -> bool| {
@@ -161,13 +161,13 @@ impl Tools {
                 Ok(())
             }
             "job.save" | "job.save.as" => {
-                let name = format!("{}.{}", session.job.name, CosmicCAM_engine::jobfile::EXTENSION);
+                let name = format!("{}.{}", session.job.name, CosmicDMS_engine::jobfile::EXTENSION);
                 // The browser has no file paths: the job file is downloaded instead.
                 #[cfg(target_arch = "wasm32")]
                 {
                     download(
                         &name,
-                        &CosmicCAM_engine::jobfile::to_string(&session.job, &session.view.camera, &session.library),
+                        &CosmicDMS_engine::jobfile::to_string(&session.job, &session.view.camera, &session.library),
                     )
                 }
                 #[cfg(not(target_arch = "wasm32"))]
@@ -291,7 +291,7 @@ impl Tools {
 fn open_request(path: &str) -> Request {
     let job = std::path::Path::new(path)
         .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case(CosmicCAM_engine::jobfile::EXTENSION));
+        .is_some_and(|e| e.eq_ignore_ascii_case(CosmicDMS_engine::jobfile::EXTENSION));
     (if job { "job.open" } else { "model.import" }.into(), json!({ "path": path }))
 }
 
@@ -338,11 +338,11 @@ const LIBRARY_OUT: FileKind = FileKind {
     save_as: Some("tools.json"),
 };
 const JOB_IN: FileKind =
-    FileKind { title: "Open job", filter: "CosmicCAM job (.cosmic)", extensions: &["cosmic", "COSMIC"], save_as: None };
+    FileKind { title: "Open job", filter: "CosmicDMS job (.cosmic)", extensions: &["cosmic", "COSMIC"], save_as: None };
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 const JOB_OUT: FileKind = FileKind {
     title: "Save job",
-    filter: "CosmicCAM job (.cosmic)",
+    filter: "CosmicDMS job (.cosmic)",
     extensions: &["cosmic", "COSMIC"],
     save_as: Some("job.cosmic"),
 };

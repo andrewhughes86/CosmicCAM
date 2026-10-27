@@ -91,7 +91,7 @@ pub fn bore(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
         let rings = (((path - first) / stepover).ceil() as usize).min(MAX_RINGS);
         let radii: Vec<f64> = (0..=rings).map(|k| first + (path - first) * k as f64 / rings.max(1) as f64).collect();
         let radii = if rings == 0 { vec![path] } else { radii };
-        let step = CosmicCAM_geom::offset::arc_step(path, tolerance).max(1.0e-3);
+        let step = CosmicDMS_geom::offset::arc_step(path, tolerance).max(1.0e-3);
         let segments_per_turn = ((std::f64::consts::TAU / step).ceil() as usize).clamp(16, 4_096);
         let point = |radius: f64, a: f64| h.at + DVec2::new(a.cos(), a.sin()) * radius;
         if !started {

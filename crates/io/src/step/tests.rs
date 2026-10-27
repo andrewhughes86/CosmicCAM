@@ -174,7 +174,7 @@ impl W {
 }
 
 /// Signed volume and whether every edge is shared by exactly two triangles.
-fn volume_closed(m: &CosmicCAM_geom::Mesh) -> (f64, bool) {
+fn volume_closed(m: &CosmicDMS_geom::Mesh) -> (f64, bool) {
     let mut vol = 0.0;
     let mut edges: HashMap<(u32, u32), i32> = HashMap::new();
     for t in m.triangles() {

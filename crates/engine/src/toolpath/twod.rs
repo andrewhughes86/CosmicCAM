@@ -172,7 +172,7 @@ pub fn thread(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
         if spring && let Some(&last) = radii.last() {
             radii.push(last);
         }
-        let step = CosmicCAM_geom::offset::arc_step(final_radius.max(0.1), tolerance).max(1.0e-3);
+        let step = CosmicDMS_geom::offset::arc_step(final_radius.max(0.1), tolerance).max(1.0e-3);
         let per_turn = ((std::f64::consts::TAU / step).ceil() as usize).clamp(16, 4096);
         // Whole turns, ending (or starting) exactly at the bottom so a blind hole is not cut deeper.
         let turns = ((top - bottom) / pitch).ceil().max(1.0);

@@ -9,4 +9,4 @@ workspace = true
 
 [dependencies]
 serde_json = { workspace = true }
-CosmicCAM-engine = { workspace = true }
+CosmicDMS-engine = { workspace = true }

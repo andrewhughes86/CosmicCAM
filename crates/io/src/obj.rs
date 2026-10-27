@@ -5,7 +5,7 @@
 //! fanned into triangles. Groups, materials, texture coordinates, normals, lines and
 //! free-form surfaces are skipped.
 
-use CosmicCAM_geom::{Mesh, Vec3};
+use CosmicDMS_geom::{Mesh, Vec3};
 
 use crate::{ImportError, MAX_TRIANGLES, finite};
 

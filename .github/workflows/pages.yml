@@ -1,4 +1,4 @@
-# Builds the browser version of CosmicCAM (apps/CosmicCAM-web) with trunk and publishes it
+# Builds the browser version of CosmicDMS (apps/CosmicDMS-web) with trunk and publishes it
 # to GitHub Pages. Enable Pages with "GitHub Actions" as the source in the repository settings.
 name: Web app (GitHub Pages)
 
@@ -33,13 +33,13 @@ jobs:
           curl -sSL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
           trunk --version
       - name: Build
-        working-directory: apps/CosmicCAM-web
+        working-directory: apps/CosmicDMS-web
         # Pages serves the site from /<repository>/.
         run: trunk build --release --public-url "/${{ github.event.repository.name }}/"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/CosmicCAM-web/dist
+          path: apps/CosmicDMS-web/dist
 
   deploy:
     needs: build

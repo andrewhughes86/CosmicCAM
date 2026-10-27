@@ -1,6 +1,6 @@
 //! Dockable workspace: panes can be dragged, stacked, split and resized.
 
-use CosmicCAM_engine::{Pane, Session};
+use CosmicDMS_engine::{Pane, Session};
 use egui::{Id, Ui, WidgetText};
 use egui_dock::{DockState, NodeIndex, SurfaceIndex, TabViewer};
 use egui_wgpu::RenderState;

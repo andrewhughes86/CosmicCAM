@@ -6,9 +6,9 @@ import socket
 import threading
 import unittest
 
-import cosmiccam
-from cosmiccam._commands import Commands
-from cosmiccam.client import CosmicCAM, CosmicCAMError
+import cosmicdms
+from cosmicdms._commands import Commands
+from cosmicdms.client import CosmicDMS, CosmicDMSError
 
 TOKEN = "t" * 64
 
@@ -49,7 +49,7 @@ class FakeApp:
 class ClientTests(unittest.TestCase):
     def test_token_goes_only_on_the_first_request(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.ping()
         cc.state()
         self.assertEqual(app.requests[0]["token"], TOKEN)
@@ -59,23 +59,23 @@ class ClientTests(unittest.TestCase):
 
     def test_wrong_token_raises_unauthorized(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, "wrong", timeout=5)
-        with self.assertRaises(CosmicCAMError) as ctx:
+        cc = CosmicDMS(app.port, "wrong", timeout=5)
+        with self.assertRaises(CosmicDMSError) as ctx:
             cc.ping()
         self.assertEqual(ctx.exception.kind, "unauthorized")
         cc.close()
 
     def test_errors_carry_their_kind(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
-        with self.assertRaises(CosmicCAMError) as ctx:
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
+        with self.assertRaises(CosmicDMSError) as ctx:
             cc.run("nope")
         self.assertEqual(ctx.exception.kind, "unknown_command")
         cc.close()
 
     def test_generated_methods_send_only_given_parameters(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.view_camera_set(yaw=-90, target=[1, 2, 3])
         cc.view_fit()
         sent = [r["params"] for r in app.requests]
@@ -85,7 +85,7 @@ class ClientTests(unittest.TestCase):
 
     def test_model_import_sends_path_and_units(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.model_import(path="/parts/bracket.stl", units="in")
         cc.model_list()
         cc.model_remove(id="model.1")
@@ -99,7 +99,7 @@ class ClientTests(unittest.TestCase):
 
     def test_wcs_commands_send_vectors_and_choices(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.setup_wcs_create(origin="box", origin_box="top_center", orientation="z_x",
                             orientation_z="model.1/face.3", orientation_x="model.1/edge.7", flip_x=True)
         cc.setup_wcs_offset(delta=[1, 2, 3], frame="world")
@@ -121,7 +121,7 @@ class ClientTests(unittest.TestCase):
 
     def test_tool_and_machine_commands(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.machine_create(name="Router", max_spindle_rpm=30000)
         cc.tool_create_flat(diameter=6, flutes=3, spindle_rpm=12000, feed=1200)
         cc.tool_edit(number=1, new_number=4)
@@ -136,7 +136,7 @@ class ClientTests(unittest.TestCase):
 
     def test_contour_sends_geometry_lists(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.toolpath_contour(geometry=["model.1/face.2", "model.1/edge.4"], side="inside", multiple_depths=True)
         self.assertEqual(
             app.requests[0]["params"],
@@ -149,7 +149,7 @@ class ClientTests(unittest.TestCase):
 
     def test_gcode_export(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.post_gcode_export(path="part.nc", units="mm", line_numbers=True)
         self.assertEqual(
             app.requests[0]["params"],
@@ -159,7 +159,7 @@ class ClientTests(unittest.TestCase):
 
     def test_job_files_and_tabs(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.job_save(path="part.cosmic")
         cc.job_tab_close(index=1, discard=True)
         self.assertEqual(
@@ -173,7 +173,7 @@ class ClientTests(unittest.TestCase):
 
     def test_setup_create(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.setup_create(name="Op 1", wcs="origin", stock="size", stock_size=[100, 60, 40])
         self.assertEqual(
             app.requests[0]["params"],
@@ -186,7 +186,7 @@ class ClientTests(unittest.TestCase):
 
     def test_type_text(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.type_text("0.25", replace=True)
         self.assertEqual(app.requests[0]["method"], "ui.type")
         self.assertEqual(app.requests[0]["params"], {"text": "0.25", "replace": True})
@@ -194,7 +194,7 @@ class ClientTests(unittest.TestCase):
 
     def test_strategies(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.toolpath_pocket(geometry=["model.1/face.8"], stepover=2.5)
         cc.toolpath_drill(geometry=["model.1/edge.3"], cycle="peck")
         self.assertEqual(
@@ -205,7 +205,7 @@ class ClientTests(unittest.TestCase):
 
     def test_trim(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.toolpath_trim(ids=["toolpath.2", "toolpath.3"], points=[[0, 0, 0], [40, 0, 0], [40, 30, 0]], keep="outside")
         cc.toolpath_trim_remove(id="toolpath.2", index=1)
         self.assertEqual(
@@ -224,9 +224,28 @@ class ClientTests(unittest.TestCase):
         )
         cc.close()
 
+    def test_cad(self):
+        app = FakeApp()
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
+        cc.ui_mode_set(mode="cad")
+        cc.cad_sketch(plane="front", entities=[{"type": "circle", "center": [0, 0], "radius": 5}])
+        cc.cad_extrude(distance=12.5, direction="symmetric")
+        self.assertEqual(
+            [r["params"] for r in app.requests],
+            [
+                {"command": "ui.mode.set", "params": {"mode": "cad"}},
+                {
+                    "command": "cad.sketch",
+                    "params": {"plane": "front", "entities": [{"type": "circle", "center": [0, 0], "radius": 5}]},
+                },
+                {"command": "cad.extrude", "params": {"distance": 12.5, "direction": "symmetric"}},
+            ],
+        )
+        cc.close()
+
     def test_simulation(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.sim_seek(fraction=0.5)
         cc.sim_gouge_check(tolerance=0.02)
         cc.sim_start(toolpaths=["toolpath.3"], start_from="stock")
@@ -250,14 +269,14 @@ class ClientTests(unittest.TestCase):
 
     def test_settings_units(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.settings_units_set(units="mm")
         self.assertEqual(app.requests[0]["params"], {"command": "settings.units.set", "params": {"units": "mm"}})
         cc.close()
 
     def test_click_sends_ui_click(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.click(120, 340.5)
         self.assertEqual(app.requests[0]["method"], "ui.click")
         self.assertEqual(app.requests[0]["params"], {"x": 120, "y": 340.5})
@@ -265,14 +284,14 @@ class ClientTests(unittest.TestCase):
 
     def test_right_click(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.click(10, 20, button="right")
         self.assertEqual(app.requests[0]["params"], {"x": 10, "y": 20, "button": "right"})
         cc.close()
 
     def test_start_sends_ui_start(self):
         app = FakeApp()
-        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc = CosmicDMS(app.port, TOKEN, timeout=5)
         cc.start("model.import")
         self.assertEqual(app.requests[0]["method"], "ui.start")
         self.assertEqual(app.requests[0]["params"], {"command": "model.import"})
@@ -295,8 +314,8 @@ class GeneratedApiTests(unittest.TestCase):
         self.assertTrue(hasattr(Commands, "model_formats"))
 
     def test_public_names(self):
-        for name in ("launch", "connect", "CosmicCAM", "CosmicCAMError"):
-            self.assertTrue(hasattr(cosmiccam, name))
+        for name in ("launch", "connect", "CosmicDMS", "CosmicDMSError"):
+            self.assertTrue(hasattr(cosmicdms, name))
 
 
 if __name__ == "__main__":

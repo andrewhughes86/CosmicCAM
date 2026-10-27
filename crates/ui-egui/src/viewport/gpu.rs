@@ -3,8 +3,8 @@
 //! Renders into an offscreen multisampled target with its own depth buffer, resolves it
 //! into a texture registered with egui, and the viewport paints that texture as an image.
 
-use CosmicCAM_geom::{Mat4, Vec3};
-use CosmicCAM_render::{SceneGeometry, Vertex};
+use CosmicDMS_geom::{Mat4, Vec3};
+use CosmicDMS_render::{SceneGeometry, Vertex};
 use egui_wgpu::RenderState;
 use std::sync::{Arc, Mutex};
 

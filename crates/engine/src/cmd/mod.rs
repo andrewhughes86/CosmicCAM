@@ -5,6 +5,7 @@
 //! every call against it before running the command, and the Python API and its guide are
 //! generated from it (`cargo xtask api`).
 
+mod cad;
 mod job;
 mod machine;
 mod model;
@@ -31,6 +32,56 @@ use serde_json::{Map, Value, json};
 use crate::error::{EngineError, EngineResult};
 use crate::session::Session;
 
+/// What the application is being used for; each mode has its own ribbon.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Mode {
+    /// Modelling parts.
+    Cad,
+    /// Toolpaths, simulation and G-code.
+    Cam,
+    /// 2D drawings of parts (coming).
+    Drawings,
+    /// 3D printing (coming).
+    Slicer,
+}
+
+impl Mode {
+    pub const ALL: [Self; 4] = [Self::Cad, Self::Cam, Self::Drawings, Self::Slicer];
+    pub const IDS: &'static [&'static str] = &["cad", "cam", "drawings", "slicer"];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Cad => "cad",
+            Self::Cam => "cam",
+            Self::Drawings => "drawings",
+            Self::Slicer => "slicer",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Cad => "CAD",
+            Self::Cam => "CAM",
+            Self::Drawings => "DRAWINGS",
+            Self::Slicer => "SLICER",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.id() == id)
+    }
+
+    /// Whether the mode can be used yet.
+    pub fn available(self) -> bool {
+        matches!(self, Self::Cad | Self::Cam)
+    }
+
+    /// The mode's ribbon tabs, in display order.
+    pub fn tabs(self) -> Vec<RibbonTab> {
+        RibbonTab::ALL.into_iter().filter(|t| t.mode() == self).collect()
+    }
+}
+
 /// Ribbon tabs, in display order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RibbonTab {
@@ -41,13 +92,34 @@ pub enum RibbonTab {
     Simulation,
     Export,
     Machine,
+    Features,
+    Sketch,
+    Evaluate,
 }
 
 impl RibbonTab {
-    pub const ALL: [Self; 7] =
-        [Self::Home, Self::Setup, Self::Machine, Self::Tooling, Self::Toolpaths, Self::Simulation, Self::Export];
+    pub const ALL: [Self; 10] = [
+        Self::Home,
+        Self::Setup,
+        Self::Machine,
+        Self::Tooling,
+        Self::Toolpaths,
+        Self::Simulation,
+        Self::Export,
+        Self::Features,
+        Self::Sketch,
+        Self::Evaluate,
+    ];
     pub const IDS: &'static [&'static str] =
-        &["home", "setup", "machine", "tooling", "toolpaths", "simulation", "export"];
+        &["home", "setup", "machine", "tooling", "toolpaths", "simulation", "export", "features", "sketch", "evaluate"];
+
+    /// The mode whose ribbon it belongs to.
+    pub fn mode(self) -> Mode {
+        match self {
+            Self::Features | Self::Sketch | Self::Evaluate => Mode::Cad,
+            _ => Mode::Cam,
+        }
+    }
 
     pub fn label(self) -> &'static str {
         match self {
@@ -58,6 +130,9 @@ impl RibbonTab {
             Self::Simulation => "Simulation",
             Self::Export => "Export",
             Self::Machine => "Machine",
+            Self::Features => "Features",
+            Self::Sketch => "Sketch",
+            Self::Evaluate => "Evaluate",
         }
     }
 
@@ -70,6 +145,9 @@ impl RibbonTab {
             Self::Simulation => "simulation",
             Self::Export => "export",
             Self::Machine => "machine",
+            Self::Features => "features",
+            Self::Sketch => "sketch",
+            Self::Evaluate => "evaluate",
         }
     }
 
@@ -154,6 +232,10 @@ pub enum ParamKind {
     PointList {
         max: usize,
     },
+    /// A list of up to `max` JSON objects, checked by the command (e.g. sketch entities).
+    Objects {
+        max: usize,
+    },
 }
 
 impl ParamKind {
@@ -168,6 +250,7 @@ impl ParamKind {
             Self::Vec3 => "vec3",
             Self::StrList { .. } => "list",
             Self::PointList { .. } => "points",
+            Self::Objects { .. } => "objects",
         }
     }
 }
@@ -217,7 +300,9 @@ impl Param {
                 v["max"] = json!(max);
             }
             ParamKind::Choice(choices) => v["choices"] = json!(choices),
-            ParamKind::StrList { max } | ParamKind::PointList { max } => v["max_items"] = json!(max),
+            ParamKind::StrList { max } | ParamKind::PointList { max } | ParamKind::Objects { max } => {
+                v["max_items"] = json!(max)
+            }
             _ => {}
         }
         v
@@ -358,6 +443,11 @@ fn check_kind(p: &Param, v: &Value) -> EngineResult<()> {
             }
             _ => bad("must be a list of [x, y, z] points with finite numbers".into()),
         },
+        ParamKind::Objects { max } => match v.as_array() {
+            Some(a) if a.len() > max => bad(format!("has more than {max} items")),
+            Some(a) if a.iter().all(Value::is_object) => Ok(()),
+            _ => bad("must be a list of objects".into()),
+        },
     }
 }
 
@@ -387,7 +477,8 @@ pub fn all() -> impl Iterator<Item = &'static CommandSpec> {
         .chain(machine::COMMANDS.iter())
         .chain(settings::COMMANDS.iter())
         .chain(sim::COMMANDS.iter())
-        .chain(post::COMMANDS.iter());
+        .chain(post::COMMANDS.iter())
+        .chain(cad::COMMANDS.iter());
     #[cfg(test)]
     let registered = registered.chain(test_only::COMMANDS.iter());
     registered
@@ -423,6 +514,8 @@ const PANEL_ORDER: &[(RibbonTab, &[&str])] = &[
     (RibbonTab::Home, &["Job", "Setup", "Machine & tools", "Toolpaths", "Verify & post", "Preferences"]),
     (RibbonTab::Setup, &["Setup", "Model", "Coordinates", "Stock"]),
     (RibbonTab::Toolpaths, &["2D", "Drilling", "3D", "Multi-axis", "Output"]),
+    (RibbonTab::Features, &["Features", "Part"]),
+    (RibbonTab::Sketch, &["Sketch", "Draw"]),
 ];
 
 /// Ribbon buttons in the order a job uses them, within their panels.

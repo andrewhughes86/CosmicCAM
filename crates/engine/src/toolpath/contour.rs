@@ -8,9 +8,9 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_geom::faces::boundary_loops;
-use CosmicCAM_geom::offset::{arc_step, offset_closed, offset_open, signed_area2};
-use CosmicCAM_geom::{Aabb, EdgeKind, FaceKind, Vec3};
+use CosmicDMS_geom::faces::boundary_loops;
+use CosmicDMS_geom::offset::{arc_step, offset_closed, offset_open, signed_area2};
+use CosmicDMS_geom::{Aabb, EdgeKind, FaceKind, Vec3};
 use glam::{DVec2, DVec3};
 use serde_json::{Map, Value, json};
 

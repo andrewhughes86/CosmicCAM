@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use CosmicCAM_geom::{Mat4, Mesh, Vec3};
+use CosmicDMS_geom::{Mat4, Mesh, Vec3};
 
 use crate::{ImportError, MAX_TRIANGLES};
 
@@ -93,7 +93,7 @@ impl Soup {
 
     /// The size of the box around the vertices.
     pub fn extent(&self) -> f32 {
-        let b = CosmicCAM_geom::Aabb::from_points(self.positions.iter().copied());
+        let b = CosmicDMS_geom::Aabb::from_points(self.positions.iter().copied());
         if b.min.x <= b.max.x { (b.max - b.min).length() } else { 0.0 }
     }
 

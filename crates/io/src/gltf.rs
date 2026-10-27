@@ -4,10 +4,10 @@
 //! The default scene's node tree is walked with each node's matrix or translation, rotation
 //! and scale; every triangle primitive's `POSITION` accessor (with its `indices`, if any)
 //! becomes triangles. Strips and fans are unrolled; points and lines are skipped. glTF is in
-//! metres with Y up; the model is turned so its up is CosmicCAM's Z. Compressed meshes
+//! metres with Y up; the model is turned so its up is CosmicDMS's Z. Compressed meshes
 //! (Draco, meshopt) are not supported yet.
 
-use CosmicCAM_geom::{Mat4, Quat, Vec3};
+use CosmicDMS_geom::{Mat4, Quat, Vec3};
 use serde_json::Value;
 
 use crate::{ImportError, Imported, Sibling, Soup, Units};

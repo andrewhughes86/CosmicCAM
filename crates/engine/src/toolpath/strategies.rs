@@ -14,8 +14,8 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_geom::cutter::{DropCutter, shadow_above};
-use CosmicCAM_geom::region::{self, Shape};
+use CosmicDMS_geom::cutter::{DropCutter, shadow_above};
+use CosmicDMS_geom::region::{self, Shape};
 use glam::{DVec2, DVec3};
 use serde_json::Value;
 

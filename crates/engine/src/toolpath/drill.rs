@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_geom::{EdgeKind, FaceKind};
+use CosmicDMS_geom::{EdgeKind, FaceKind};
 use glam::{DVec2, DVec3};
 use serde_json::{Map, Value, json};
 

@@ -2,10 +2,10 @@
 //! toolpath, collisions marked) with the transport under it, a readout of where the tool is and
 //! what it is doing, the comparison legend, and keys to step through the program.
 
-use CosmicCAM_engine::Session;
-use CosmicCAM_engine::sim::{PATH_DISPLAYS, Sim};
-use CosmicCAM_engine::toolpath::MoveKind;
-use CosmicCAM_engine::units::DisplayUnits;
+use CosmicDMS_engine::Session;
+use CosmicDMS_engine::sim::{PATH_DISPLAYS, Sim};
+use CosmicDMS_engine::toolpath::MoveKind;
+use CosmicDMS_engine::units::DisplayUnits;
 use egui::{Color32, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::{Value, json};
 

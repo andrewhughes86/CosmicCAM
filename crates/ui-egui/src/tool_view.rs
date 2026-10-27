@@ -6,8 +6,8 @@
 //! holder face. Dimension lines give the cutting diameter, the flute length, the stick-out and
 //! what the type adds (corner radius, point angle, reach).
 
-use CosmicCAM_engine::library::{Holder, Tool};
-use CosmicCAM_engine::units::DisplayUnits;
+use CosmicDMS_engine::library::{Holder, Tool};
+use CosmicDMS_engine::units::DisplayUnits;
 use egui::{Align2, Color32, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
 
 use crate::theme::Tokens;

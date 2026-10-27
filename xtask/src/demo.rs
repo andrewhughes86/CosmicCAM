@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use CosmicCAM_engine::Session;
+use CosmicDMS_engine::Session;
 use serde_json::{Value, json};
 
 type V3 = [f64; 3];
@@ -186,7 +186,7 @@ impl MeshBuilder {
     }
 
     fn obj(&self) -> String {
-        let mut out = String::from("# CosmicCAM demo part (cargo xtask demo), millimetres, Z up\n");
+        let mut out = String::from("# CosmicDMS demo part (cargo xtask demo), millimetres, Z up\n");
         for v in &self.vertices {
             let _ = writeln!(out, "v {:.6} {:.6} {:.6}", v[0], v[1], v[2]);
         }
@@ -368,7 +368,7 @@ pub fn run_demo() -> Result<(), String> {
     let machine = run(
         &mut s,
         "machine.create",
-        json!({ "name": CosmicCAM_engine::demo::DEMO_MACHINE, "kind": "mill_5axis", "max_spindle_rpm": 20000,
+        json!({ "name": CosmicDMS_engine::demo::DEMO_MACHINE, "kind": "mill_5axis", "max_spindle_rpm": 20000,
                 "max_feed": 20000, "travel_x": 600, "travel_y": 500, "travel_z": 500, "tool_capacity": 40, "post": "fanuc" }),
     )?;
     let mid = machine["id"].as_str().unwrap_or_default().to_owned();

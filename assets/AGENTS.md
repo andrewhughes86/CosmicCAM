@@ -1,6 +1,6 @@
 # assets/ — instructions for agents
 
-Everything under `assets/` ships with CosmicCAM, so every file here must be ours to ship.
+Everything under `assets/` ships with CosmicDMS, so every file here must be ours to ship.
 
 ## Rules
 - **Original or openly licensed only.** Draw it yourself, or use a file under a licence
@@ -10,7 +10,7 @@ Everything under `assets/` ships with CosmicCAM, so every file here must be ours
   open beside your editor. Our look comes from `icons/ui/STYLE_GUIDE.md` alone.
 - **Every file needs a row in `/ATTRIBUTION.md`** (path, author or source, licence).
   `cargo xtask assets` fails the build otherwise. Markdown, Python and text files are exempt.
-- No screenshots of other software, ever. Review evidence (screenshots of CosmicCAM itself)
+- No screenshots of other software, ever. Review evidence (screenshots of CosmicDMS itself)
   is attached to PRs, never committed.
 - Keep source masters (SVG) under version control; generated rasters are build outputs.
 
@@ -21,7 +21,7 @@ Python is a development tool only, never an application dependency.
 ## Layout
 - `icons/ui/` — command and UI icons. Read `icons/ui/AGENTS.md` and
   `icons/ui/STYLE_GUIDE.md` before adding, changing or assigning any icon.
-- `icons/file/` — file-type icons the desktop shows for CosmicCAM files (`cosmic-job.svg` for
+- `icons/file/` — file-type icons the desktop shows for CosmicDMS files (`cosmic-job.svg` for
   `.cosmic` jobs). These are full-colour artwork for file managers, not command icons: the UI
   style guide's colour roles do not apply, but the originality and attribution rules do.
   `packaging/linux/install-file-type.sh` registers them on Linux.

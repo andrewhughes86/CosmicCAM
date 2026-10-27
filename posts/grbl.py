@@ -5,7 +5,7 @@ Grbl has no tool changer, tool length offsets or canned cycles: tool changes sto
 written with I and J; dwell is in seconds; G54-G59 only.
 """
 
-from cosmiccam_post import Post
+from cosmicdms_post import Post
 
 
 class GrblPost(Post):

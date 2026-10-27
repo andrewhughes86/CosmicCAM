@@ -1,4 +1,4 @@
-//! CosmicCAM desktop application.
+//! CosmicDMS desktop application.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -12,10 +12,10 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use CosmicCAM_ui_egui::{Automation, LaunchOptions, Session, parse_console_line};
+use CosmicDMS_ui_egui::{Automation, LaunchOptions, Session, parse_console_line};
 
 const USAGE: &str =
-    "usage: CosmicCAM [job.cosmic]... [--sample] [--run \"<command> [json]\"]... [--tab <name>] [--screenshot <file.png>] [--control <port>]
+    "usage: CosmicDMS [job.cosmic]... [--sample] [--run \"<command> [json]\"]... [--tab <name>] [--screenshot <file.png>] [--control <port>]
 
   job.cosmic            open these job files, each in its own tab
   --empty               start with an empty job instead of the demo project
@@ -24,11 +24,16 @@ const USAGE: &str =
   --tab <name>          open on this ribbon tab (Home, Setup, Tooling, ...)
   --screenshot <file>   save a PNG of the window once the steps have run, then quit
   --control <port>      open the control channel for the Python API on 127.0.0.1:<port> (0 = any free port);
-                        the token is read from CosmicCAM_CONTROL_TOKEN or written to
-                        <data dir>/CosmicCAM/control/<port>.token";
+                        the token is read from CosmicDMS_CONTROL_TOKEN or written to
+                        <data dir>/CosmicDMS/control/<port>.token";
 
 fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    // Settings and libraries saved under the application's former name come along.
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(note) = CosmicDMS_ui_egui::control::migrate_data_dir() {
+        eprintln!("CosmicDMS: {note}");
+    }
     let mut sample = false;
     let mut empty = false;
     let mut files = 0usize;
@@ -77,7 +82,7 @@ fn main() -> ExitCode {
         }
     }
     let session = if sample { Session::with_sample() } else { Session::new() };
-    match CosmicCAM_ui_egui::run(
+    match CosmicDMS_ui_egui::run(
         session,
         LaunchOptions {
             automation: automation(steps, screenshot, tab),
@@ -88,7 +93,7 @@ fn main() -> ExitCode {
     ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("CosmicCAM could not start: {e}");
+            eprintln!("CosmicDMS could not start: {e}");
             ExitCode::FAILURE
         }
     }
@@ -99,7 +104,7 @@ fn usage_error(message: &str) -> ExitCode {
     ExitCode::from(2)
 }
 
-fn automation(steps: Vec<CosmicCAM_ui_egui::Request>, screenshot: Option<PathBuf>, tab: Option<String>) -> Automation {
+fn automation(steps: Vec<CosmicDMS_ui_egui::Request>, screenshot: Option<PathBuf>, tab: Option<String>) -> Automation {
     let mut automation = Automation::new(steps, screenshot);
     automation.ribbon_tab = tab;
     automation

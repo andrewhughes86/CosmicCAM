@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use CosmicCAM_geom::Mat4;
+use CosmicDMS_geom::Mat4;
 
 use crate::vrml::{VNode, Val, Walk};
 use crate::xml::{Node, tree};
@@ -67,7 +67,7 @@ pub fn read(bytes: &[u8]) -> Result<Imported, ImportError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use CosmicCAM_geom::Vec3;
+    use CosmicDMS_geom::Vec3;
 
     #[test]
     fn transforms_def_use_and_triangle_sets() -> Result<(), ImportError> {

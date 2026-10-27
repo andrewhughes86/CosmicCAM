@@ -3,9 +3,9 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
-use CosmicCAM_geom::{Aabb, EdgeKind, EdgeMap, FaceKind, FaceMap, Mesh, Vec3};
-use CosmicCAM_io::{ModelFormat, Units};
-use CosmicCAM_render::OrbitCamera;
+use CosmicDMS_geom::{Aabb, EdgeKind, EdgeMap, FaceKind, FaceMap, Mesh, Vec3};
+use CosmicDMS_io::{ModelFormat, Units};
+use CosmicDMS_render::OrbitCamera;
 use serde_json::{Value, json};
 
 use crate::cmd::{self, CommandSpec, RibbonTab};
@@ -190,6 +190,8 @@ pub enum UiRequest {
 /// UI state the engine keeps so commands and the API can read and change it.
 #[derive(Clone, Debug)]
 pub struct UiState {
+    /// CAD or CAM: which ribbon shows.
+    pub mode: crate::cmd::Mode,
     pub ribbon_tab: RibbonTab,
     /// Panes currently open, reported by the UI each frame.
     pub open_panes: Vec<Pane>,
@@ -198,7 +200,12 @@ pub struct UiState {
 
 impl Default for UiState {
     fn default() -> Self {
-        Self { ribbon_tab: RibbonTab::Home, open_panes: Pane::ALL.to_vec(), requests: Vec::new() }
+        Self {
+            mode: crate::cmd::Mode::Cam,
+            ribbon_tab: RibbonTab::Home,
+            open_panes: Pane::ALL.to_vec(),
+            requests: Vec::new(),
+        }
     }
 }
 
@@ -272,7 +279,7 @@ pub struct Model {
 impl Model {
     /// Face and edge recognition for a newly loaded mesh.
     pub fn recognise(mesh: &Mesh) -> (Arc<FaceMap>, Arc<EdgeMap>) {
-        (Arc::new(CosmicCAM_geom::faces::segment(mesh)), Arc::new(CosmicCAM_geom::edges::extract(mesh)))
+        (Arc::new(CosmicDMS_geom::faces::segment(mesh)), Arc::new(CosmicDMS_geom::edges::extract(mesh)))
     }
 }
 
@@ -420,7 +427,7 @@ impl Model {
     /// The built-in sample part as a model, so it can be picked like an imported one.
     pub fn sample() -> Self {
         let c = [0.5; 4];
-        let palette = CosmicCAM_render::ScenePalette {
+        let palette = CosmicDMS_render::ScenePalette {
             grid_minor: c,
             grid_major: c,
             axis_x: c,
@@ -435,7 +442,7 @@ impl Model {
             path_lead: c,
             path_link: c,
         };
-        let g = CosmicCAM_render::scene::sample_part(&palette, false, false);
+        let g = CosmicDMS_render::scene::sample_part(&palette, false, false);
         let soup = g.triangles.as_chunks::<3>().0.iter().map(|t| t.map(|v| Vec3::from(v.pos)));
         let mesh = Mesh::from_soup(soup).unwrap_or_default();
         let (faces, edges) = Self::recognise(&mesh);
@@ -552,6 +559,8 @@ pub struct JobState {
     /// Counts changes to the job; it is unsaved while this differs from `saved_edits`.
     pub edits: u64,
     pub saved_edits: u64,
+    /// The part modelled in CAD mode.
+    pub part: crate::cad::Part,
 }
 
 impl Default for JobState {
@@ -575,6 +584,7 @@ impl Default for JobState {
             path: None,
             edits: 0,
             saved_edits: 0,
+            part: crate::cad::Part::default(),
         }
     }
 }
@@ -746,6 +756,9 @@ pub struct LogEntry {
     pub outcome: Result<Value, EngineError>,
 }
 
+/// The sketch planes' outline ids, top, front and right.
+pub const CAD_PLANES: [&str; 3] = ["plane.top", "plane.front", "plane.right"];
+
 /// One node of the job outline shown by the explorer tree.
 #[derive(Clone, Debug)]
 pub struct OutlineNode {
@@ -861,7 +874,7 @@ impl Session {
         s.job.name = "Sample".into();
         s.job.sample_loaded = true;
         s.job.models.push(Model::sample());
-        s.job.stock = Some(CosmicCAM_render::scene::sample_stock_box());
+        s.job.stock = Some(CosmicDMS_render::scene::sample_stock_box());
         s
     }
 
@@ -994,6 +1007,7 @@ impl Session {
             "selection": self.view.selection,
             "scene_bounds": bounds_json(&self.view.scene_bounds),
             "ribbon_tab": self.ui.ribbon_tab.id(),
+            "mode": self.ui.mode.id(),
             "open_panes": self.ui.open_panes.iter().map(|p| p.id()).collect::<Vec<_>>(),
             "outline": self.outline().iter().map(OutlineNode::to_json).collect::<Vec<_>>(),
             "log_seq": self.next_seq,
@@ -1176,8 +1190,68 @@ impl Session {
         self.next_seq
     }
 
-    /// Job outline for the explorer. Later phases fill in models, setups, tools and toolpaths.
+    /// The part's feature tree, the explorer's outline in CAD mode: the three planes and the
+    /// origin, then the features in the order they are built.
+    fn cad_outline(&self) -> Vec<OutlineNode> {
+        let u = self.prefs.units;
+        let node = |id: &str, label: String, properties: Vec<(String, String)>| OutlineNode {
+            visible: None,
+            id: id.into(),
+            label,
+            children: Vec::new(),
+            properties,
+        };
+        let mut children = vec![
+            node(CAD_PLANES[0], "Top plane".into(), vec![("Plane".into(), "XY".into())]),
+            node(CAD_PLANES[1], "Front plane".into(), vec![("Plane".into(), "XZ".into())]),
+            node(CAD_PLANES[2], "Right plane".into(), vec![("Plane".into(), "YZ".into())]),
+        ];
+        for f in &self.job.part.features {
+            let p = &f.params;
+            let s = |k: &str| p.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
+            let n = |k: &str| p.get(k).and_then(Value::as_f64);
+            let mut props = vec![("Feature".into(), f.kind.clone())];
+            match f.kind.as_str() {
+                "sketch" => {
+                    props.push(("Plane".into(), p.get("plane").and_then(Value::as_str).unwrap_or("top").to_owned()));
+                    let count = p.get("entities").and_then(Value::as_array).map_or(0, Vec::len);
+                    props.push(("Entities".into(), count.to_string()));
+                }
+                "extrude" => {
+                    if p.get("through_all").and_then(Value::as_bool).unwrap_or(false) {
+                        props.push(("Distance".into(), "through all".into()));
+                    } else if let Some(d) = n("distance") {
+                        props.push(("Distance".into(), u.fmt_len(d)));
+                    }
+                    props.push(("Operation".into(), s("operation")));
+                }
+                "revolve" => {
+                    props.push(("Angle".into(), format!("{}°", n("angle").unwrap_or(360.0))));
+                    props.push(("Operation".into(), s("operation")));
+                }
+                _ => {}
+            }
+            let sketch = s("sketch");
+            if let Some(sk) = self.job.part.find(&sketch) {
+                props.push(("Sketch".into(), sk.name.clone()));
+            }
+            let label = if f.suppressed { format!("{} (suppressed)", f.name) } else { f.name.clone() };
+            children.push(node(&f.id, label, props));
+        }
+        let mut part = node("part", "Part".into(), Vec::new());
+        if let Some(m) = self.job.part.model.as_deref().and_then(|id| self.job.models.iter().find(|m| m.id == id)) {
+            part.properties.push(("Size".into(), u.fmt_size(m.mesh.bounds().size().to_array())));
+            part.properties.push(("Triangles".into(), m.mesh.triangles().len().to_string()));
+        }
+        part.children = children;
+        vec![part]
+    }
+
+    /// Job outline for the explorer: the CAM job, or in CAD mode the part's feature tree.
     pub fn outline(&self) -> Vec<OutlineNode> {
+        if self.ui.mode == crate::cmd::Mode::Cad {
+            return self.cad_outline();
+        }
         let leaf = |id: &str, label: &str, properties: Vec<(String, String)>| OutlineNode {
             visible: None,
             id: id.into(),
@@ -1617,5 +1691,5 @@ fn face_summary(map: &FaceMap) -> String {
 fn changes_job(id: &str) -> bool {
     let area = id.split('.').next().unwrap_or_default();
     let last = id.rsplit('.').next().unwrap_or_default();
-    matches!(area, "model" | "setup" | "toolpath") && !matches!(last, "get" | "list" | "pick")
+    matches!(area, "model" | "setup" | "toolpath" | "cad") && !matches!(last, "get" | "list" | "pick")
 }

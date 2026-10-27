@@ -82,17 +82,17 @@ fn ci() -> Result<(), String> {
 
 /// Workspace crate -> layer. Every workspace crate must be listed.
 const LAYERS: &[(&str, u8)] = &[
-    ("CosmicCAM-geom", 0),
-    ("CosmicCAM-stock", 1),
-    ("CosmicCAM-kernel", 1),
-    ("CosmicCAM-render", 1),
-    ("CosmicCAM-job", 2),
-    ("CosmicCAM-io", 3),
-    ("CosmicCAM-engine", 4),
-    ("CosmicCAM-ui-egui", 5),
-    ("CosmicCAM", 6),
-    ("CosmicCAM-cli", 6),
-    ("CosmicCAM-web", 6),
+    ("CosmicDMS-geom", 0),
+    ("CosmicDMS-stock", 1),
+    ("CosmicDMS-kernel", 1),
+    ("CosmicDMS-render", 1),
+    ("CosmicDMS-job", 2),
+    ("CosmicDMS-io", 3),
+    ("CosmicDMS-engine", 4),
+    ("CosmicDMS-ui-egui", 5),
+    ("CosmicDMS", 6),
+    ("CosmicDMS-cli", 6),
+    ("CosmicDMS-web", 6),
 ];
 
 /// UI and windowing crates only L5 and the apps may use.
@@ -226,7 +226,7 @@ fn wasm() -> Result<(), String> {
     }
     cargo(&args)?;
     // The browser app (and the UI crate under it), linted as it is built for the web.
-    cargo(&["clippy", "--target", "wasm32-unknown-unknown", "-p", "CosmicCAM-web", "--", "-D", "warnings"])
+    cargo(&["clippy", "--target", "wasm32-unknown-unknown", "-p", "CosmicDMS-web", "--", "-D", "warnings"])
 }
 
 /// Runs the Python client's unit tests with the standard library only.
@@ -245,7 +245,7 @@ fn python_tests() -> Result<(), String> {
 }
 
 fn crate_dir(package: &str) -> String {
-    format!("crates/{}", package.trim_start_matches("CosmicCAM-"))
+    format!("crates/{}", package.trim_start_matches("CosmicDMS-"))
 }
 
 fn rust_files(dir: &Path) -> Vec<PathBuf> {

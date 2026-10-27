@@ -1,16 +1,16 @@
 //! Post-processing: machine-neutral cutter location (CL) data and the Python posts that turn it
 //! into each machine's G-code.
 //!
-//! CosmicCAM builds the CL data (moves in each operation's WCS, arcs fitted within a tolerance,
+//! CosmicDMS builds the CL data (moves in each operation's WCS, arcs fitted within a tolerance,
 //! drilling cycles, tools, spindle and coolant, the machine's limits) and runs the chosen post
 //! as its own Python process, fed the CL data as JSON. A missing interpreter, a broken post or a
 //! post that hangs is reported as an error; it never takes the app down. The posts shipped with
-//! CosmicCAM are copied to `<data folder>/posts/builtin/`; posts in `<data folder>/posts/` are
+//! CosmicDMS are copied to `<data folder>/posts/builtin/`; posts in `<data folder>/posts/` are
 //! the user's own (copy a built-in one there to change it).
 
 use std::path::{Path, PathBuf};
 
-use CosmicCAM_geom::arcfit::{self, ArcLimits, Segment};
+use CosmicDMS_geom::arcfit::{self, ArcLimits, Segment};
 use glam::DVec3;
 use serde_json::{Value, json};
 
@@ -20,11 +20,11 @@ use crate::session::Session;
 use crate::toolpath::{MoveKind, Toolpath};
 
 /// The CL data's format tag.
-pub const CL_FORMAT: &str = "CosmicCAM-CL/1";
+pub const CL_FORMAT: &str = "CosmicDMS-CL/1";
 
-/// Files of the posts shipped with CosmicCAM: (file name, contents).
+/// Files of the posts shipped with CosmicDMS: (file name, contents).
 pub const BUILTIN_FILES: &[(&str, &str)] = &[
-    ("cosmiccam_post.py", include_str!("../../../posts/cosmiccam_post.py")),
+    ("cosmicdms_post.py", include_str!("../../../posts/cosmicdms_post.py")),
     ("run_post.py", include_str!("../../../posts/run_post.py")),
     ("fanuc.py", include_str!("../../../posts/fanuc.py")),
     ("haas.py", include_str!("../../../posts/haas.py")),
@@ -47,9 +47,15 @@ fn bad(m: impl Into<String>) -> EngineError {
     EngineError::InvalidParams(m.into())
 }
 
-/// The folder posts live in: `CosmicCAM_POSTS_DIR`, else `<data folder>/posts`.
+/// Environment variable `name`, else the same under the application's former name
+/// (`CosmicCAM_…`).
+fn env_var(name: &str) -> Option<std::ffi::OsString> {
+    std::env::var_os(name).or_else(|| std::env::var_os(name.replacen("CosmicDMS_", "CosmicCAM_", 1)))
+}
+
+/// The folder posts live in: `CosmicDMS_POSTS_DIR`, else `<data folder>/posts`.
 pub fn posts_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("CosmicCAM_POSTS_DIR") {
+    if let Some(dir) = env_var("CosmicDMS_POSTS_DIR") {
         return Some(PathBuf::from(dir));
     }
     let home = || std::env::var_os("HOME").map(PathBuf::from);
@@ -60,7 +66,7 @@ pub fn posts_dir() -> Option<PathBuf> {
     } else {
         std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).or_else(|| home().map(|h| h.join(".local/share")))
     };
-    base.map(|b| b.join("CosmicCAM").join("posts"))
+    base.map(|b| b.join("CosmicDMS").join("posts"))
 }
 
 /// Copies the shipped posts to `<dir>/builtin/` (rewriting any that differ) and returns that folder.
@@ -103,7 +109,7 @@ pub fn available() -> Vec<PostEntry> {
 pub fn available_in(dir: Option<&Path>) -> Vec<PostEntry> {
     let mut out = vec![PostEntry {
         id: GENERIC.into(),
-        description: "Generic G-code written by CosmicCAM itself (no Python needed)".into(),
+        description: "Generic G-code written by CosmicDMS itself (no Python needed)".into(),
         builtin: true,
         path: None,
     }];
@@ -138,7 +144,7 @@ pub fn available_in(dir: Option<&Path>) -> Vec<PostEntry> {
 }
 
 fn is_post_file(name: &str) -> bool {
-    name.ends_with(".py") && !name.starts_with('_') && name != "cosmiccam_post.py" && name != "run_post.py"
+    name.ends_with(".py") && !name.starts_with('_') && name != "cosmicdms_post.py" && name != "run_post.py"
 }
 
 /// The post a command means: `requested`, else the machine's, else the generic one.
@@ -476,10 +482,10 @@ pub struct PostOutput {
     pub name: String,
 }
 
-/// The Python interpreter: `CosmicCAM_PYTHON`, else `python3`, else `python`.
+/// The Python interpreter: `CosmicDMS_PYTHON`, else `python3`, else `python`.
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 fn python() -> EngineResult<String> {
-    if let Some(p) = std::env::var_os("CosmicCAM_PYTHON") {
+    if let Some(p) = env_var("CosmicDMS_PYTHON") {
         return Ok(p.to_string_lossy().into_owned());
     }
     for candidate in ["python3", "python"] {
@@ -494,7 +500,7 @@ fn python() -> EngineResult<String> {
         }
     }
     Err(EngineError::NotSupported(
-        "posting with a Python post: Python 3 was not found (install it, or set CosmicCAM_PYTHON); the generic post needs no Python".into(),
+        "posting with a Python post: Python 3 was not found (install it, or set CosmicDMS_PYTHON); the generic post needs no Python".into(),
     ))
 }
 

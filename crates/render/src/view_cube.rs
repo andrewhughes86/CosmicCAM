@@ -3,7 +3,7 @@
 //! Coordinates are in "cube units" with the cube spanning -1..1 and screen Y pointing up;
 //! the UI scales and flips them into its overlay rectangle.
 
-use CosmicCAM_geom::{Vec2, Vec3};
+use CosmicDMS_geom::{Vec2, Vec3};
 
 use crate::camera::OrbitCamera;
 

@@ -4,8 +4,8 @@
 //! - Middle drag, right drag or Shift + left drag: pan
 //! - Scroll wheel or pinch: zoom about the cursor
 
-use CosmicCAM_geom::Vec2;
-use CosmicCAM_render::OrbitCamera;
+use CosmicDMS_geom::Vec2;
+use CosmicDMS_render::OrbitCamera;
 use egui::{PointerButton, Response, Ui};
 
 /// What a canvas lets the user do with its camera.

@@ -1,12 +1,12 @@
 # Post-processors
 
-A post-processor turns CosmicCAM's toolpaths into the G-code one machine expects. Posts are
-Python modules you can read and change; CosmicCAM does the heavy work in Rust (arc fitting,
+A post-processor turns CosmicDMS's toolpaths into the G-code one machine expects. Posts are
+Python modules you can read and change; CosmicDMS does the heavy work in Rust (arc fitting,
 limit checks, coordinate transforms) and hands each post plain data.
 
 ## How posting works
 
-1. CosmicCAM builds **CL data** (cutter location data, format `CosmicCAM-CL/1`): every
+1. CosmicDMS builds **CL data** (cutter location data, format `CosmicDMS-CL/1`): every
    operation's moves in its work coordinate system, in millimetres, with runs of short moves
    fitted as arcs within a tolerance (default 0.01 mm), drilling cycles, tools, spindle speeds,
    coolant and the machine's limits.
@@ -102,14 +102,14 @@ Each is written in one of three styles, chosen in the post's settings (Multi-axi
 | --- | --- | --- | --- |
 | `plane` | A tilted work plane command (`G68.2 … G53.1` / `G69`, or `G254` / `G255` on Haas) and the moves in its coordinates, arcs and canned cycles included | — | The control's tilted-plane option |
 | `tcp` | Tool tip positions in the WCS with tool centre point control (`G43.4 H`, `G234 H`) | Tool tip positions with the rotary angles each block, feeds per minute | The control's TCP option, set up with the machine's pivot distances |
-| `machine` | The machine's own linear positions, worked out by CosmicCAM for the rotary angles | The machine's positions and rotary angles, `G93` inverse-time feeds | The machine's rotary centres (and head pivot length) in its kinematics settings |
+| `machine` | The machine's own linear positions, worked out by CosmicDMS for the rotary angles | The machine's positions and rotary angles, `G93` inverse-time feeds | The machine's rotary centres (and head pivot length) in its kinematics settings |
 
-In `machine` style CosmicCAM splits moves wherever moving the axes in step would take the tool tip
+In `machine` style CosmicDMS splits moves wherever moving the axes in step would take the tool tip
 more than the arc tolerance off the path, and gives each block its inverse-time feed. Drilling on a
 tilted plane is written as canned cycles in the tilted plane (`plane` style) or, when the spindle
 ends up vertical (a table that turns the part), in the machine's positions.
 
-CosmicCAM takes the WCS to be square to the machine's axes with every rotary axis at zero (the part
+CosmicDMS takes the WCS to be square to the machine's axes with every rotary axis at zero (the part
 set up square on the table). The rotary centres are measured from the WCS origin. Angles follow
 ISO 841: a positive angle tilts the tool the same way relative to the part whether the head or the
 table moves. An axis that turns the other way is marked *reversed*. Rotary axes keep their angle
@@ -153,8 +153,8 @@ machine's manual and dry-run new programs before cutting.**
 
 ## Writing your own post
 
-Posts live in your data folder's `posts/` (`~/.local/share/CosmicCAM/posts` on Linux,
-`%APPDATA%\CosmicCAM\posts` on Windows, `~/Library/Application Support/CosmicCAM/posts` on macOS;
+Posts live in your data folder's `posts/` (`~/.local/share/CosmicDMS/posts` on Linux,
+`%APPDATA%\CosmicDMS\posts` on Windows, `~/Library/Application Support/CosmicDMS/posts` on macOS;
 **Post-processor → Open the posts folder** shows it). The shipped posts are copied to
 `posts/builtin/` and rewritten on every run; copy one up a level and rename it to make it yours. A
 post of yours with the same name as a shipped one replaces it.
@@ -165,7 +165,7 @@ module's docstring is its description in the chooser.
 ```python
 """My shop's VMC: Fanuc-style, 5-digit programs, no rigid tapping."""
 
-from cosmiccam_post import Post
+from cosmicdms_post import Post
 
 
 class ShopPost(Post):
@@ -216,7 +216,7 @@ type (bool, int, float, text, or a list of choices) decides how the app shows it
 converted.
 
 ```python
-from cosmiccam_post import Post, Property
+from cosmicdms_post import Post, Property
 
 
 class ShopPost(Post):
@@ -249,7 +249,7 @@ Helpers: `block(*words)`, `comment(text)`, `operator_message(text)`, `raw(text)`
 ### Testing a post
 
 ```bash
-cosmiccam: Toolpaths → CL data           # or cc.toolpath_cl_export(path="part.cl.json")
+cosmicdms: Toolpaths → CL data           # or cc.toolpath_cl_export(path="part.cl.json")
 python3 -c 'import json,sys; sys.path.insert(0,"posts/builtin"); import run_post; \
   print(run_post.answer({"post": "myshop.py", "cl": json.load(open("part.cl.json"))})["gcode"])'
 ```
@@ -260,7 +260,7 @@ The shipped posts' tests (`python/tests/test_posts.py`) show how to check output
 
 ```json
 {
-  "format": "CosmicCAM-CL/1",
+  "format": "CosmicDMS-CL/1",
   "job": {"name": "Bracket", "units": "in", "program_number": 1000, "line_numbers": false},
   "machine": {"id": "machine.1", "name": "VMC", "travel": [500, 400, 400], "max_spindle_rpm": 12000,
               "max_feed": 10000, "tool_capacity": 20,

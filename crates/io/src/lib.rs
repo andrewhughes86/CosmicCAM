@@ -39,7 +39,7 @@ mod zip;
 use std::io::Read as _;
 use std::path::Path;
 
-use CosmicCAM_geom::{Mesh, MeshError};
+use CosmicDMS_geom::{Mesh, MeshError};
 use thiserror::Error;
 
 pub(crate) use soup::Soup;
@@ -55,7 +55,7 @@ pub const DEFAULT_TOLERANCE: f64 = 0.01;
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum ImportError {
-    #[error("unsupported file type `{0}`; CosmicCAM imports {list}", list = ModelFormat::extension_list())]
+    #[error("unsupported file type `{0}`; CosmicDMS imports {list}", list = ModelFormat::extension_list())]
     UnsupportedFormat(String),
     #[error("could not read {path}: {message}")]
     Io { path: String, message: String },
@@ -79,7 +79,7 @@ impl From<MeshError> for ImportError {
     }
 }
 
-/// Model file formats CosmicCAM reads.
+/// Model file formats CosmicDMS reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelFormat {
     Stl,
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn units_scale_to_millimetres() -> Result<(), Box<dyn std::error::Error>> {
-        let dir = std::env::temp_dir().join(format!("cosmiccam-io-units-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("cosmicdms-io-units-{}", std::process::id()));
         std::fs::create_dir_all(&dir)?;
         let path = dir.join("tri.obj");
         std::fs::write(&path, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")?;
@@ -458,7 +458,7 @@ mod tests {
             import_mesh(Path::new("/no/such/dir/part.stl"), None, Options::default()),
             Err(ImportError::Io { .. })
         ));
-        let dir = std::env::temp_dir().join(format!("cosmiccam-io-dir-{}.stl", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("cosmicdms-io-dir-{}.stl", std::process::id()));
         let made = std::fs::create_dir_all(&dir).is_ok();
         let r = import_mesh(&dir, None, Options::default());
         let _ = std::fs::remove_dir_all(&dir);

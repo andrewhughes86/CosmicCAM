@@ -6,7 +6,7 @@
 //! report them. Parameters that the chosen mode does not use are refused, so a script never
 //! silently gets something other than it asked for.
 
-use CosmicCAM_geom::{EdgeKind, FaceKind, Vec3};
+use CosmicDMS_geom::{EdgeKind, FaceKind, Vec3};
 use serde_json::Value;
 
 use super::wcs::axes;
@@ -305,7 +305,7 @@ pub(crate) fn resolve_origin(s: &Session, p: &Value, current: Option<Vec3>) -> E
     }
 }
 
-fn box_point(b: CosmicCAM_geom::Aabb, name: &str) -> EngineResult<Vec3> {
+fn box_point(b: CosmicDMS_geom::Aabb, name: &str) -> EngineResult<Vec3> {
     let (lo, hi, c) = (b.min, b.max, b.center());
     let (level, pos) = match name {
         "center" => ("middle", "center"),

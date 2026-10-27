@@ -1,9 +1,9 @@
 //! Tessellation of the faces CAD readers (STEP, IGES, SAT) collect: in parallel where threads
 //! exist, with a planar fallback for faces the trimmer cannot handle.
 
-use CosmicCAM_geom::DVec3;
-use CosmicCAM_geom::brep::{Axes, Curve, Surface};
-use CosmicCAM_geom::trim::{Face, tessellate};
+use CosmicDMS_geom::DVec3;
+use CosmicDMS_geom::brep::{Axes, Curve, Surface};
+use CosmicDMS_geom::trim::{Face, tessellate};
 
 /// A face to tessellate: its surface, boundary loops (3D points, shared with its
 /// neighbours) and whether its outside is opposite the surface normal.

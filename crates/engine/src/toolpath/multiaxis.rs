@@ -14,9 +14,9 @@
 //! and the shank are checked against the part, and the axis is brought back towards Z until
 //! they clear. Tool tips (centre minus one radius along the axis) are what the moves record.
 
-use CosmicCAM_geom::collide::MeshIndex;
-use CosmicCAM_geom::cutter::DropCutter;
-use CosmicCAM_geom::region;
+use CosmicDMS_geom::collide::MeshIndex;
+use CosmicDMS_geom::cutter::DropCutter;
+use CosmicDMS_geom::region;
 use glam::{DQuat, DVec2, DVec3};
 use serde_json::Value;
 

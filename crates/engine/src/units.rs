@@ -1,4 +1,4 @@
-//! Display units. Everything inside CosmicCAM is millimetres; the user's units preference
+//! Display units. Everything inside CosmicDMS is millimetres; the user's units preference
 //! only changes what is shown and what dialogs accept. The command API always takes and
 //! returns millimetres, so a script means the same thing whatever the preference.
 

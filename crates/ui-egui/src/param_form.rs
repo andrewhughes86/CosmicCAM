@@ -2,8 +2,8 @@
 //! values typed in use it: the form collects the values, the app runs the command with
 //! them, and the form stays open showing the error if the command refuses them.
 
-use CosmicCAM_engine::units::DisplayUnits;
-use CosmicCAM_engine::{CommandSpec, Param, ParamKind, Session};
+use CosmicDMS_engine::units::DisplayUnits;
+use CosmicDMS_engine::{CommandSpec, Param, ParamKind, Session};
 use egui::{RichText, Ui};
 use serde_json::{Map, Value, json};
 
@@ -169,7 +169,7 @@ impl ParamForm {
     }
 
     /// The tool the fields describe, built by the engine as the command would build it.
-    fn preview_tool(&self, session: &Session) -> Option<CosmicCAM_engine::library::Tool> {
+    fn preview_tool(&self, session: &Session) -> Option<CosmicDMS_engine::library::Tool> {
         let mut p = self.params().ok()?;
         let kind = match self.spec.id {
             "tool.edit" => self.editing_kind.clone()?,
@@ -177,7 +177,7 @@ impl ParamForm {
             id => id.strip_prefix("tool.create.")?.to_owned(),
         };
         p.as_object_mut()?.insert("type".into(), json!(kind));
-        CosmicCAM_engine::cmd::tool_preview(session, &p).ok()
+        CosmicDMS_engine::cmd::tool_preview(session, &p).ok()
     }
 
     /// The command's parameters from the fields; unset optional fields are left out.

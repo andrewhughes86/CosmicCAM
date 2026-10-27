@@ -6,8 +6,8 @@
 //! at zero (the part is set up square on the table), and the rotary centres are given relative
 //! to the WCS origin (the machine's kinematics settings).
 
-use CosmicCAM_geom::Vec3;
-use CosmicCAM_geom::kinematics::{Kinematics, Layout};
+use CosmicDMS_geom::Vec3;
+use CosmicDMS_geom::kinematics::{Kinematics, Layout};
 use glam::DVec3;
 use serde_json::{Value, json};
 

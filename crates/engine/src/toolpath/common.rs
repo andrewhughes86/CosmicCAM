@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_geom::faces::boundary_loops;
-use CosmicCAM_geom::region::{self, Shape};
-use CosmicCAM_geom::{FaceKind, Vec3};
+use CosmicDMS_geom::faces::boundary_loops;
+use CosmicDMS_geom::region::{self, Shape};
+use CosmicDMS_geom::{FaceKind, Vec3};
 use glam::{DVec2, DVec3};
 use serde_json::{Map, Value, json};
 
@@ -204,7 +204,7 @@ pub(super) fn part_triangles(s: &Session, f: &Frame) -> Vec<[DVec3; 3]> {
 }
 
 /// A world box's footprint in the frame's XY plane (its bounding rectangle there).
-pub(super) fn footprint(f: &Frame, b: CosmicCAM_geom::Aabb) -> Option<(DVec2, DVec2)> {
+pub(super) fn footprint(f: &Frame, b: CosmicDMS_geom::Aabb) -> Option<(DVec2, DVec2)> {
     if b.is_empty() {
         return None;
     }
@@ -321,7 +321,7 @@ impl Emitter {
         if radius < 0.05 || angle <= 0.0 {
             return Ok(false);
         }
-        let step = CosmicCAM_geom::offset::arc_step(radius, c.tolerance);
+        let step = CosmicDMS_geom::offset::arc_step(radius, c.tolerance);
         let per_turn = std::f64::consts::TAU * radius * angle.tan();
         let turns = ((from - to) / per_turn.max(1.0e-6)).max(0.0);
         let segments = ((turns * std::f64::consts::TAU / step).ceil() as usize).clamp(8, 200_000);

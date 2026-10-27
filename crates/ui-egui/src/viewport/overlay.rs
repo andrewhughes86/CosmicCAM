@@ -1,8 +1,8 @@
 //! Painted viewport overlays: the view cube, the orientation triad and the readout.
 
-use CosmicCAM_geom::{Vec2 as GVec2, Vec3};
-use CosmicCAM_render::OrbitCamera;
-use CosmicCAM_render::view_cube::{self, FacetKind};
+use CosmicDMS_geom::{Vec2 as GVec2, Vec3};
+use CosmicDMS_render::OrbitCamera;
+use CosmicDMS_render::view_cube::{self, FacetKind};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2, pos2, vec2};
 
 use crate::theme::Tokens;
@@ -98,8 +98,8 @@ pub fn paint_triad(painter: &Painter, at: Pos2, camera: &OrbitCamera, t: &Tokens
 /// Projection and frame-rate readout in the corner.
 pub fn paint_readout(painter: &Painter, at: Pos2, camera: &OrbitCamera, fps: f32, limit: u32, t: &Tokens) {
     let projection = match camera.projection {
-        CosmicCAM_render::Projection::Orthographic => "Orthographic",
-        CosmicCAM_render::Projection::Perspective => "Perspective",
+        CosmicDMS_render::Projection::Orthographic => "Orthographic",
+        CosmicDMS_render::Projection::Perspective => "Perspective",
     };
     let text = format!("{projection}  ·  {fps:.0} fps (limit {limit})");
     painter.text(at, Align2::RIGHT_BOTTOM, text, FontId::proportional(11.0), t.text_muted);

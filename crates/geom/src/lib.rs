@@ -1,4 +1,4 @@
-//! L0 geometry primitives shared by every CosmicCAM crate.
+//! L0 geometry primitives shared by every CosmicDMS crate.
 //!
 //! Units are millimetres, Z is up. The math types are re-exported from `glam`
 //! so that every layer agrees on one vector and matrix representation.
@@ -34,7 +34,7 @@ pub use faces::{Face, FaceKind, FaceMap};
 pub use glam::{DMat3, DMat4, DVec2, DVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
 pub use mesh::{Mesh, MeshError};
 
-/// World up axis. CosmicCAM is Z-up everywhere.
+/// World up axis. CosmicDMS is Z-up everywhere.
 pub const UP: Vec3 = Vec3::Z;
 
 /// Axis-aligned bounding box in millimetres.

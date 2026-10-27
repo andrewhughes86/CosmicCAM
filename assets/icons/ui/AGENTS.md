@@ -10,7 +10,7 @@
 4. Name the file after the command id with dots replaced by underscores:
    `toolpath.pocket` → `toolpath_pocket.svg`.
 5. Use only the colour role placeholders from the guide; never a literal colour.
-6. Add the file's row to `/ATTRIBUTION.md` (author: CosmicCAM contributors, licence:
+6. Add the file's row to `/ATTRIBUTION.md` (author: CosmicDMS contributors, licence:
    MIT OR Apache-2.0).
 7. A file named after the command id is picked up automatically. Set `icon: Some("<name>")` on
    the `CommandSpec` only to reuse another command's icon. Every ribbon command must have one

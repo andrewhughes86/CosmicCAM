@@ -1,5 +1,5 @@
 [package]
-name = "CosmicCAM-ui-egui"
+name = "CosmicDMS-ui-egui"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,10 +9,11 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-CosmicCAM-engine = { workspace = true }
-CosmicCAM-geom = { workspace = true }
+CosmicDMS-engine = { workspace = true }
+CosmicDMS-geom = { workspace = true }
+CosmicDMS-kernel = { workspace = true }
 glam = { workspace = true }
-CosmicCAM-render = { workspace = true }
+CosmicDMS-render = { workspace = true }
 bytemuck = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "persistence", "wgpu"] }
 egui = { workspace = true }

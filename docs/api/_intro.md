@@ -1,6 +1,6 @@
-# CosmicCAM Python API
+# CosmicDMS Python API
 
-Everything you can do in CosmicCAM's interface you can do from Python: each ribbon button,
+Everything you can do in CosmicDMS's interface you can do from Python: each ribbon button,
 console command and shortcut is a command with an id like `view.camera.preset`, and each
 command is a method on the Python connection (`cc.view_camera_preset(preset="top")`).
 The same commands are what agents use through the control channel.
@@ -11,23 +11,23 @@ The client is pure Python (3.9+) with no dependencies:
 
 ```bash
 pip install -e python/
-cargo build --release -p CosmicCAM     # the app the client drives
+cargo build --release -p CosmicDMS     # the app the client drives
 ```
 
 ## Start or connect
 
 ```python
-import cosmiccam
+import cosmicdms
 
 # Start the app with the control channel open; leaving the block quits it.
-with cosmiccam.launch(sample=True) as cc:
-    print(cc.ping())                      # {'name': 'CosmicCAM', 'version': ..., 'protocol': 1}
+with cosmicdms.launch(sample=True) as cc:
+    print(cc.ping())                      # {'name': 'CosmicDMS', 'version': ..., 'protocol': 1}
 
-# Or connect to an app started with `CosmicCAM --control 5800`.
-cc = cosmiccam.connect(5800)              # token from $CosmicCAM_CONTROL_TOKEN or the token file
+# Or connect to an app started with `CosmicDMS --control 5800`.
+cc = cosmicdms.connect(5800)              # token from $CosmicDMS_CONTROL_TOKEN or the token file
 ```
 
-`launch()` finds the executable through `$COSMICCAM_EXECUTABLE`, then `CosmicCAM` on `PATH`,
+`launch()` finds the executable through `$COSMICDMS_EXECUTABLE`, then `CosmicDMS` on `PATH`,
 then `target/release` in this checkout.
 
 ## Units
@@ -47,9 +47,9 @@ cc.execute("view.camera.preset", {"preset": "iso"}) # same, with a dict
 ```
 
 Parameters are keyword-only and checked by the app: unknown names, wrong types and out-of-range
-values raise `CosmicCAMError(kind="invalid_params")` without changing anything.
+values raise `CosmicDMSError(kind="invalid_params")` without changing anything.
 
-| `CosmicCAMError.kind` | Meaning |
+| `CosmicDMSError.kind` | Meaning |
 | --- | --- |
 | `invalid_params` | A parameter is missing, unknown, of the wrong type or out of range |
 | `unknown_command` | No command has that id |
@@ -61,7 +61,7 @@ values raise `CosmicCAMError(kind="invalid_params")` without changing anything.
 
 ## Importing models
 
-CosmicCAM imports exact CAD models and meshes; `cc.model_formats()` lists them all:
+CosmicDMS imports exact CAD models and meshes; `cc.model_formats()` lists them all:
 
 | Kind | Formats |
 | --- | --- |
@@ -73,7 +73,7 @@ surfaces become triangles within `tolerance` of the exact surface (0.01 mm by de
 edge is shared by its two faces, so a solid comes in watertight. Files that record their unit
 (STEP, IGES, SAT, 3MF, AMF, glTF, COLLADA, DXF) are read in it; for the rest say which unit the file
 was drawn in (`mm` by default). `units` overrides what the file says. The job is always in
-millimetres. glTF and COLLADA models drawn Y-up are turned to CosmicCAM's Z-up.
+millimetres. glTF and COLLADA models drawn Y-up are turned to CosmicDMS's Z-up.
 
 ```python
 part = cc.model_import(path="parts/bracket.step")             # {'id': 'model.1', 'units': 'in', 'warnings': [], ...}
@@ -88,7 +88,7 @@ cc.model_remove(id="model.2")
 `warnings` says what an import skipped or approximated: faces drawn flat because their surface
 could not be trimmed, geometry kinds not supported yet, construction surfaces left beside a
 solid, ACIS solids in DXF files. The first import replaces the built-in sample part. A file
-that cannot be read raises `CosmicCAMError(kind="import")` and leaves the job unchanged.
+that cannot be read raises `CosmicDMSError(kind="import")` and leaves the job unchanged.
 `cc.start("model.import")` opens the file dialog instead, as the ribbon button does; files
 dropped on the window are imported too.
 
@@ -318,8 +318,43 @@ a 45° slope with a hole drilled square to it and a Ø24 bore, on its own 5-axis
 5-axis trunnion", added to the library with the sample tools if missing, and made active). Its
 toolpaths face, rough, finish the walls, helically bore the Ø24 hole, finish the dome with the
 multi-axis finish, spot and drill the angled hole on the tilted plane (3+2) and profile the
-outline; the whole program simulates without gouges and posts with Fanuc. `cosmiccam.launch(demo=True)` starts the app
+outline; the whole program simulates without gouges and posts with Fanuc. `cosmicdms.launch(demo=True)` starts the app
 with it open; `launch()` starts with an empty job.
+
+## CAD mode: modelling the part
+
+The mode button at the far left of the ribbon switches between **CAD** (model the part) and
+**CAM** (machine it); each has its own ribbon. **Drawings** and **Slicer** are coming. `ui_mode_set` does
+the same from a script, and a ribbon tab of the other mode switches to it.
+
+A part is a history of features, built in order: **sketches** (closed profiles of lines,
+rectangles, circles, arcs and polygons on the top, front or right plane, or any plane given by
+a point and normal, optionally offset), then **extrusions** and **revolutions** of them that add
+to the part, cut from it, or make a separate body. Every feature keeps its settings: change
+one and the part is rebuilt from there (earlier features are not worked out again). The
+part's solid is the job's model "Part", so CAM picks its faces and machines it like an import,
+and the history is saved in the job file.
+
+In the app, **Sketch** (or a plane's right-click menu, or double-clicking a plane) turns the
+view square to the plane; click in the viewport to draw (clicks snap to the grid and to points
+already drawn; lines chain end to end and close on their first point), and edit any number in
+the panel's list. **OK, then extrude** goes straight on to the extrusion, which previews live.
+Double-click a feature in the tree to change it; right-click it to suppress, rename or delete.
+The part's solids come from a B-rep modelling kernel, so they are exact until tessellated.
+
+```python
+cc.ui_mode_set(mode="cad")
+sk = cc.cad_sketch(plane="top", entities=[{"type": "rectangle", "corner": [0, 0], "opposite": [80, 50]}])
+cc.cad_extrude(sketch=sk["feature"]["id"], distance=20)                  # joined (the first is the body)
+hole = cc.cad_sketch(plane="top", offset=20)["feature"]["id"]
+cc.cad_sketch_circle(id=hole, center=[40, 25, 0], radius=8)
+cc.cad_extrude_cut(sketch=hole, through_all=True)
+ring = cc.cad_sketch(plane="front", entities=[{"type": "rectangle", "corner": [90, 0], "opposite": [100, 30]}])
+cc.cad_revolve(sketch=ring["feature"]["id"], axis="y", angle=180, operation="new")
+cc.cad_extrude(id="feature.2", sketch=sk["feature"]["id"], distance=25)  # change a feature
+cc.cad_feature_suppress(id="feature.4")
+print(cc.cad_feature_list(), cc.cad_mass_get())                          # volume, area, centre of mass
+```
 
 ## Job files and tabs
 
@@ -557,7 +592,7 @@ cc.toolpath_cl_export(path="part.cl.json")            # the CL data a post reads
 
 Python posts fit arcs (G2/G3, helical too) within `arc_tolerance`, write each controller's work
 offsets, canned cycles, tool changes and coolant codes, and need Python 3 on the machine
-running CosmicCAM. Check new programs against your machine before running them.
+running CosmicDMS. Check new programs against your machine before running them.
 
 Each post offers settings (sequence numbers, tool preselection, LinuxCNC path blending, rigid
 tapping, subroutines, …), kept per machine, and each toolpath can add a stop, an operator note
@@ -639,9 +674,9 @@ cc.commands()                       # every command with its parameter schema
 ## Example: a scripted tour
 
 ```python
-import cosmiccam
+import cosmicdms
 
-with cosmiccam.launch(sample=True) as cc:
+with cosmicdms.launch(sample=True) as cc:
     cc.ui_window_size_set(width=1400, height=900)
     cc.view_theme_set(theme="light")
     cc.view_display_set(grid=False, readout=False)

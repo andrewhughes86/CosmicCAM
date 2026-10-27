@@ -24,7 +24,9 @@ const MAX_CONNECTIONS: usize = 16;
 /// How long a connection waits for the app to answer (screenshots wait for a frame).
 const REPLY_TIMEOUT: Duration = Duration::from_secs(60);
 /// Environment variable that fixes the token instead of generating one.
-pub const TOKEN_ENV: &str = "CosmicCAM_CONTROL_TOKEN";
+pub const TOKEN_ENV: &str = "CosmicDMS_CONTROL_TOKEN";
+/// The token's variable under the application's former name, still read.
+const LEGACY_TOKEN_ENV: &str = "CosmicCAM_CONTROL_TOKEN";
 
 /// One request waiting for the app.
 pub struct Incoming {
@@ -55,7 +57,7 @@ impl ControlServer {
     /// Listens on `127.0.0.1:port` (0 picks a free port). `wake` is called whenever a
     /// request arrives so the app processes it even when idle.
     pub fn start(port: u16, wake: impl Fn() + Send + Sync + 'static) -> Result<Self, String> {
-        let token = match std::env::var(TOKEN_ENV) {
+        let token = match std::env::var(TOKEN_ENV).or_else(|_| std::env::var(LEGACY_TOKEN_ENV)) {
             Ok(t) if t.len() >= 16 => t,
             Ok(_) => return Err(format!("{TOKEN_ENV} must be at least 16 characters")),
             Err(_) => new_token()?,
@@ -190,18 +192,45 @@ fn new_token() -> Result<String, String> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Per-user data folder: `~/.local/share/CosmicCAM` (Linux), `~/Library/Application Support/CosmicCAM`
-/// (macOS), `%APPDATA%\CosmicCAM` (Windows).
+/// Per-user data folder: `~/.local/share/CosmicDMS` (Linux), `~/Library/Application Support/CosmicDMS`
+/// (macOS), `%APPDATA%\CosmicDMS` (Windows).
 pub fn data_dir() -> Option<PathBuf> {
+    data_base().map(|b| b.join("CosmicDMS"))
+}
+
+/// Moves the data folder (settings, libraries, posts, recovery and crash reports) from the
+/// application's former name, CosmicCAM, to its own, the first time it starts after the rename.
+/// Returns what it did, for the log.
+pub fn migrate_data_dir() -> Option<String> {
+    let base = data_base()?;
+    // The window framework keeps its own storage (settings, the machine library) under the
+    // name in lower case on Linux; it moves too.
+    let notes: Vec<String> = [("CosmicCAM", "CosmicDMS"), ("cosmiccam", "cosmicdms")]
+        .into_iter()
+        .filter_map(|(from, to)| {
+            let (old, new) = (base.join(from), base.join(to));
+            if !old.is_dir() || new.exists() {
+                return None;
+            }
+            Some(match std::fs::rename(&old, &new) {
+                Ok(()) => format!("moved the data folder {} to {}", old.display(), new.display()),
+                Err(e) => format!("could not move the data folder {} to {}: {e}", old.display(), new.display()),
+            })
+        })
+        .collect();
+    (!notes.is_empty()).then(|| notes.join("; "))
+}
+
+/// The folder per-user data folders go in.
+fn data_base() -> Option<PathBuf> {
     let home = || std::env::var_os("HOME").map(PathBuf::from);
-    let base = if cfg!(windows) {
+    if cfg!(windows) {
         std::env::var_os("APPDATA").map(PathBuf::from)
     } else if cfg!(target_os = "macos") {
         home().map(|h| h.join("Library/Application Support"))
     } else {
         std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).or_else(|| home().map(|h| h.join(".local/share")))
-    };
-    base.map(|b| b.join("CosmicCAM"))
+    }
 }
 
 /// `control/PORT.token`, readable by the user only.

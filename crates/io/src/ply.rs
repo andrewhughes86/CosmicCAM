@@ -4,7 +4,7 @@
 //! and the `face` element's index list (`vertex_indices` or `vertex_index`) are used, other
 //! elements and properties are read past. Polygons are fanned into triangles.
 
-use CosmicCAM_geom::{Mesh, Vec3};
+use CosmicDMS_geom::{Mesh, Vec3};
 
 use crate::{ImportError, Soup};
 

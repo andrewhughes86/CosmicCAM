@@ -6,8 +6,8 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_engine::{ButtonSize, CommandSpec, Placement, RibbonTab, Session, Theme, cmd};
-use CosmicCAM_render::Projection;
+use CosmicDMS_engine::{ButtonSize, CommandSpec, Mode, Placement, RibbonTab, Session, Theme, cmd};
+use CosmicDMS_render::Projection;
 use egui::{
     Align2, Color32, CornerRadius, FontId, Galley, Id, Pos2, Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui,
     pos2, vec2,
@@ -43,6 +43,8 @@ pub fn show(ui: &mut Ui, session: &Session, tokens: &Tokens, requests: &mut Vec<
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
             ui.add_space(4.0);
+            mode_button(ui, session, tokens, requests);
+            separator(ui, tokens);
             for (panel, commands) in cmd::ribbon(active) {
                 group(ui, session, tokens, panel, &commands, requests);
                 separator(ui, tokens);
@@ -66,13 +68,13 @@ fn tab_strip(ui: &mut Ui, session: &Session, tokens: &Tokens, active: RibbonTab,
     };
 
     let font = FontId::proportional(13.0);
-    let brand = painter.layout_no_wrap("CosmicCAM".into(), font.clone(), tokens.accent);
+    let brand = painter.layout_no_wrap("CosmicDMS".into(), font.clone(), tokens.accent);
     let mut x = strip.left() + 8.0;
     painter.galley(pos2(x, strip.center().y - brand.size().y / 2.0), brand.clone(), tokens.accent);
     x += brand.size().x + 14.0;
 
     let top_only = CornerRadius { nw: 3, ne: 3, sw: 0, se: 0 };
-    for tab in RibbonTab::ALL {
+    for tab in session.ui.mode.tabs() {
         let galley = painter.layout_no_wrap(tab.label().into(), font.clone(), tokens.text);
         let rect = Rect::from_min_size(pos2(x, strip.top() + 3.0), vec2(galley.size().x + 22.0, TAB_HEIGHT - 3.0));
         let response = ui.interact(rect, Id::new(("ribbon-tab", tab.label())), Sense::click());
@@ -273,6 +275,62 @@ pub fn resize_edges(ctx: &egui::Context) {
     if pressed {
         ctx.send_viewport_cmd(ViewportCommand::BeginResize(direction));
     }
+}
+
+/// What each mode is for, under its name in the mode menu.
+fn mode_blurb(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Cad => "Model parts: sketches and features",
+        Mode::Cam => "Toolpaths, simulation and G-code",
+        Mode::Drawings | Mode::Slicer => "Coming soon",
+    }
+}
+
+/// The mode switch at the far left of the ribbon, the same on every tab: the current mode's
+/// name over a caret; clicking it lists the modes (those not ready yet greyed out).
+fn mode_button(ui: &mut Ui, session: &Session, tokens: &Tokens, requests: &mut Vec<Request>) {
+    let current = session.ui.mode;
+    Container::new(Surface::RibbonGroup).show(ui, tokens, |ui| {
+        ui.vertical(|ui| {
+            let (rect, response) = ui.allocate_exact_size(vec2(64.0, BODY_HEIGHT), Sense::click());
+            let painter = ui.painter_at(rect);
+            if response.hovered() {
+                painter.rect_filled(rect.shrink(2.0), 6.0, tokens.hover_bg);
+            }
+            painter.rect_stroke(rect.shrink(6.0), 6.0, Stroke::new(1.5, tokens.accent), StrokeKind::Inside);
+            painter.text(
+                rect.center() - vec2(0.0, 6.0),
+                Align2::CENTER_CENTER,
+                current.label(),
+                FontId::proportional(17.0),
+                tokens.accent,
+            );
+            // A caret: the button opens a menu.
+            let c = rect.center() + vec2(0.0, 14.0);
+            painter.add(egui::Shape::convex_polygon(
+                vec![c + vec2(-4.5, -2.5), c + vec2(4.5, -2.5), c + vec2(0.0, 2.5)],
+                tokens.text_muted,
+                Stroke::NONE,
+            ));
+            let response = response.on_hover_text("Switch mode: CAD to model the part, CAM to machine it");
+            Menu::below(&response).show(tokens, |ui| {
+                ui.set_min_width(230.0);
+                for mode in Mode::ALL {
+                    let text = RichText::new(format!("{}  ·  {}", mode.label(), mode_blurb(mode)));
+                    let text = if mode == current { text.strong().color(tokens.accent) } else { text };
+                    let item = ui.add_enabled(mode.available(), egui::Button::new(text).frame(false));
+                    if item.clicked() && mode != current {
+                        requests.push(("ui.mode.set".into(), serde_json::json!({ "mode": mode.id() })));
+                        ui.close();
+                    }
+                }
+            });
+            ui.add_sized(
+                vec2(64.0, CAPTION_HEIGHT),
+                egui::Label::new(RichText::new("Mode").size(LABEL_SIZE).color(tokens.text_muted)),
+            );
+        });
+    });
 }
 
 fn separator(ui: &mut Ui, tokens: &Tokens) {

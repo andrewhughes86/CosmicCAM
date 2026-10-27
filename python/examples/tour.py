@@ -1,6 +1,6 @@
-"""A scripted tour of CosmicCAM through the Python API.
+"""A scripted tour of CosmicDMS through the Python API.
 
-Run from the repository root after `cargo build --release -p CosmicCAM`:
+Run from the repository root after `cargo build --release -p CosmicDMS`:
 
     python3 python/examples/tour.py out/
 """
@@ -8,13 +8,13 @@ Run from the repository root after `cargo build --release -p CosmicCAM`:
 import sys
 from pathlib import Path
 
-import cosmiccam
+import cosmicdms
 
 
 def main(out_dir: str = ".") -> None:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    with cosmiccam.launch(sample=True) as cc:
+    with cosmicdms.launch(sample=True) as cc:
         print("connected to", cc.ping())
         cc.ui_window_size_set(width=1400, height=900)
 
@@ -37,7 +37,7 @@ def main(out_dir: str = ".") -> None:
 
         try:
             cc.toolpath_pocket()
-        except cosmiccam.CosmicCAMError as e:
+        except cosmicdms.CosmicDMSError as e:
             print("as expected, planned command:", e.kind)
 
 

@@ -1,7 +1,7 @@
 //! Explorer, inspector and console panes. They read the session and act only through commands.
 
-use CosmicCAM_engine::Session;
-use CosmicCAM_engine::session::OutlineNode;
+use CosmicDMS_engine::Session;
+use CosmicDMS_engine::session::OutlineNode;
 use egui::collapsing_header::CollapsingState;
 use egui::{RichText, ScrollArea, TextEdit, Ui};
 use serde_json::{Value, json};
@@ -160,12 +160,16 @@ fn outline_node(
         if !row.double_clicked() {
             return;
         }
-        if node.id.starts_with("toolpath.") {
+        if node.id.starts_with("feature.") {
+            requests.push(("cad.feature.get".into(), json!({ "id": node.id })));
+        } else if let Some(plane) = node.id.strip_prefix("plane.") {
+            requests.push(("cad.sketch".into(), json!({ "plane": plane })));
+        } else if node.id.starts_with("toolpath.") {
             requests.push(("toolpath.edit".into(), json!({ "id": node.id })));
         } else if node.id.starts_with("setup.") && !node.id.contains('/') {
             requests.push(("setup.activate".into(), json!({ "id": node.id })));
             requests.push(("setup.edit".into(), json!({ "id": node.id })));
-        } else if let Some(machine) = node.id.strip_prefix(CosmicCAM_engine::session::PROGRAM_PREFIX) {
+        } else if let Some(machine) = node.id.strip_prefix(CosmicDMS_engine::session::PROGRAM_PREFIX) {
             requests.push(("machine.activate".into(), json!({ "id": machine })));
             requests.push(("post.processor.select".into(), Value::Null));
         }
@@ -216,8 +220,22 @@ fn row_icon(ui: &mut Ui, node: &OutlineNode, draw: &Draw<'_>) {
     let name = if id.starts_with("toolpath.") {
         let strategy =
             draw.session.job.toolpaths.iter().find(|t| t.id == id).map(|t| t.strategy.as_str()).unwrap_or_default();
-        CosmicCAM_engine::cmd::find(CosmicCAM_engine::toolpath::strategy_command(strategy))
+        CosmicDMS_engine::cmd::find(CosmicDMS_engine::toolpath::strategy_command(strategy))
             .map(crate::icon_svg::name_for)
+    } else if id.starts_with("feature.") {
+        draw.session.job.part.find(id).map(|f| {
+            let cut = f.params.get("operation").and_then(Value::as_str) == Some("cut");
+            match (f.kind.as_str(), cut) {
+                ("sketch", _) => "cad_sketch",
+                ("extrude", false) => "cad_extrude",
+                ("extrude", true) => "cad_extrude_cut",
+                (_, false) => "cad_revolve",
+                (_, true) => "cad_revolve_cut",
+            }
+            .to_owned()
+        })
+    } else if id.starts_with("plane.") {
+        Some("cad_sketch".to_owned())
     } else if id.starts_with("wcs.") {
         Some("explorer_wcs".to_owned())
     } else if id == "stock" || id.ends_with("/stock") {
@@ -271,7 +289,7 @@ fn click(ui: &Ui, node: &OutlineNode, draw: &mut Draw<'_>, requests: &mut Vec<Re
 
 /// The command an eye button runs for `node`.
 fn toggle(node: &OutlineNode, visible: bool, session: &Session) -> Request {
-    if node.id == CosmicCAM_engine::session::ORIGIN_ID {
+    if node.id == CosmicDMS_engine::session::ORIGIN_ID {
         return ("view.display.set".into(), json!({ "origin": !visible }));
     }
     if node.id.starts_with("wcs.") {
@@ -296,7 +314,7 @@ fn context_menu(row: &egui::Response, node: &OutlineNode, draw: &Draw<'_>, reque
     let (session, tokens) = (draw.session, draw.tokens);
     let id = node.id.as_str();
     let name = node.label.trim_end_matches(" (active)").to_owned();
-    let clip = session.clipboard.as_ref().map(CosmicCAM_engine::session::Clip::kind);
+    let clip = session.clipboard.as_ref().map(CosmicDMS_engine::session::Clip::kind);
     crate::ui_kit::Menu::below(row).context(tokens, |ui| {
         let run = |command: &str, params: Value| vec![(command.to_owned(), params)];
         let rename = |command: &str| run("ui.rename", json!({ "command": command, "id": id, "name": name }));
@@ -304,6 +322,36 @@ fn context_menu(row: &egui::Response, node: &OutlineNode, draw: &Draw<'_>, reque
         let paste = || run("job.clipboard.paste", json!({}));
         let show_label = |visible: Option<bool>| if visible == Some(false) { "Show" } else { "Hide" };
         match id {
+            p if p.starts_with("plane.") => {
+                let plane = p.trim_start_matches("plane.");
+                item(ui, requests, "Sketch on this plane", run("cad.sketch", json!({ "plane": plane })));
+            }
+            f if f.starts_with("feature.") => {
+                let feature = session.job.part.find(f).cloned();
+                item(ui, requests, "Edit…", run("cad.feature.get", json!({ "id": id })));
+                if feature.as_ref().is_some_and(|x| x.kind == "sketch") {
+                    item(ui, requests, "Extrude…", run("cad.extrude", json!({ "sketch": id })));
+                    item(ui, requests, "Revolve…", run("cad.revolve", json!({ "sketch": id })));
+                    if session.job.part.model.is_some() {
+                        item(ui, requests, "Cut extrude…", run("cad.extrude.cut", json!({ "sketch": id })));
+                    }
+                }
+                item(ui, requests, "Rename…", rename("cad.feature.rename"));
+                let suppressed = feature.as_ref().is_some_and(|x| x.suppressed);
+                item(
+                    ui,
+                    requests,
+                    if suppressed { "Unsuppress" } else { "Suppress" },
+                    run("cad.feature.suppress", json!({ "id": id, "suppressed": !suppressed })),
+                );
+                ui.separator();
+                item(ui, requests, "Delete", delete("cad.feature.remove"));
+            }
+            "part" => {
+                item(ui, requests, "New sketch…", run("cad.sketch", Value::Null));
+                item(ui, requests, "Rebuild", run("cad.rebuild", Value::Null));
+                item(ui, requests, "Mass properties", run("cad.mass.get", Value::Null));
+            }
             "job" => {
                 item(ui, requests, "Save", run("job.save", Value::Null));
                 item(ui, requests, "Save as…", run("job.save.as", Value::Null));
@@ -339,8 +387,8 @@ fn context_menu(row: &egui::Response, node: &OutlineNode, draw: &Draw<'_>, reque
             "programs" => {
                 item(ui, requests, "Export G-code…", run("post.gcode.export", Value::Null));
             }
-            pr if pr.starts_with(CosmicCAM_engine::session::PROGRAM_PREFIX) => {
-                let machine = pr.trim_start_matches(CosmicCAM_engine::session::PROGRAM_PREFIX);
+            pr if pr.starts_with(CosmicDMS_engine::session::PROGRAM_PREFIX) => {
+                let machine = pr.trim_start_matches(CosmicDMS_engine::session::PROGRAM_PREFIX);
                 let activate = ("machine.activate".to_owned(), json!({ "id": machine }));
                 item(
                     ui,
@@ -644,7 +692,7 @@ pub struct LibraryState {
 /// shows it and edits start from it. Up and Down step through the tools shown while the pointer
 /// is over the window.
 pub fn library(ui: &mut Ui, session: &Session, tokens: &Tokens, state: &mut LibraryState, requests: &mut Vec<Request>) {
-    use CosmicCAM_engine::tooling::{TYPES, tool_type};
+    use CosmicDMS_engine::tooling::{TYPES, tool_type};
     let lib = &session.library;
     let u = session.prefs.units;
     let Some(machine) = lib.active_machine() else {
@@ -662,7 +710,7 @@ pub fn library(ui: &mut Ui, session: &Session, tokens: &Tokens, state: &mut Libr
         .filter(|(m, _)| m.id == machine.id)
         .map(|(_, t)| t.number);
     let select = |requests: &mut Vec<Request>, n: u32| {
-        requests.push(("selection.set".into(), json!({ "id": CosmicCAM_engine::library::tool_ref(&machine.id, n) })));
+        requests.push(("selection.set".into(), json!({ "id": CosmicDMS_engine::library::tool_ref(&machine.id, n) })));
     };
 
     ui.horizontal(|ui| {
@@ -711,7 +759,7 @@ pub fn library(ui: &mut Ui, session: &Session, tokens: &Tokens, state: &mut Libr
 
     // The tools shown: of the chosen type, matching the search.
     let search = state.search.trim().to_lowercase();
-    let shown: Vec<&CosmicCAM_engine::library::Tool> = machine
+    let shown: Vec<&CosmicDMS_engine::library::Tool> = machine
         .tools
         .iter()
         .filter(|t| state.kind.as_deref().is_none_or(|k| t.kind == k))
@@ -924,7 +972,7 @@ pub fn library(ui: &mut Ui, session: &Session, tokens: &Tokens, state: &mut Libr
 fn tool_details(
     ui: &mut Ui,
     session: &Session,
-    t: &CosmicCAM_engine::library::Tool,
+    t: &CosmicDMS_engine::library::Tool,
     tokens: &Tokens,
     width: f32,
     selected: bool,

@@ -13,12 +13,12 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_geom::FaceKind;
-use CosmicCAM_geom::adaptive::{self as grid_tools, Grid};
-use CosmicCAM_geom::cutter::DropCutter;
-use CosmicCAM_geom::faces::boundary_loops;
-use CosmicCAM_geom::field::{Lattice, iso_lines, surface_distance};
-use CosmicCAM_geom::region::{self, Shape};
+use CosmicDMS_geom::FaceKind;
+use CosmicDMS_geom::adaptive::{self as grid_tools, Grid};
+use CosmicDMS_geom::cutter::DropCutter;
+use CosmicDMS_geom::faces::boundary_loops;
+use CosmicDMS_geom::field::{Lattice, iso_lines, surface_distance};
+use CosmicDMS_geom::region::{self, Shape};
 use glam::{DVec2, DVec3};
 use serde_json::Value;
 

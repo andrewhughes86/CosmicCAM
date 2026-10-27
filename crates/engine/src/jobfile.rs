@@ -7,9 +7,9 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_geom::{Aabb, Mesh, Vec3};
-use CosmicCAM_io::{ModelFormat, Units};
-use CosmicCAM_render::{OrbitCamera, Projection};
+use CosmicDMS_geom::{Aabb, Mesh, Vec3};
+use CosmicDMS_io::{ModelFormat, Units};
+use CosmicDMS_render::{OrbitCamera, Projection};
 use serde_json::{Value, json};
 
 use crate::error::{EngineError, EngineResult};
@@ -18,7 +18,9 @@ use crate::session::{JobState, MAX_MODELS, MAX_SETUPS, Model, Setup, Wcs};
 use crate::toolpath::{MAX_MOVES, MAX_TOOLPATHS, Move, MoveKind, Toolpath};
 
 /// The format tag every job file carries.
-pub const FORMAT: &str = "CosmicCAM/1";
+pub const FORMAT: &str = "CosmicDMS/1";
+/// The same format under the name the application had before (CosmicCAM), still read.
+const LEGACY_FORMAT: &str = "CosmicCAM/1";
 /// The file extension, without the dot.
 pub const EXTENSION: &str = "cosmic";
 /// Largest job file read.
@@ -158,6 +160,11 @@ pub fn to_string(job: &JobState, camera: &OrbitCamera, library: &MachineLibrary)
             })).collect::<Vec<_>>(),
             "active_setup": job.active_setup,
             "next_setup": job.next_setup,
+            "cad": {
+                "features": job.part.features.iter().map(crate::cad::Feature::to_json).collect::<Vec<_>>(),
+                "next": job.part.next,
+                "model": job.part.model,
+            },
         },
         "view": {
             "target": camera.target.to_array(),
@@ -382,11 +389,11 @@ fn stock_box(b: &Value) -> EngineResult<Aabb> {
 pub fn from_str(source: &str) -> EngineResult<Loaded> {
     let root: Value = serde_json::from_str(source).map_err(bad)?;
     let format = root.get("format").and_then(Value::as_str).unwrap_or_default();
-    if format != FORMAT {
-        return Err(if format.starts_with("CosmicCAM/") {
+    if format != FORMAT && format != LEGACY_FORMAT {
+        return Err(if format.starts_with("CosmicDMS/") || format.starts_with("CosmicCAM/") {
             EngineError::NotSupported(format!("job files of format {format}; this version reads {FORMAT}"))
         } else {
-            bad("it has no CosmicCAM format tag")
+            bad("it has no CosmicDMS format tag")
         });
     }
     let j = root.get("job").ok_or_else(|| bad("`job` is missing"))?;
@@ -439,6 +446,30 @@ pub fn from_str(source: &str) -> EngineResult<Loaded> {
         .collect::<EngineResult<_>>()?;
     job.active_setup = opt_text(j, "active_setup").filter(|id| job.setups.iter().any(|st| &st.id == id));
     job.next_setup = counter(j, "next_setup");
+    if let Some(cad) = j.get("cad").filter(|c| !c.is_null()) {
+        job.part.features = list(cad, "features", crate::cad::MAX_FEATURES)?
+            .iter()
+            .map(|f| {
+                let kind = text(f, "kind")?;
+                if !matches!(kind.as_str(), "sketch" | "extrude" | "revolve") {
+                    return Err(bad(format!("unknown CAD feature `{kind}`")));
+                }
+                Ok(crate::cad::Feature {
+                    id: text(f, "id")?,
+                    name: text(f, "name")?,
+                    kind,
+                    params: f
+                        .get("params")
+                        .filter(|p| p.is_object())
+                        .cloned()
+                        .ok_or_else(|| bad("a CAD feature has no settings"))?,
+                    suppressed: f.get("suppressed").and_then(Value::as_bool).unwrap_or(false),
+                })
+            })
+            .collect::<EngineResult<_>>()?;
+        job.part.next = counter(cad, "next");
+        job.part.model = opt_text(cad, "model").filter(|id| job.models.iter().any(|m| &m.id == id));
+    }
     let camera = root.get("view").and_then(|v| {
         let d = OrbitCamera::default();
         Some(

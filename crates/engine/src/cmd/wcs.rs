@@ -1,7 +1,7 @@
 //! Work coordinate systems: creating, placing, orienting and choosing the WCS toolpaths are
 //! programmed in.
 
-use CosmicCAM_geom::{Aabb, Quat, Vec3};
+use CosmicDMS_geom::{Aabb, Quat, Vec3};
 use serde_json::{Value, json};
 
 use super::wcs_define::{define_params, resolve_axes, resolve_origin};

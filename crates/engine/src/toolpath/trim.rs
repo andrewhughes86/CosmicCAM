@@ -11,8 +11,8 @@
 
 use std::sync::Arc;
 
-use CosmicCAM_geom::Vec3;
-use CosmicCAM_geom::region::{self, Shape};
+use CosmicDMS_geom::Vec3;
+use CosmicDMS_geom::region::{self, Shape};
 use glam::{DVec2, DVec3};
 use serde_json::{Map, Value};
 

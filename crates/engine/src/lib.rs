@@ -9,6 +9,7 @@
 )]
 #![allow(non_snake_case)]
 
+pub mod cad;
 pub mod cmd;
 pub mod demo;
 pub mod error;
@@ -24,8 +25,8 @@ pub mod tooling;
 pub mod toolpath;
 pub mod units;
 
-pub use CosmicCAM_io::ModelFormat;
-pub use cmd::{ButtonSize, CommandSpec, Param, ParamKind, Placement, RibbonTab};
+pub use CosmicDMS_io::ModelFormat;
+pub use cmd::{ButtonSize, CommandSpec, Mode, Param, ParamKind, Placement, RibbonTab};
 pub use error::{EngineError, EngineResult, error_json};
 pub use session::{Display, Model, Pane, Session, Theme, UiRequest};
 

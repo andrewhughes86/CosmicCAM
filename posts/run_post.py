@@ -1,4 +1,4 @@
-"""Runs one CosmicCAM post-processor: CosmicCAM starts this with ``python -I`` and sends one
+"""Runs one CosmicDMS post-processor: CosmicDMS starts this with ``python -I`` and sends one
 JSON request on standard input; the answer is one JSON object on standard output.
 
 Requests:
@@ -22,20 +22,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-import cosmiccam_post  # noqa: E402  (found next to this file)
+import cosmicdms_post  # noqa: E402  (found next to this file)
 
 
 def load_post(path):
     """The post class a module defines: ``POST`` if it names one, else its Post subclass."""
     if not os.path.isfile(path):
-        raise cosmiccam_post.PostError("there is no post at {}".format(path))
+        raise cosmicdms_post.PostError("there is no post at {}".format(path))
     folder = os.path.dirname(os.path.abspath(path))
     if folder not in sys.path:
         sys.path.insert(1, folder)
-    name = "cosmiccam_user_post_" + os.path.splitext(os.path.basename(path))[0]
+    name = "cosmicdms_user_post_" + os.path.splitext(os.path.basename(path))[0]
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise cosmiccam_post.PostError("{} is not a Python module".format(path))
+        raise cosmicdms_post.PostError("{} is not a Python module".format(path))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     chosen = getattr(module, "POST", None)
@@ -43,10 +43,10 @@ def load_post(path):
         found = [
             c
             for _, c in inspect.getmembers(module, inspect.isclass)
-            if issubclass(c, cosmiccam_post.Post) and c is not cosmiccam_post.Post and c.__module__ == module.__name__
+            if issubclass(c, cosmicdms_post.Post) and c is not cosmicdms_post.Post and c.__module__ == module.__name__
         ]
         if not found:
-            raise cosmiccam_post.PostError("{} defines no Post subclass".format(os.path.basename(path)))
+            raise cosmicdms_post.PostError("{} defines no Post subclass".format(os.path.basename(path)))
         chosen = found[-1]
     return chosen
 
@@ -70,7 +70,7 @@ def main():
     try:
         request = json.loads(sys.stdin.read() or "{}")
         result = answer(request)
-    except cosmiccam_post.PostError as e:
+    except cosmicdms_post.PostError as e:
         result = {"error": str(e)}
     except Exception:  # A faulty post is reported, with where it failed.
         lines = traceback.format_exc().strip().splitlines()

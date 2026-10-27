@@ -1,4 +1,4 @@
-//! Orbit camera: the single camera model every CosmicCAM canvas uses.
+//! Orbit camera: the single camera model every CosmicDMS canvas uses.
 //!
 //! The camera orbits `target` at `distance`. `yaw` is measured around +Z from +X,
 //! `pitch` is the elevation above the XY plane. Both are radians. The view basis is
@@ -6,7 +6,7 @@
 
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 
-use CosmicCAM_geom::{Aabb, Mat4, Vec2, Vec3};
+use CosmicDMS_geom::{Aabb, Mat4, Vec2, Vec3};
 
 pub const MIN_DISTANCE: f32 = 0.05;
 pub const MAX_DISTANCE: f32 = 1.0e6;

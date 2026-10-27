@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use CosmicCAM_engine::CommandSpec;
+use CosmicDMS_engine::CommandSpec;
 use egui::{Color32, ColorImage, TextureHandle, TextureId, TextureOptions};
 use resvg::{tiny_skia, usvg};
 
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn every_ribbon_command_has_an_icon() {
-        let missing: Vec<String> = CosmicCAM_engine::cmd::all()
+        let missing: Vec<String> = CosmicDMS_engine::cmd::all()
             .filter(|c| c.placement.is_some())
             .map(name_for)
             .filter(|n| source(n).is_none())
@@ -139,7 +139,7 @@ mod tests {
         assert!(missing.is_empty(), "ribbon commands without icons: {missing:?}");
     }
 
-    /// `ICON_SHEET=/path/sheet.png cargo test -p CosmicCAM-ui-egui icon_sheet` writes a review
+    /// `ICON_SHEET=/path/sheet.png cargo test -p CosmicDMS-ui-egui icon_sheet` writes a review
     /// sheet: each icon at 64, 32 and 16 px, dark theme above light.
     #[test]
     fn icon_sheet() {
