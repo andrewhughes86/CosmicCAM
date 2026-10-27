@@ -9,7 +9,7 @@ use crate::session::Session;
 use crate::toolpath::contour::{
     self, COOLANTS, DIRECTIONS, ENTRIES, HEIGHT_REFS, LEADS, RAMPS, RETRACTS, SIDES, TOOL_AXES,
 };
-use crate::toolpath::{MAX_TOOLPATHS, Toolpath};
+use crate::toolpath::{MAX_TOOLPATHS, Toolpath, trim};
 
 const LENGTH: ParamKind = ParamKind::Length { min: 0.0, max: 10_000.0 };
 const OFFSET: ParamKind = ParamKind::Length { min: -100_000.0, max: 100_000.0 };
@@ -422,6 +422,217 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         },
     },
     CommandSpec {
+        id: "toolpath.trim",
+        label: "Trim",
+        tooltip: "Cut toolpaths back to a boundary or between heights, keeping the inside or the outside; \
+                  trims stay with the toolpath when it is regenerated",
+        placement: Some(Placement::large(RibbonTab::Toolpaths, "Modify")),
+        icon: None,
+        shortcut: None,
+        params: &[
+            Param::optional("id", ParamKind::Str, "Toolpath to trim, e.g. toolpath.1"),
+            Param::optional("ids", ParamKind::StrList { max: 512 }, "Several toolpaths, trimmed alike"),
+            Param::optional(
+                "index",
+                ParamKind::Integer { min: 1, max: trim::MAX_TRIMS as i64 },
+                "Change this trim (1 is the first) instead of adding one",
+            ),
+            Param::optional(
+                "boundary",
+                ParamKind::Choice(trim::BOUNDARIES),
+                "What to trim to, seen along the tool axis: a box (`corners`), a polygon (`points`), a circle \
+                 (`center`, `radius`), the selected faces or closed edges (`geometry`), the stock's or the model's \
+                 outline, or none (heights only). Default: what the other parameters give",
+            ),
+            Param::optional(
+                "points",
+                ParamKind::PointList { max: trim::MAX_POINTS },
+                "Polygon corners, world mm (at least three)",
+            ),
+            Param::optional("corners", ParamKind::PointList { max: 2 }, "Two opposite box corners, world mm"),
+            Param::optional("center", ParamKind::Vec3, "Circle centre, world mm"),
+            Param::optional("radius", ParamKind::Length { min: 0.001, max: 100_000.0 }, "Circle radius, mm"),
+            Param::optional(
+                "geometry",
+                ParamKind::StrList { max: 1000 },
+                "Faces and closed edges whose outline is the boundary (model.N/face.N, model.N/edge.N)",
+            ),
+            Param::optional("keep", ParamKind::Choice(trim::KEEPS), "The side that stays (default inside)"),
+            Param::optional(
+                "containment",
+                ParamKind::Choice(trim::CONTAINMENTS),
+                "What the boundary holds: the tool centre (default), the whole cutter on the kept side \
+                 (tool_within), or the cutter reaching over by its radius (tool_over)",
+            ),
+            Param::optional("offset", OFFSET, "Grow the boundary by this much, mm (negative shrinks it)"),
+            Param::optional("top", OFFSET, "Keep only moves at or below this WCS Z, mm (with keep inside)"),
+            Param::optional("bottom", OFFSET, "Keep only moves at or above this WCS Z, mm (with keep inside)"),
+            Param::optional(
+                "link",
+                ParamKind::Choice(trim::LINKS),
+                "Joining the pieces left: auto (feed across short gaps that stay on the kept side, else retract), \
+                 retract height, clearance height, or always feed straight across",
+            ),
+            Param::optional("min_cut", LENGTH, "Drop pieces that cut less than this, mm (default 0.01)"),
+            Param::optional("split", ParamKind::Bool, "Also add a copy of each toolpath that keeps the other side"),
+        ],
+        returns: "{\"trimmed\": [toolpaths as toolpath.get returns them], \"split\": [the copies]}",
+        enabled: |s| !s.job.toolpaths.is_empty(),
+        run: |s, p| {
+            let ids = toolpath_ids(s, p)?;
+            let settings = trim::settings(p)?;
+            let index = p.get("index").and_then(Value::as_u64).map(|i| i as usize);
+            let split = params::opt_bool(p, "split")?.unwrap_or(false);
+            if split && s.job.toolpaths.len() + ids.len() > MAX_TOOLPATHS {
+                return Err(EngineError::InvalidParams(format!("a job holds at most {MAX_TOOLPATHS} toolpaths")));
+            }
+            for id in &ids {
+                untrimmed_in_memory(s, id)?;
+            }
+            // Work every toolpath out before changing any: all of them are trimmed, or none.
+            let mut trimmed = Vec::new();
+            let mut copies = Vec::new();
+            for (n, id) in ids.iter().enumerate() {
+                let mut tp = find(s, id)?.clone();
+                let base = tp.untrimmed.clone().unwrap_or_else(|| std::sync::Arc::new(trim::Untrimmed::of(&tp)));
+                let before = tp.trims.clone();
+                match index {
+                    Some(i) if i >= 1 && i <= tp.trims.len() => {
+                        if let Some(slot) = tp.trims.get_mut(i - 1) {
+                            *slot = settings.clone();
+                        }
+                    }
+                    Some(i) => {
+                        return Err(EngineError::InvalidParams(format!("{} has no trim {i}", tp.name)));
+                    }
+                    None if tp.trims.len() >= trim::MAX_TRIMS => {
+                        return Err(EngineError::InvalidParams(format!(
+                            "a toolpath holds at most {} trims",
+                            trim::MAX_TRIMS
+                        )));
+                    }
+                    None => tp.trims.push(settings.clone()),
+                }
+                trim::apply_all(s, &mut tp, std::sync::Arc::clone(&base), true)?;
+                if split {
+                    let mut other = settings.clone();
+                    let keep_inside = params::opt_str(&settings, "keep")?.unwrap_or("inside") == "inside";
+                    other["keep"] = json!(if keep_inside { "outside" } else { "inside" });
+                    let mut copy = find(s, id)?.clone();
+                    copy.trims = before;
+                    copy.trims.push(other);
+                    copy.id = format!("toolpath.{}", s.job.next_toolpath.saturating_add(n as u64));
+                    copy.name = crate::library::clip(&format!(
+                        "{} ({})",
+                        copy.name,
+                        if keep_inside { "outside" } else { "inside" }
+                    ));
+                    if let Some(obj) = copy.params.as_object_mut() {
+                        obj.insert("name".into(), json!(copy.name));
+                    }
+                    trim::apply_all(s, &mut copy, base, true)?;
+                    copies.push((id.clone(), copy));
+                }
+                trimmed.push(tp);
+            }
+            let rate = rapid_rate(s);
+            let result = json!({
+                "trimmed": trimmed.iter().map(|t| t.to_json(rate)).collect::<Vec<_>>(),
+                "split": copies.iter().map(|(_, t)| t.to_json(rate)).collect::<Vec<_>>(),
+            });
+            for tp in trimmed {
+                if let Some(slot) = s.job.toolpaths.iter_mut().find(|t| t.id == tp.id) {
+                    *slot = tp;
+                }
+            }
+            for (after, copy) in copies {
+                let at = s.job.toolpaths.iter().position(|t| t.id == after).map_or(s.job.toolpaths.len(), |i| i + 1);
+                s.job.next_toolpath = s.job.next_toolpath.saturating_add(1);
+                s.job.toolpaths.insert(at, copy);
+            }
+            s.job.setup_changed();
+            Ok(result)
+        },
+    },
+    CommandSpec {
+        id: "toolpath.trim.remove",
+        label: "Remove trim",
+        tooltip: "Take a trim off toolpaths, giving back what it cut away",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[
+            Param::optional("id", ParamKind::Str, "Toolpath id, e.g. toolpath.1"),
+            Param::optional("ids", ParamKind::StrList { max: 512 }, "Several toolpaths"),
+            Param::optional(
+                "index",
+                ParamKind::Integer { min: 1, max: trim::MAX_TRIMS as i64 },
+                "The trim to remove, 1 the first (default: all of them)",
+            ),
+        ],
+        returns: "{\"removed\": number of trims removed, \"toolpaths\": [toolpaths as toolpath.get returns them]}",
+        enabled: |s| s.job.toolpaths.iter().any(|t| !t.trims.is_empty()),
+        run: |s, p| {
+            let ids = toolpath_ids(s, p)?;
+            let index = p.get("index").and_then(Value::as_u64).map(|i| i as usize);
+            for id in &ids {
+                untrimmed_in_memory(s, id)?;
+            }
+            let mut removed = 0;
+            let mut changed = Vec::new();
+            for id in &ids {
+                let mut tp = find(s, id)?.clone();
+                match index {
+                    Some(i) if i >= 1 && i <= tp.trims.len() => {
+                        tp.trims.remove(i - 1);
+                        removed += 1;
+                    }
+                    Some(i) => return Err(EngineError::InvalidParams(format!("{} has no trim {i}", tp.name))),
+                    None => removed += std::mem::take(&mut tp.trims).len(),
+                }
+                if let Some(base) = tp.untrimmed.clone() {
+                    trim::apply_all(s, &mut tp, base, false)?;
+                }
+                changed.push(tp);
+            }
+            let rate = rapid_rate(s);
+            let result = json!({
+                "removed": removed,
+                "toolpaths": changed.iter().map(|t| t.to_json(rate)).collect::<Vec<_>>(),
+            });
+            for tp in changed {
+                if let Some(slot) = s.job.toolpaths.iter_mut().find(|t| t.id == tp.id) {
+                    *slot = tp;
+                }
+            }
+            if removed > 0 {
+                s.job.setup_changed();
+            }
+            Ok(result)
+        },
+    },
+    CommandSpec {
+        id: "toolpath.trim.list",
+        label: "List trims",
+        tooltip: "A toolpath's trims with their settings, in the order they apply",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[Param::required("id", ParamKind::Str, "Toolpath id, e.g. toolpath.1")],
+        returns: "{\"id\": id, \"trims\": [{\"index\": 1, \"label\": text, \"settings\": {as toolpath.trim takes them}}]}",
+        enabled: always,
+        run: |s, p| {
+            let tp = find(s, params::req_str(p, "id")?)?;
+            let trims: Vec<Value> = tp
+                .trims
+                .iter()
+                .enumerate()
+                .map(|(i, t)| json!({ "index": i + 1, "label": trim::describe(t), "settings": t }))
+                .collect();
+            Ok(json!({ "id": tp.id, "trims": trims }))
+        },
+    },
+    CommandSpec {
         id: "toolpath.regenerate",
         label: "Regenerate toolpaths",
         tooltip: "Work toolpaths out again with their settings, after the model, stock or tools changed",
@@ -668,6 +879,42 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
 ];
 
+/// The toolpaths `id` and `ids` name, checked to exist.
+fn toolpath_ids(s: &Session, p: &Value) -> EngineResult<Vec<String>> {
+    let mut ids: Vec<String> = params::opt_str(p, "id")?.map(str::to_owned).into_iter().collect();
+    for id in params::str_list(p, "ids")? {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    if ids.is_empty() {
+        return Err(EngineError::InvalidParams("give the toolpath `id` (or `ids`)".into()));
+    }
+    for id in &ids {
+        find(s, id)?;
+    }
+    Ok(ids)
+}
+
+/// A trimmed toolpath read from a job file has only its trimmed moves: work it out again so
+/// its trims can change.
+fn untrimmed_in_memory(s: &mut Session, id: &str) -> EngineResult<()> {
+    let tp = find(s, id)?;
+    if tp.trims.is_empty() || tp.untrimmed.is_some() {
+        return Ok(());
+    }
+    let command = crate::toolpath::strategy_command(&tp.strategy);
+    let mut params = tp.params.clone();
+    if let Some(o) = params.as_object_mut() {
+        o.insert("id".into(), json!(id));
+        o.insert("name".into(), json!(tp.name));
+    }
+    let selection = s.view.selection.clone();
+    s.execute(command, &params)?;
+    s.view.selection = selection;
+    Ok(())
+}
+
 fn find<'a>(s: &'a Session, id: &str) -> EngineResult<&'a Toolpath> {
     s.job.toolpaths.iter().find(|t| t.id == id).ok_or_else(|| EngineError::InvalidParams(format!("no toolpath `{id}`")))
 }
@@ -693,7 +940,15 @@ pub(super) fn add_toolpath(
         return Err(EngineError::InvalidParams(format!("a job holds at most {MAX_TOOLPATHS} toolpaths")));
     }
     let id = replace.clone().unwrap_or_else(|| format!("toolpath.{}", s.job.next_toolpath));
-    let tp = generate(s, p, id.clone())?;
+    let mut tp = generate(s, p, id.clone())?;
+    // Regenerating keeps the toolpath's trims.
+    if let Some(old) = replace.as_ref().and_then(|id| s.job.toolpaths.iter().find(|t| &t.id == id))
+        && !old.trims.is_empty()
+    {
+        tp.trims = old.trims.clone();
+        let base = std::sync::Arc::new(trim::Untrimmed::of(&tp));
+        trim::apply_all(s, &mut tp, base, false)?;
+    }
     let result = tp.to_json(rapid_rate(s));
     match replace {
         Some(id) => {

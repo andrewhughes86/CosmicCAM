@@ -154,16 +154,8 @@ impl WcsTool {
     /// What the viewport should pick and show this frame.
     pub fn mode(&self) -> PickMode {
         let used: Vec<&str> = self.slots().into_iter().map(|(k, _, _)| k).collect();
-        let mut mode = PickMode {
-            accept: self.active.map(Self::accept_for),
-            picked: Vec::new(),
-            picked_edges: Vec::new(),
-            picked_points: Vec::new(),
-            preview: self.preview,
-            independent_of: Vec::new(),
-            path: None,
-            wcs: Vec::new(),
-        };
+        let mut mode =
+            PickMode { accept: self.active.map(Self::accept_for), preview: self.preview, ..PickMode::default() };
         for (key, p) in self.picks.iter().filter(|(k, _)| used.contains(k)) {
             match p {
                 Picked::Face { model, face, normal } => {
@@ -319,7 +311,7 @@ impl WcsTool {
                 } else if let Some(key) = self.active {
                     let hint = match Self::accept_for(key) {
                         Accept::Axis => "Click a plane (its normal), a cylinder (its axis) or an edge in the viewport.",
-                        Accept::Point | Accept::Select => {
+                        Accept::Point | Accept::Select | Accept::Plane => {
                             "Click a point on the model (corners snap) or a circular edge (its centre)."
                         }
                     };

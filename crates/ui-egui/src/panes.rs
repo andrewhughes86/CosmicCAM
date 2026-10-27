@@ -383,6 +383,10 @@ fn context_menu(row: &egui::Response, node: &OutlineNode, draw: &Draw<'_>, reque
                         .collect()
                 };
                 item(ui, requests, "Simulate these", run("sim.start", json!({ "toolpaths": ids })));
+                item(ui, requests, "Trim…", run("toolpath.trim", json!({ "ids": ids })));
+                if ids.iter().any(|i| session.job.toolpaths.iter().any(|t| &t.id == i && !t.trims.is_empty())) {
+                    item(ui, requests, "Remove trims", run("toolpath.trim.remove", json!({ "ids": ids })));
+                }
                 item(ui, requests, "Show", show(true));
                 item(ui, requests, "Hide", show(false));
                 item(ui, requests, "Regenerate", run("toolpath.regenerate", json!({ "ids": ids })));
@@ -392,6 +396,10 @@ fn context_menu(row: &egui::Response, node: &OutlineNode, draw: &Draw<'_>, reque
             t if t.starts_with("toolpath.") => {
                 item(ui, requests, "Edit…", run("toolpath.edit", json!({ "id": id })));
                 item(ui, requests, "Simulate", run("sim.start", json!({ "toolpaths": [id] })));
+                item(ui, requests, "Trim…", run("toolpath.trim", json!({ "ids": [id] })));
+                if session.job.toolpaths.iter().any(|t| t.id == id && !t.trims.is_empty()) {
+                    item(ui, requests, "Remove trims", run("toolpath.trim.remove", json!({ "id": id })));
+                }
                 item(ui, requests, show_label(node.visible), run("toolpath.visibility.set", json!({ "id": id })));
                 item(ui, requests, "Rename…", rename("toolpath.rename"));
                 ui.separator();

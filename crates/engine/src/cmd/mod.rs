@@ -150,6 +150,10 @@ pub enum ParamKind {
     StrList {
         max: usize,
     },
+    /// A list of up to `max` points, each `[x, y, z]` in millimetres.
+    PointList {
+        max: usize,
+    },
 }
 
 impl ParamKind {
@@ -163,6 +167,7 @@ impl ParamKind {
             Self::Choice(_) => "choice",
             Self::Vec3 => "vec3",
             Self::StrList { .. } => "list",
+            Self::PointList { .. } => "points",
         }
     }
 }
@@ -212,7 +217,7 @@ impl Param {
                 v["max"] = json!(max);
             }
             ParamKind::Choice(choices) => v["choices"] = json!(choices),
-            ParamKind::StrList { max } => v["max_items"] = json!(max),
+            ParamKind::StrList { max } | ParamKind::PointList { max } => v["max_items"] = json!(max),
             _ => {}
         }
         v
@@ -339,6 +344,19 @@ fn check_kind(p: &Param, v: &Value) -> EngineResult<()> {
                 Ok(())
             }
             _ => bad("must be [x, y, z] with finite numbers".into()),
+        },
+        ParamKind::PointList { max } => match v.as_array() {
+            Some(a) if a.len() > max => bad(format!("has more than {max} points")),
+            Some(a)
+                if a.iter().all(|p| {
+                    p.as_array().is_some_and(|c| {
+                        c.len() == 3 && c.iter().all(|n| n.as_f64().is_some_and(|n| n.is_finite() && n.abs() <= 1.0e9))
+                    })
+                }) =>
+            {
+                Ok(())
+            }
+            _ => bad("must be a list of [x, y, z] points with finite numbers".into()),
         },
     }
 }

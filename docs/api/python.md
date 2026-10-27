@@ -431,6 +431,38 @@ Drilling picks the cycle from the tool when none is given (tap for a tap, a dwel
 centre drills, countersinks and counterbores, feed out for reamers and boring bars), and a tap's
 pitch is the tool's.
 
+### Trimming
+
+`toolpath.trim` cuts finished toolpaths back to a boundary seen along the tool axis, keeping the
+inside or the outside: a box (two `corners`), a polygon (`points`), a circle (`center`,
+`radius`), the outline of selected faces or closed edges (`geometry`), the stock's or the
+model's outline, and/or a band of heights (`top`, `bottom`, WCS Z). `containment` says what the
+boundary holds: the tool centre (default), the whole cutter on the kept side (`tool_within`) or
+the cutter reaching over by its radius (`tool_over`); `offset` grows or shrinks it. The pieces
+left are linked by retracting to the retract (or clearance) height and plunging back, or, with
+the default `link="auto"`, by feeding straight across short gaps (up to two tool diameters)
+that stay on the kept side. `split=True` also adds a copy that keeps the other side.
+
+Trims stay with the toolpath: regenerating applies them again, and removing one gives back what
+it cut. Several toolpaths can be trimmed alike in one call. In the app, right-click toolpaths in
+the explorer (Ctrl or Shift for several) and choose **Trim…**, or use **Trim** on the Toolpaths
+tab: draw the box, polygon or circle in the viewport (Top view looks down the tool axis), and
+the trimmed toolpaths preview in place before OK. A trimmed toolpath shows ✂ in the explorer.
+
+```python
+cc.toolpath_trim(id="toolpath.2", corners=[[-60, -40, 0], [0, 40, 0]])            # keep inside
+cc.toolpath_trim(ids=["toolpath.3", "toolpath.4"], geometry=["model.1/face.12"],
+                 keep="outside", containment="tool_within", offset=1)
+cc.toolpath_trim(id="toolpath.5", center=[0, 0, 0], radius=20, split=True)         # both sides
+cc.toolpath_trim(id="toolpath.6", top=-5)                                          # below Z -5
+cc.toolpath_trim(id="toolpath.2", index=1, corners=[[-70, -40, 0], [0, 40, 0]])    # change trim 1
+cc.toolpath_trim_list(id="toolpath.2")
+cc.toolpath_trim_remove(id="toolpath.2")                                           # all of them
+```
+
+A drilling toolpath is trimmed by its holes: those whose centre is on the kept side stay.
+On simultaneous multi-axis toolpaths links retract along the toolpath's Z.
+
 ## Showing, renaming, copying
 
 Only the selected toolpath is drawn, plus any switched on. Models can be hidden too (hidden
@@ -607,7 +639,7 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-188 commands in 17 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+191 commands in 17 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.demo.open`](#jobdemoopen), [`job.clipboard.copy`](#jobclipboardcopy), [`job.clipboard.paste`](#jobclipboardpaste), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
@@ -619,7 +651,7 @@ with cosmiccam.launch(sample=True) as cc:
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.wcs.visibility.set`](#viewwcsvisibilityset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
-- **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.chamfer`](#toolpathchamfer), [`toolpath.slot`](#toolpathslot), [`toolpath.trace`](#toolpathtrace), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.visibility.set`](#toolpathvisibilityset), [`toolpath.rename`](#toolpathrename), [`toolpath.move`](#toolpathmove), [`toolpath.regenerate`](#toolpathregenerate), [`toolpath.template.save`](#toolpathtemplatesave), [`toolpath.template.list`](#toolpathtemplatelist), [`toolpath.template.apply`](#toolpathtemplateapply), [`toolpath.template.remove`](#toolpathtemplateremove), [`toolpath.duplicate`](#toolpathduplicate), [`toolpath.remove`](#toolpathremove), [`toolpath.face`](#toolpathface), [`toolpath.pocket`](#toolpathpocket), [`toolpath.adaptive`](#toolpathadaptive), [`toolpath.scallop`](#toolpathscallop), [`toolpath.steep_shallow`](#toolpathsteep_shallow), [`toolpath.pencil`](#toolpathpencil), [`toolpath.spiral`](#toolpathspiral), [`toolpath.radial`](#toolpathradial), [`toolpath.flat`](#toolpathflat), [`toolpath.drill`](#toolpathdrill), [`toolpath.thread`](#toolpaththread), [`toolpath.bore`](#toolpathbore), [`toolpath.rough`](#toolpathrough), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.multiaxis`](#toolpathmultiaxis), [`toolpath.cl.export`](#toolpathclexport)
+- **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.chamfer`](#toolpathchamfer), [`toolpath.slot`](#toolpathslot), [`toolpath.trace`](#toolpathtrace), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.visibility.set`](#toolpathvisibilityset), [`toolpath.rename`](#toolpathrename), [`toolpath.move`](#toolpathmove), [`toolpath.trim`](#toolpathtrim), [`toolpath.trim.remove`](#toolpathtrimremove), [`toolpath.trim.list`](#toolpathtrimlist), [`toolpath.regenerate`](#toolpathregenerate), [`toolpath.template.save`](#toolpathtemplatesave), [`toolpath.template.list`](#toolpathtemplatelist), [`toolpath.template.apply`](#toolpathtemplateapply), [`toolpath.template.remove`](#toolpathtemplateremove), [`toolpath.duplicate`](#toolpathduplicate), [`toolpath.remove`](#toolpathremove), [`toolpath.face`](#toolpathface), [`toolpath.pocket`](#toolpathpocket), [`toolpath.adaptive`](#toolpathadaptive), [`toolpath.scallop`](#toolpathscallop), [`toolpath.steep_shallow`](#toolpathsteep_shallow), [`toolpath.pencil`](#toolpathpencil), [`toolpath.spiral`](#toolpathspiral), [`toolpath.radial`](#toolpathradial), [`toolpath.flat`](#toolpathflat), [`toolpath.drill`](#toolpathdrill), [`toolpath.thread`](#toolpaththread), [`toolpath.bore`](#toolpathbore), [`toolpath.rough`](#toolpathrough), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.multiaxis`](#toolpathmultiaxis), [`toolpath.cl.export`](#toolpathclexport)
 - **tool**: [`tool.create`](#toolcreate), [`tool.create.flat`](#toolcreateflat), [`tool.create.ball`](#toolcreateball), [`tool.create.bull`](#toolcreatebull), [`tool.create.tapered_ball`](#toolcreatetapered_ball), [`tool.create.lollipop`](#toolcreatelollipop), [`tool.create.chamfer`](#toolcreatechamfer), [`tool.create.engraving`](#toolcreateengraving), [`tool.create.dovetail`](#toolcreatedovetail), [`tool.create.slot_mill`](#toolcreateslot_mill), [`tool.create.radius_mill`](#toolcreateradius_mill), [`tool.create.face_mill`](#toolcreateface_mill), [`tool.create.thread_mill`](#toolcreatethread_mill), [`tool.create.drill`](#toolcreatedrill), [`tool.create.spot_drill`](#toolcreatespot_drill), [`tool.create.center_drill`](#toolcreatecenter_drill), [`tool.create.reamer`](#toolcreatereamer), [`tool.create.tap`](#toolcreatetap), [`tool.create.boring_bar`](#toolcreateboring_bar), [`tool.create.counterbore`](#toolcreatecounterbore), [`tool.create.countersink`](#toolcreatecountersink), [`tool.edit`](#tooledit), [`tool.feeds`](#toolfeeds), [`tool.preset.set`](#toolpresetset), [`tool.preset.remove`](#toolpresetremove), [`tool.preset.apply`](#toolpresetapply), [`tool.duplicate`](#toolduplicate), [`tool.remove`](#toolremove), [`tool.list`](#toollist), [`tool.get`](#toolget), [`tool.profile.get`](#toolprofileget), [`tool.library.open`](#toollibraryopen), [`tool.library.sample`](#toollibrarysample), [`tool.library.import`](#toollibraryimport), [`tool.library.export`](#toollibraryexport)
 - **holder**: [`holder.create`](#holdercreate), [`holder.edit`](#holderedit), [`holder.remove`](#holderremove), [`holder.list`](#holderlist)
 - **machine**: [`machine.create`](#machinecreate), [`machine.edit`](#machineedit), [`machine.duplicate`](#machineduplicate), [`machine.remove`](#machineremove), [`machine.activate`](#machineactivate), [`machine.list`](#machinelist), [`machine.get`](#machineget), [`machine.library.open`](#machinelibraryopen)
@@ -2386,6 +2418,71 @@ Move a toolpath earlier or later in the program.
 | `to` | integer | no | Position to move to, 0 first (instead of `by`) (0 to 10000) |
 
 Returns: {"id": id, "index": its new position}
+
+#### `toolpath.trim`
+
+```python
+cc.toolpath_trim(id=None, ids=None, index=None, boundary=None, points=None, corners=None, center=None, radius=None, geometry=None, keep=None, containment=None, offset=None, top=None, bottom=None, link=None, min_cut=None, split=None)
+```
+
+Cut toolpaths back to a boundary or between heights, keeping the inside or the outside; trims stay with the toolpath when it is regenerated.
+ **Planned — not available yet.**
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Toolpath to trim, e.g. toolpath.1 |
+| `ids` | list | no | Several toolpaths, trimmed alike |
+| `index` | integer | no | Change this trim (1 is the first) instead of adding one (1 to 32) |
+| `boundary` | choice | no | What to trim to, seen along the tool axis: a box (`corners`), a polygon (`points`), a circle (`center`, `radius`), the selected faces or closed edges (`geometry`), the stock's or the model's outline, or none (heights only). Default: what the other parameters give — one of box, polygon, circle, selection, stock, model, none |
+| `points` | points | no | Polygon corners, world mm (at least three) — [[x, y, z], …] in mm |
+| `corners` | points | no | Two opposite box corners, world mm — [[x, y, z], …] in mm |
+| `center` | vec3 | no | Circle centre, world mm — [x, y, z] in mm |
+| `radius` | number | no | Circle radius, mm (0.001 to 1e5 mm) |
+| `geometry` | list | no | Faces and closed edges whose outline is the boundary (model.N/face.N, model.N/edge.N) |
+| `keep` | choice | no | The side that stays (default inside) — one of inside, outside |
+| `containment` | choice | no | What the boundary holds: the tool centre (default), the whole cutter on the kept side (tool_within), or the cutter reaching over by its radius (tool_over) — one of center, tool_within, tool_over |
+| `offset` | number | no | Grow the boundary by this much, mm (negative shrinks it) (-1e5 to 1e5 mm) |
+| `top` | number | no | Keep only moves at or below this WCS Z, mm (with keep inside) (-1e5 to 1e5 mm) |
+| `bottom` | number | no | Keep only moves at or above this WCS Z, mm (with keep inside) (-1e5 to 1e5 mm) |
+| `link` | choice | no | Joining the pieces left: auto (feed across short gaps that stay on the kept side, else retract), retract height, clearance height, or always feed straight across — one of auto, retract, clearance, feed |
+| `min_cut` | number | no | Drop pieces that cut less than this, mm (default 0.01) (0 to 10000 mm) |
+| `split` | bool | no | Also add a copy of each toolpath that keeps the other side |
+
+Returns: {"trimmed": [toolpaths as toolpath.get returns them], "split": [the copies]}
+
+<sub>ribbon: Toolpaths › Modify</sub>
+
+#### `toolpath.trim.remove`
+
+```python
+cc.toolpath_trim_remove(id=None, ids=None, index=None)
+```
+
+Take a trim off toolpaths, giving back what it cut away.
+ **Planned — not available yet.**
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | no | Toolpath id, e.g. toolpath.1 |
+| `ids` | list | no | Several toolpaths |
+| `index` | integer | no | The trim to remove, 1 the first (default: all of them) (1 to 32) |
+
+Returns: {"removed": number of trims removed, "toolpaths": [toolpaths as toolpath.get returns them]}
+
+#### `toolpath.trim.list`
+
+```python
+cc.toolpath_trim_list(id=…)
+```
+
+A toolpath's trims with their settings, in the order they apply.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Toolpath id, e.g. toolpath.1 |
+
+Returns: {"id": id, "trims": [{"index": 1, "label": text, "settings": {as toolpath.trim takes them}}]}
 
 #### `toolpath.regenerate`
 

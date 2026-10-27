@@ -967,6 +967,8 @@ pub(super) fn generate_as(s: &Session, p: &Value, id: String, v: &Variant, store
         warnings,
         drill: None,
         visible: false,
+        trims: Vec::new(),
+        untrimmed: None,
     })
 }
 

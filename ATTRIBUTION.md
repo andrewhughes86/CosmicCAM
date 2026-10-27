@@ -75,6 +75,7 @@ another project (MIT OR Apache-2.0 compatible only) and every asset file in the 
 | `assets/icons/ui/design/svg/toolpath_steep_shallow.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_thread.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_trace.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/toolpath_trim.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/toolpath_waterline.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/view_camera_front.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/view_camera_iso.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |

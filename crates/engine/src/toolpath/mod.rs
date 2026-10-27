@@ -10,6 +10,7 @@ pub mod drill;
 pub mod finish;
 pub mod multiaxis;
 pub mod strategies;
+pub mod trim;
 pub mod twod;
 
 use std::sync::Arc;
@@ -136,6 +137,11 @@ pub struct Toolpath {
     pub drill: Option<DrillCycle>,
     /// Drawn in the viewport even when it is not the selected toolpath.
     pub visible: bool,
+    /// Trims applied after the strategy, in order: the settings `toolpath.trim` took.
+    pub trims: Vec<Value>,
+    /// The toolpath before its trims, while it is in memory; None when it has no trims, or
+    /// when it was read from a job file (it is regenerated before its trims change).
+    pub untrimmed: Option<Arc<trim::Untrimmed>>,
 }
 
 /// A drilling cycle and its holes, in the toolpath's WCS (millimetres).
@@ -211,6 +217,7 @@ impl Toolpath {
             "warnings": self.warnings,
             "visible": self.visible,
             "params": self.params,
+            "trims": self.trims.iter().map(trim::describe).collect::<Vec<_>>(),
         })
     }
 

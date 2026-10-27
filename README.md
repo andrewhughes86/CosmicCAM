@@ -60,6 +60,10 @@ simulation yet, so **check its G-code before running it on a machine**.
   Each is set up in the toolpath panel with a live preview worked out in the background,
   offering the tool types that suit it, with speeds and feeds from a tool preset. Save settings
   as templates and start new toolpaths from them; reorder and regenerate toolpaths.
+- **Trimming:** cut toolpaths back to a box, polygon or circle drawn in the viewport, the
+  outline of faces or edges, the stock or the model, or between heights; keep the inside, the
+  outside or both, hold the tool centre or the whole cutter, and relink the pieces. Trims stay
+  with the toolpath through regeneration and can be changed or removed later.
 - **2D contour:** follow edges or a face outline at depth with radial and axial
   passes, stock to leave, leads, ramps, feed optimization, an entry point and a tolerance that
   follows true circles; set up in a panel with a live preview.

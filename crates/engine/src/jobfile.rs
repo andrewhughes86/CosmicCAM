@@ -104,6 +104,7 @@ pub fn to_string(job: &JobState, camera: &OrbitCamera, library: &MachineLibrary)
                 "start": t.start.to_array(),
                 "warnings": t.warnings,
                 "visible": t.visible,
+                "trims": t.trims,
                 "moves": base64::encode(&moves),
                 "axis": t.axis.to_array(),
                 "axes": t.axes.as_ref().map(|axes| {
@@ -301,6 +302,10 @@ fn toolpath(v: &Value) -> EngineResult<Toolpath> {
             Some(Arc::new(axes))
         }
     };
+    let trims = list(v, "trims", crate::toolpath::trim::MAX_TRIMS)?
+        .iter()
+        .map(|t| crate::toolpath::trim::settings(t).map_err(|e| bad(format!("{name}: a trim {e}"))))
+        .collect::<EngineResult<Vec<_>>>()?;
     Ok(Toolpath {
         axis,
         axes,
@@ -323,6 +328,8 @@ fn toolpath(v: &Value) -> EngineResult<Toolpath> {
             None | Some(Value::Null) => None,
             Some(d) => Some(drill_cycle(d)?),
         },
+        trims,
+        untrimmed: None,
     })
 }
 

@@ -30,13 +30,15 @@ pub enum Accept {
     /// Plain selection with no tool open: a vertex, else an edge, else any face. Clicks
     /// run `selection.set`.
     Select,
+    /// A point on the mode's `plane`, wherever the pointer is (drawing a boundary).
+    Plane,
 }
 
 /// How close to an edge, in screen points, the pointer must be to pick it.
 const EDGE_PICK_PX: f32 = 8.0;
 
 /// Set by a picking tool each frame it is open.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PickMode {
     /// What a click picks; None while the tool needs nothing more.
     pub accept: Option<Accept>,
@@ -51,10 +53,16 @@ pub struct PickMode {
     /// Plane normals a new plane must be independent of (one plane per axis): it may not
     /// be parallel to one of them, nor lie along the line two of them share.
     pub independent_of: Vec<Vec3>,
-    /// A toolpath being edited, drawn over the scene: its start and moves.
-    pub path: Option<(Vec3, std::sync::Arc<Vec<CosmicCAM_engine::toolpath::Move>>)>,
+    /// Toolpaths being edited, drawn over the scene: each one's start and moves.
+    pub paths: Vec<(Vec3, std::sync::Arc<Vec<CosmicCAM_engine::toolpath::Move>>)>,
     /// WCS the tool works in, drawn while it runs.
     pub wcs: Vec<String>,
+    /// Where `Accept::Plane` clicks land: a point on the plane and its normal.
+    pub plane: Option<(Vec3, Vec3)>,
+    /// Lines the tool draws over the scene (a boundary being drawn), each a polyline.
+    pub lines: Vec<Vec<Vec3>>,
+    /// Toolpaths not drawn from the job while the tool shows them as `paths`.
+    pub hide: Vec<String>,
 }
 
 /// Viewport colour class of a toolpath move.
@@ -120,8 +128,8 @@ pub struct Viewport {
     /// Triads in the scene, for their axis labels: origin, X/Y/Z axes, arrow length, style.
     triads: Vec<(Vec3, [Vec3; 3], f32, TriadStyle)>,
     preview_shown: Option<(Vec3, [Vec3; 3])>,
-    /// Identity of the preview path last uploaded (its moves' address and count).
-    path_shown: Option<(usize, usize)>,
+    /// Identity of the preview paths last uploaded (each one's moves: address and count).
+    path_shown: Vec<(usize, usize)>,
     gpu: Option<gpu::ViewportGpu>,
     gpu_error: Option<String>,
     /// The camera on screen; eases towards the session's camera.
@@ -173,7 +181,7 @@ impl Viewport {
             triad_size: 20.0,
             triads: Vec::new(),
             preview_shown: None,
-            path_shown: None,
+            path_shown: Vec::new(),
             gpu: None,
             gpu_error: None,
             shown: OrbitCamera::default(),
@@ -303,6 +311,11 @@ impl Viewport {
         self.picked.take()
     }
 
+    /// The point a click would pick now (on the plane, for `Accept::Plane`).
+    pub fn hover_point(&self) -> Option<Vec3> {
+        self.hover_point
+    }
+
     /// The camera ray through screen point `p`: (origin, unit direction).
     fn ray(&self, rect: Rect, p: Pos2) -> Option<(Vec3, Vec3)> {
         let cam = self.shown;
@@ -344,6 +357,36 @@ impl Viewport {
         };
         // No hover tests while dragging the camera.
         let pointer = response.hover_pos().filter(|_| !ui.input(|i| i.pointer.any_down()));
+        if accept == Accept::Plane {
+            self.hover = None;
+            self.hover_edge = None;
+            self.hover_vertex = None;
+            if pointer != self.last_pointer {
+                self.last_pointer = pointer;
+                self.hover_point = match (pointer.and_then(|p| self.ray(rect, p)), mode.plane) {
+                    (Some((o, d)), Some((at, n))) if d.dot(n).abs() > 1.0e-6 => {
+                        let t = (at - o).dot(n) / d.dot(n);
+                        Some(o + d * t).filter(|p| t > 0.0 && p.is_finite())
+                    }
+                    _ => None,
+                };
+            }
+            if self.hover_point.is_some() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+            }
+            if response.clicked()
+                && let Some(point) = self.hover_point
+            {
+                self.picked = Some(PickHit {
+                    model: String::new(),
+                    face: None,
+                    edge: None,
+                    point,
+                    normal: mode.plane.map(|(_, n)| n),
+                });
+            }
+            return;
+        }
         if pointer != self.last_pointer {
             self.last_pointer = pointer;
             self.hover = None;
@@ -383,7 +426,7 @@ impl Viewport {
                             independent(normal, &mode.independent_of)
                         }
                         (Accept::Axis, Some(FaceKind::Cylinder { .. })) => true,
-                        (Accept::Axis, _) => false,
+                        (Accept::Axis | Accept::Plane, _) => false,
                     };
                     self.hover = Some((hit.model, hit.face, ok));
                     self.hover_point = Some(self.snap(rect, pointer, model, hit.triangle).unwrap_or(hit.point));
@@ -456,8 +499,18 @@ impl Viewport {
             .as_ref()
             .map(|m| m.picked_points.iter().map(|p| (*p, tokens.accent)).collect())
             .unwrap_or_default();
-        if self.mode.as_ref().is_some_and(|m| m.accept == Some(Accept::Point)) && self.hover_edge.is_none() {
+        if self.mode.as_ref().is_some_and(|m| matches!(m.accept, Some(Accept::Point | Accept::Plane)))
+            && self.hover_edge.is_none()
+        {
             dots.extend(self.hover_point.map(|p| (p, tokens.accent)));
+        }
+        for line in self.mode.as_ref().map(|m| m.lines.as_slice()).unwrap_or_default() {
+            let pts: Vec<Option<Pos2>> = line.iter().map(|p| to_screen(*p)).collect();
+            for pair in pts.windows(2) {
+                if let [Some(a), Some(b)] = pair {
+                    painter.line_segment([*a, *b], egui::Stroke::new(2.5, tokens.accent));
+                }
+            }
         }
         if let Some((mi, v)) = self.hover_vertex
             && let Some(p) = session.job.models.get(mi).and_then(|m| m.edges.vertices.get(v))
@@ -709,14 +762,15 @@ impl Viewport {
             self.highlight_key = Some(key);
         }
         let preview = self.mode.as_ref().and_then(|m| m.preview);
-        let path = self.mode.as_ref().and_then(|m| m.path.clone());
-        let path_id = path.as_ref().map(|(_, moves)| (std::sync::Arc::as_ptr(moves) as usize, moves.len()));
+        let paths = self.mode.as_ref().map(|m| m.paths.clone()).unwrap_or_default();
+        let path_id: Vec<(usize, usize)> =
+            paths.iter().map(|(_, moves)| (std::sync::Arc::as_ptr(moves) as usize, moves.len())).collect();
         if preview != self.preview_shown || path_id != self.path_shown {
             let mut overlay = self.base_overlay.clone();
             if let Some((origin, axes)) = preview {
                 overlay.push_triad(origin, axes, self.triad_size * 1.2, &tokens.scene_palette(), TriadStyle::Full);
             }
-            if let Some((start, moves)) = &path {
+            for (start, moves) in &paths {
                 overlay.push_path(*start, moves.iter().map(|m| (path_kind(m.kind), m.to)), &tokens.scene_palette());
             }
             self.path_shown = path_id;
@@ -779,8 +833,13 @@ impl Viewport {
         let units = u64::from(session.prefs.units == CosmicCAM_engine::units::DisplayUnits::Inches);
         // Only the selected toolpath and those switched on are drawn.
         let selected = session.view.selection.as_deref();
-        let shown: Vec<&CosmicCAM_engine::toolpath::Toolpath> =
-            session.job.toolpaths.iter().filter(|t| t.visible || selected == Some(t.id.as_str())).collect();
+        let hidden = self.mode.as_ref().map(|m| m.hide.clone()).unwrap_or_default();
+        let shown: Vec<&CosmicCAM_engine::toolpath::Toolpath> = session
+            .job
+            .toolpaths
+            .iter()
+            .filter(|t| (t.visible || selected == Some(t.id.as_str())) && !hidden.contains(&t.id))
+            .collect();
         // WCS markers show while in use (selected, or used by the selection or the open tool).
         let tool_wcs = self.mode.as_ref().map(|m| m.wcs.clone()).unwrap_or_default();
         let visible_wcs = session.visible_wcs(&tool_wcs);
@@ -862,7 +921,7 @@ impl Viewport {
         self.base_overlay = triad.clone();
         self.triad_size = triad_size;
         self.preview_shown = None;
-        self.path_shown = None;
+        self.path_shown = Vec::new();
         self.highlight_key = None;
         if let Some(gpu) = &mut self.gpu {
             let r = catch_unwind(AssertUnwindSafe(|| {
@@ -965,16 +1024,7 @@ impl Viewport {
 
 /// Plain selection: what the session has selected, drawn as picked.
 fn select_mode(session: &Session) -> PickMode {
-    let mut mode = PickMode {
-        accept: Some(Accept::Select),
-        picked: Vec::new(),
-        picked_edges: Vec::new(),
-        picked_points: Vec::new(),
-        preview: None,
-        independent_of: Vec::new(),
-        path: None,
-        wcs: Vec::new(),
-    };
+    let mut mode = PickMode { accept: Some(Accept::Select), ..PickMode::default() };
     if let Some((m, entity)) = session.view.selection.as_deref().and_then(|id| session.job.entity(id)) {
         match entity {
             Entity::Face(f) => mode.picked.push((m.id.clone(), f)),

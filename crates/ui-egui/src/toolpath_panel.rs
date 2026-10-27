@@ -463,8 +463,15 @@ impl ToolpathPanel {
             picked_points: entry.into_iter().collect(),
             preview: None,
             independent_of: Vec::new(),
-            path: self.preview.as_ref().ok().map(|(start, moves, _)| (*start, Arc::clone(moves))),
+            paths: self
+                .preview
+                .as_ref()
+                .ok()
+                .map(|(start, moves, _)| (*start, Arc::clone(moves)))
+                .into_iter()
+                .collect(),
             wcs: self.wcs_in_use(session),
+            ..PickMode::default()
         };
         for r in &self.geometry {
             match session.job.entity(r) {

@@ -450,6 +450,8 @@ impl Emitter {
             warnings,
             drill: None,
             visible: false,
+            trims: Vec::new(),
+            untrimmed: None,
         })
     }
 }

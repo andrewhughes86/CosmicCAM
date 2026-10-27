@@ -154,5 +154,7 @@ pub fn bore(s: &Session, p: &Value, id: String) -> EngineResult<Toolpath> {
         warnings,
         drill: None,
         visible: false,
+        trims: Vec::new(),
+        untrimmed: None,
     })
 }

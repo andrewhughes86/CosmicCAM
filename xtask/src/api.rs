@@ -60,6 +60,7 @@ fn py_type(p: &Param) -> String {
         }
         ParamKind::Vec3 => "Sequence[float]".into(),
         ParamKind::StrList { .. } => "Sequence[str]".into(),
+        ParamKind::PointList { .. } => "Sequence[Sequence[float]]".into(),
     }
 }
 
@@ -72,6 +73,7 @@ fn range(p: &Param) -> String {
         ParamKind::Integer { min, max } => format!(" ({min} to {max})"),
         ParamKind::Choice(choices) => format!(" — one of {}", choices.join(", ")),
         ParamKind::Vec3 => " — [x, y, z] in mm".into(),
+        ParamKind::PointList { .. } => " — [[x, y, z], …] in mm".into(),
         _ => String::new(),
     }
 }

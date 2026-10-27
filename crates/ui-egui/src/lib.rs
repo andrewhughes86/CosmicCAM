@@ -27,6 +27,7 @@ pub mod theme;
 mod tool_view;
 mod toolpath_panel;
 mod tools;
+mod trim_panel;
 pub mod ui_kit;
 mod viewport;
 mod wcs_tool;

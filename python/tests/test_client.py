@@ -203,6 +203,27 @@ class ClientTests(unittest.TestCase):
         )
         cc.close()
 
+    def test_trim(self):
+        app = FakeApp()
+        cc = CosmicCAM(app.port, TOKEN, timeout=5)
+        cc.toolpath_trim(ids=["toolpath.2", "toolpath.3"], points=[[0, 0, 0], [40, 0, 0], [40, 30, 0]], keep="outside")
+        cc.toolpath_trim_remove(id="toolpath.2", index=1)
+        self.assertEqual(
+            [r["params"] for r in app.requests],
+            [
+                {
+                    "command": "toolpath.trim",
+                    "params": {
+                        "ids": ["toolpath.2", "toolpath.3"],
+                        "points": [[0, 0, 0], [40, 0, 0], [40, 30, 0]],
+                        "keep": "outside",
+                    },
+                },
+                {"command": "toolpath.trim.remove", "params": {"id": "toolpath.2", "index": 1}},
+            ],
+        )
+        cc.close()
+
     def test_simulation(self):
         app = FakeApp()
         cc = CosmicCAM(app.port, TOKEN, timeout=5)

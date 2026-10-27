@@ -1562,6 +1562,113 @@ fn facing_runs_rows_across_the_stock_down_to_the_model_top() {
     assert!(ys.0 <= -33.0 + 1e-6 && ys.1 >= 33.0 - 1e-6, "{ys:?}");
 }
 
+/// The segments cutting moves run along: (from, to).
+fn cut_segments(start: [f64; 3], moves: &[Value]) -> Vec<([f64; 3], [f64; 3])> {
+    let mut at = start;
+    let mut out = Vec::new();
+    for m in moves {
+        let to = vec3(&m["to"]);
+        if m["kind"] == "cut" {
+            out.push((at, to));
+        }
+        at = to;
+    }
+    out
+}
+
+#[test]
+fn trimming_keeps_one_side_and_survives_regeneration() {
+    let mut s = sample_with_tool();
+    let (tp, full) = new_toolpath(&mut s, "toolpath.face", json!({"stepover": 4}));
+    let id = tp["id"].as_str().unwrap_or_default().to_owned();
+    let corners = json!([[-20, -20, 0], [20, 20, 0]]);
+    let r = s.execute("toolpath.trim", &json!({"id": id, "corners": corners}));
+    assert!(r.is_ok(), "{r:?}");
+    let r = r.unwrap_or_default();
+    assert_eq!(r["trimmed"][0]["trims"], json!(["Keep inside a box"]));
+    let start = vec3(&r["trimmed"][0]["bounds"]["max"]);
+    let mv = moves(&mut s, &id);
+    let inside = |p: [f64; 3], by: f64| p[0].abs() <= by + 1e-3 && p[1].abs() <= by + 1e-3;
+    let cuts = cut_points(&mv);
+    assert!(!cuts.is_empty() && cuts.iter().all(|c| inside(*c, 20.0)), "every cut stays in the box");
+    assert!(cuts.iter().any(|c| (c[0].abs() - 20.0).abs() < 1e-3), "rows end on the boundary");
+    // Rows are relinked over the part: a retract or a straight feed that stays in the box.
+    for (a, b) in cut_segments(start, &mv) {
+        assert!(inside(a, 20.0) && inside(b, 20.0), "{a:?} → {b:?}");
+    }
+    assert!(s.job.is_modified());
+    // Regenerating keeps the trim.
+    let again = s.execute("toolpath.regenerate", &json!({"ids": [id]})).unwrap_or_default();
+    assert_eq!(again["failed"], json!([]));
+    assert_eq!(moves(&mut s, &id).len(), mv.len());
+    // The whole cutter inside: the tool centre stays its radius (3) clear of the boundary.
+    let r =
+        s.execute("toolpath.trim", &json!({"id": id, "index": 1, "corners": corners, "containment": "tool_within"}));
+    assert!(r.is_ok(), "{r:?}");
+    assert!(cut_points(&moves(&mut s, &id)).iter().all(|c| inside(*c, 17.0)));
+    // Removing the trim gives the whole toolpath back.
+    let r = s.execute("toolpath.trim.remove", &json!({"id": id})).unwrap_or_default();
+    assert_eq!(r["removed"], 1);
+    assert_eq!(moves(&mut s, &id).len(), full.len());
+    assert_eq!(s.execute("toolpath.trim.list", &json!({"id": id})).unwrap_or_default()["trims"], json!([]));
+}
+
+#[test]
+fn trimming_splits_heights_saves_and_refuses_what_it_cannot_do() {
+    let mut s = sample_with_tool();
+    let (tp, _) = new_toolpath(&mut s, "toolpath.face", json!({"stepover": 4, "multiple_depths": true, "stepdown": 1}));
+    let id = tp["id"].as_str().unwrap_or_default().to_owned();
+    let unchanged = moves(&mut s, &id);
+    // Nothing left, too few points, an unknown toolpath: refused, and nothing changes.
+    for bad in [
+        json!({"id": id, "corners": [[500, 500, 0], [600, 600, 0]]}),
+        json!({"id": id, "points": [[0, 0, 0], [1, 0, 0]]}),
+        json!({"id": id}),
+        json!({"id": "toolpath.99", "corners": [[0, 0, 0], [1, 1, 0]]}),
+        json!({"id": id, "top": 40, "bottom": 41}),
+        json!({"id": id, "index": 3, "top": 43}),
+    ] {
+        assert!(s.execute("toolpath.trim", &bad).is_err(), "{bad}");
+    }
+    assert_eq!(moves(&mut s, &id), unchanged);
+    // Between heights: keep the two lower levels of three (42, 43, 44).
+    let r = s.execute("toolpath.trim", &json!({"id": id, "top": 43.5}));
+    assert!(r.is_ok(), "{r:?}");
+    let mut zs: Vec<i64> = cut_points(&moves(&mut s, &id)).iter().map(|c| (c[2] * 1000.0).round() as i64).collect();
+    zs.sort_unstable();
+    zs.dedup();
+    assert_eq!(zs, [42_000, 43_000]);
+    // A circle, keeping both sides: the copy keeps the outside.
+    let r = s.execute(
+        "toolpath.trim",
+        &json!({"id": id, "center": [0, 0, 0], "radius": 15, "split": true, "link": "clearance"}),
+    );
+    assert!(r.is_ok(), "{r:?}");
+    let r = r.unwrap_or_default();
+    let copy = r["split"][0]["id"].as_str().unwrap_or_default().to_owned();
+    assert!(r["split"][0]["name"].as_str().is_some_and(|n| n.ends_with("(outside)")));
+    assert_eq!(s.job.toolpaths.iter().position(|t| t.id == copy), Some(1), "the copy follows its original");
+    let radius = |c: &[f64; 3]| (c[0] * c[0] + c[1] * c[1]).sqrt();
+    assert!(cut_points(&moves(&mut s, &id)).iter().all(|c| radius(c) <= 15.0 + 1e-3));
+    let outside = cut_points(&moves(&mut s, &copy));
+    assert!(!outside.is_empty() && outside.iter().all(|c| radius(c) >= 15.0 - 1e-2 && c[2] < 43.5));
+    // Saved and opened again, the trims come back and can still be taken off.
+    let text = crate::jobfile::to_string(&s.job, &s.view.camera, &s.library);
+    let back = crate::jobfile::from_str(&text).map(|f| f.job);
+    assert!(back.is_ok());
+    if let Ok(job) = back {
+        s.job = job;
+    }
+    let list = s.execute("toolpath.trim.list", &json!({"id": id})).unwrap_or_default();
+    assert_eq!(list["trims"].as_array().map(Vec::len), Some(2));
+    assert_eq!(list["trims"][1]["label"], "Keep inside a circle");
+    let r = s.execute("toolpath.trim.remove", &json!({"ids": [id], "index": 2}));
+    assert!(r.is_ok(), "{r:?}");
+    let r = s.execute("toolpath.trim.remove", &json!({"id": id}));
+    assert!(r.is_ok(), "{r:?}");
+    assert_eq!(moves(&mut s, &id), unchanged);
+}
+
 #[test]
 fn pockets_clear_inside_the_outline_down_to_depth() {
     let mut s = sample_with_tool();

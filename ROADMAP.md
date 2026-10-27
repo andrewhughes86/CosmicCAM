@@ -398,3 +398,15 @@ Crash reports, `CosmicCAM-cli`, job file format.
   switched on (`view.wcs.visibility.set`). Right-click Simulate runs one toolpath alone.
 - CosmicCAM has its own application icon (window and taskbar; on Linux the install script adds
   the launcher entry and icon).
+
+## Toolpath trimming (2026-10-26)
+
+- `toolpath.trim`: keep the inside or outside of a box, polygon, circle, selected faces or
+  closed edges, the stock or the model (seen along the tool axis), and/or a band of heights;
+  boundary holds the tool centre, the whole cutter or lets it reach over; offset; links by
+  auto (feed across short gaps on the kept side), retract or clearance height, or feed.
+- Trims are kept with the toolpath (saved in the job file) and applied again on regeneration;
+  `toolpath.trim.list` and `toolpath.trim.remove` change them later. Several toolpaths trim
+  alike; `split` keeps both sides as two toolpaths. Drilling trims keep whole holes.
+- Trim panel: draw the boundary in the viewport with a live preview of the result, edit or
+  remove earlier trims; explorer right-click Trim… / Remove trims, ✂ on trimmed toolpaths.

@@ -88,3 +88,24 @@ pub fn opt_vec3(params: &Value, key: &str) -> EngineResult<Option<CosmicCAM_geom
         Some(_) => Err(EngineError::InvalidParams(format!("`{key}` must be [x, y, z]"))),
     }
 }
+
+/// An optional list of at most `max` points (`[[x, y, z], …]`, millimetres); empty when absent.
+pub fn point_list(params: &Value, key: &str, max: usize) -> EngineResult<Vec<glam::DVec3>> {
+    let bad = || EngineError::InvalidParams(format!("`{key}` must be a list of [x, y, z] points with finite numbers"));
+    match field(params, key)? {
+        None => Ok(Vec::new()),
+        Some(Value::Array(a)) if a.len() <= max => a
+            .iter()
+            .map(|p| {
+                let c = p.as_array().filter(|c| c.len() == 3).ok_or_else(bad)?;
+                let mut out = [0.0f64; 3];
+                for (slot, v) in out.iter_mut().zip(c) {
+                    *slot = v.as_f64().filter(|n| n.is_finite() && n.abs() <= 1.0e9).ok_or_else(bad)?;
+                }
+                Ok(glam::DVec3::from(out))
+            })
+            .collect(),
+        Some(Value::Array(_)) => Err(EngineError::InvalidParams(format!("`{key}` has more than {max} points"))),
+        Some(_) => Err(bad()),
+    }
+}

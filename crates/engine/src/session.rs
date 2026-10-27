@@ -1307,11 +1307,13 @@ impl Session {
                     ("Rapid length".into(), u.fmt_len(rapid_len)),
                     ("Estimated time".into(), format!("{}:{:02}", (time / 60.0).floor(), (time % 60.0).round() as u32)),
                 ];
+                properties.extend(t.trims.iter().map(|trim| ("Trim".into(), crate::toolpath::trim::describe(trim))));
                 properties.extend(t.warnings.iter().map(|w| ("Warning".into(), w.clone())));
                 OutlineNode {
                     visible: Some(t.visible),
                     id: t.id.clone(),
-                    label: format!("[T{}] {}", t.tool, t.name),
+                    // Scissors mark a trimmed toolpath.
+                    label: format!("[T{}] {}{}", t.tool, t.name, if t.trims.is_empty() { "" } else { "  ✂" }),
                     children: Vec::new(),
                     properties,
                 }

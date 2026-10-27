@@ -429,6 +429,38 @@ Drilling picks the cycle from the tool when none is given (tap for a tap, a dwel
 centre drills, countersinks and counterbores, feed out for reamers and boring bars), and a tap's
 pitch is the tool's.
 
+### Trimming
+
+`toolpath.trim` cuts finished toolpaths back to a boundary seen along the tool axis, keeping the
+inside or the outside: a box (two `corners`), a polygon (`points`), a circle (`center`,
+`radius`), the outline of selected faces or closed edges (`geometry`), the stock's or the
+model's outline, and/or a band of heights (`top`, `bottom`, WCS Z). `containment` says what the
+boundary holds: the tool centre (default), the whole cutter on the kept side (`tool_within`) or
+the cutter reaching over by its radius (`tool_over`); `offset` grows or shrinks it. The pieces
+left are linked by retracting to the retract (or clearance) height and plunging back, or, with
+the default `link="auto"`, by feeding straight across short gaps (up to two tool diameters)
+that stay on the kept side. `split=True` also adds a copy that keeps the other side.
+
+Trims stay with the toolpath: regenerating applies them again, and removing one gives back what
+it cut. Several toolpaths can be trimmed alike in one call. In the app, right-click toolpaths in
+the explorer (Ctrl or Shift for several) and choose **Trim…**, or use **Trim** on the Toolpaths
+tab: draw the box, polygon or circle in the viewport (Top view looks down the tool axis), and
+the trimmed toolpaths preview in place before OK. A trimmed toolpath shows ✂ in the explorer.
+
+```python
+cc.toolpath_trim(id="toolpath.2", corners=[[-60, -40, 0], [0, 40, 0]])            # keep inside
+cc.toolpath_trim(ids=["toolpath.3", "toolpath.4"], geometry=["model.1/face.12"],
+                 keep="outside", containment="tool_within", offset=1)
+cc.toolpath_trim(id="toolpath.5", center=[0, 0, 0], radius=20, split=True)         # both sides
+cc.toolpath_trim(id="toolpath.6", top=-5)                                          # below Z -5
+cc.toolpath_trim(id="toolpath.2", index=1, corners=[[-70, -40, 0], [0, 40, 0]])    # change trim 1
+cc.toolpath_trim_list(id="toolpath.2")
+cc.toolpath_trim_remove(id="toolpath.2")                                           # all of them
+```
+
+A drilling toolpath is trimmed by its holes: those whose centre is on the kept side stay.
+On simultaneous multi-axis toolpaths links retract along the toolpath's Z.
+
 ## Showing, renaming, copying
 
 Only the selected toolpath is drawn, plus any switched on. Models can be hidden too (hidden

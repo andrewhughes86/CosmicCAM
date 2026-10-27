@@ -115,6 +115,7 @@ pub struct CosmicApp {
     toolpath_panel: Option<crate::toolpath_panel::ToolpathPanel>,
     /// The setup editor panel, while one is open.
     setup_panel: Option<crate::setup_panel::SetupPanel>,
+    trim_panel: Option<crate::trim_panel::TrimPanel>,
     /// The tool library window: open or not, and its preview state.
     library_open: bool,
     settings_open: bool,
@@ -230,6 +231,7 @@ impl CosmicApp {
             library_open: false,
             toolpath_panel: None,
             setup_panel: None,
+            trim_panel: None,
             settings_open: false,
             saved_prefs,
             library: LibraryState::default(),
@@ -269,6 +271,7 @@ impl CosmicApp {
             let strategy = strategy.unwrap_or(crate::toolpath_panel::Strategy::Contour);
             self.toolpath_panel = Some(crate::toolpath_panel::ToolpathPanel::new(&self.session, editing, strategy));
             self.setup_panel = None;
+            self.trim_panel = None;
             self.status = None;
             return;
         }
@@ -289,6 +292,41 @@ impl CosmicApp {
             };
             self.setup_panel = Some(SetupPanel::new(&self.session, target));
             self.toolpath_panel = None;
+            self.trim_panel = None;
+            self.status = None;
+            return;
+        }
+        // Trim opens the trim panel, on the toolpaths named (from the explorer) or the selected one.
+        let only_targets = params.as_object().is_some_and(|p| p.keys().all(|k| k == "id" || k == "ids"));
+        if id == "toolpath.trim" && (params.is_null() || only_targets) {
+            let mut targets: Vec<String> =
+                params.get("id").and_then(Value::as_str).map(str::to_owned).into_iter().collect();
+            targets.extend(
+                params
+                    .get("ids")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned),
+            );
+            if targets.is_empty() {
+                targets.extend(
+                    self.session
+                        .view
+                        .selection
+                        .clone()
+                        .filter(|s| self.session.job.toolpaths.iter().any(|t| &t.id == s)),
+                );
+            }
+            targets.retain(|t| self.session.job.toolpaths.iter().any(|tp| &tp.id == t));
+            if targets.is_empty() {
+                self.status = Some("select a toolpath to trim (Ctrl-click in the explorer for several)".into());
+                return;
+            }
+            self.trim_panel = Some(crate::trim_panel::TrimPanel::new(&self.session, targets));
+            self.toolpath_panel = None;
+            self.setup_panel = None;
             self.status = None;
             return;
         }
@@ -462,7 +500,10 @@ impl CosmicApp {
                 None => incoming.err("invalid_params", "`text` must be a string"),
             },
             "ui.start"
-                if matches!(p.get("command").and_then(Value::as_str), Some("setup.create" | "setup.stock.box")) =>
+                if matches!(
+                    p.get("command").and_then(Value::as_str),
+                    Some("setup.create" | "setup.stock.box" | "toolpath.trim")
+                ) =>
             {
                 let command = p.get("command").and_then(Value::as_str).unwrap_or_default().to_owned();
                 self.run(&command, &Value::Null);
@@ -944,8 +985,29 @@ impl eframe::App for CosmicApp {
                 self.setup_panel = None;
             }
         }
+        if let Some(panel) = &mut self.trim_panel {
+            let (request, keep) = panel.show(ui, &self.session, tokens);
+            for (id, params) in panel.take_requests() {
+                if let Err(e) = self.session.execute(&id, &params) {
+                    panel.fail(e.to_string());
+                }
+            }
+            if let Some((id, params)) = request {
+                match self.session.execute(&id, &params) {
+                    Ok(_) => {
+                        self.status = None;
+                        self.trim_panel = None;
+                    }
+                    Err(e) => panel.fail(e.to_string()),
+                }
+            } else if !keep {
+                self.trim_panel = None;
+            }
+        }
         self.viewport.stock_preview = self.setup_panel.as_ref().and_then(|p| p.preview_stock());
+        let trim_mode = self.trim_panel.as_ref().map(|p| p.mode(&self.session, self.viewport.hover_point()));
         self.viewport.pick_mode = match &self.toolpath_panel {
+            _ if trim_mode.is_some() => trim_mode,
             Some(panel) => Some(panel.mode(&self.session)),
             // The WCS tools work on the active WCS: it shows while they run.
             None => self.tools.pick_mode().map(|mut m| {
@@ -1129,9 +1191,10 @@ impl eframe::App for CosmicApp {
             storage.flush();
         }
         if let Some(hit) = self.viewport.take_pick() {
-            match &mut self.toolpath_panel {
-                Some(panel) => panel.picked(hit, &self.session),
-                None => self.tools.picked(hit, &self.session),
+            match (&mut self.trim_panel, &mut self.toolpath_panel) {
+                (Some(panel), _) => panel.picked(hit, &self.session),
+                (None, Some(panel)) => panel.picked(hit, &self.session),
+                (None, None) => self.tools.picked(hit, &self.session),
             }
         }
         if let Some((id, params)) = self.tools.show(&ctx, tokens, &self.session) {

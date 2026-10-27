@@ -1410,6 +1410,70 @@ class Commands:
         params = {"id": id, "by": by, "to": to}
         return self.execute("toolpath.move", {k: v for k, v in params.items() if v is not None})
 
+    def toolpath_trim(self, *, id: Optional[str] = None, ids: Optional[Sequence[str]] = None, index: Optional[int] = None, boundary: Optional[Literal["box", "polygon", "circle", "selection", "stock", "model", "none"]] = None, points: Optional[Sequence[Sequence[float]]] = None, corners: Optional[Sequence[Sequence[float]]] = None, center: Optional[Sequence[float]] = None, radius: Optional[float] = None, geometry: Optional[Sequence[str]] = None, keep: Optional[Literal["inside", "outside"]] = None, containment: Optional[Literal["center", "tool_within", "tool_over"]] = None, offset: Optional[float] = None, top: Optional[float] = None, bottom: Optional[float] = None, link: Optional[Literal["auto", "retract", "clearance", "feed"]] = None, min_cut: Optional[float] = None, split: Optional[bool] = None) -> Any:
+        """Cut toolpaths back to a boundary or between heights, keeping the inside or the outside; trims stay with the toolpath when it is regenerated.
+
+        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+
+        Args:
+            id: Toolpath to trim, e.g. toolpath.1.
+            ids: Several toolpaths, trimmed alike.
+            index: Change this trim (1 is the first) instead of adding one (1 to 32).
+            boundary: What to trim to, seen along the tool axis: a box (`corners`), a polygon (`points`), a circle (`center`, `radius`), the selected faces or closed edges (`geometry`), the stock's or the model's outline, or none (heights only). Default: what the other parameters give — one of box, polygon, circle, selection, stock, model, none.
+            points: Polygon corners, world mm (at least three) — [[x, y, z], …] in mm.
+            corners: Two opposite box corners, world mm — [[x, y, z], …] in mm.
+            center: Circle centre, world mm — [x, y, z] in mm.
+            radius: Circle radius, mm (0.001 to 1e5 mm).
+            geometry: Faces and closed edges whose outline is the boundary (model.N/face.N, model.N/edge.N).
+            keep: The side that stays (default inside) — one of inside, outside.
+            containment: What the boundary holds: the tool centre (default), the whole cutter on the kept side (tool_within), or the cutter reaching over by its radius (tool_over) — one of center, tool_within, tool_over.
+            offset: Grow the boundary by this much, mm (negative shrinks it) (-1e5 to 1e5 mm).
+            top: Keep only moves at or below this WCS Z, mm (with keep inside) (-1e5 to 1e5 mm).
+            bottom: Keep only moves at or above this WCS Z, mm (with keep inside) (-1e5 to 1e5 mm).
+            link: Joining the pieces left: auto (feed across short gaps that stay on the kept side, else retract), retract height, clearance height, or always feed straight across — one of auto, retract, clearance, feed.
+            min_cut: Drop pieces that cut less than this, mm (default 0.01) (0 to 10000 mm).
+            split: Also add a copy of each toolpath that keeps the other side.
+
+        Returns:
+            {"trimmed": [toolpaths as toolpath.get returns them], "split": [the copies]}
+
+        Command: ``toolpath.trim``
+        """
+        params = {"id": id, "ids": ids, "index": index, "boundary": boundary, "points": points, "corners": corners, "center": center, "radius": radius, "geometry": geometry, "keep": keep, "containment": containment, "offset": offset, "top": top, "bottom": bottom, "link": link, "min_cut": min_cut, "split": split}
+        return self.execute("toolpath.trim", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_trim_remove(self, *, id: Optional[str] = None, ids: Optional[Sequence[str]] = None, index: Optional[int] = None) -> Any:
+        """Take a trim off toolpaths, giving back what it cut away.
+
+        Planned: not available yet; calling it raises CosmicCAMError(kind="disabled").
+
+        Args:
+            id: Toolpath id, e.g. toolpath.1.
+            ids: Several toolpaths.
+            index: The trim to remove, 1 the first (default: all of them) (1 to 32).
+
+        Returns:
+            {"removed": number of trims removed, "toolpaths": [toolpaths as toolpath.get returns them]}
+
+        Command: ``toolpath.trim.remove``
+        """
+        params = {"id": id, "ids": ids, "index": index}
+        return self.execute("toolpath.trim.remove", {k: v for k, v in params.items() if v is not None})
+
+    def toolpath_trim_list(self, *, id: str) -> Any:
+        """A toolpath's trims with their settings, in the order they apply.
+
+        Args:
+            id: Toolpath id, e.g. toolpath.1.
+
+        Returns:
+            {"id": id, "trims": [{"index": 1, "label": text, "settings": {as toolpath.trim takes them}}]}
+
+        Command: ``toolpath.trim.list``
+        """
+        params = {"id": id}
+        return self.execute("toolpath.trim.list", {k: v for k, v in params.items() if v is not None})
+
     def toolpath_regenerate(self, *, ids: Optional[Sequence[str]] = None) -> Any:
         """Work toolpaths out again with their settings, after the model, stock or tools changed.
 
