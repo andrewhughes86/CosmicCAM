@@ -20,7 +20,6 @@ settings and recovery folders, the MCP server name, docs, CI and packaging. The 
 called CosmicCAM before 2026-10-27: old job files (`CosmicCAM/1`), tool and machine library
 files, `CosmicCAM_*` environment variables, the old settings key, the `cosmiccam_post` module
 and the old data folder (moved on first start) are still read; nothing else uses the old name.
-The GitHub repository is still `tangency-labs/CosmicCAM` until it is renamed there.
 
 ## Start every session here
 1. Read `plan/STATUS.md` (current milestone, next task), then the task in `plan/execution-plan.md`
@@ -112,10 +111,10 @@ People trust CosmicDMS with their machining setups and physical machine code; a 
     worker `apps/CosmicDMS-web/sw.js` and small inline scripts in `apps/CosmicDMS-web/index.html`.
 - **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests,
   assets, layers, ui-containers, `api --check`, Python tests, wasm). Commit after every feature arc that builds.
-- **Publishing**: the repository is github.com/tangency-labs/CosmicCAM. Changes land through
+- **Publishing**: the repository is github.com/tangency-labs/CosmicDMS. Changes land through
   **pull requests** and the **merge queue**: push a branch and open a PR. The heavy CI jobs start
   when a maintainer adds `approved-for-ci` after reviewing the code. Approved PRs go into the queue
-  with `gh pr merge N -R tangency-labs/CosmicCAM --squash --auto`; the queue runs the full suite
+  with `gh pr merge N -R tangency-labs/CosmicDMS --squash --auto`; the queue runs the full suite
   on each group before it lands on `main`. Keep each PR to one topic and one issue, and never
   force-push `main`. Never commit `plan/`, build dirs (`target*/`) or generated reference data;
   check `git ls-files` before pushing.
@@ -150,15 +149,15 @@ People trust CosmicDMS with their machining setups and physical machine code; a 
 
 ## Before you start: look at what is already open
 - Work with an authenticated GitHub CLI (`gh auth status`) and `git`; the checks below need both.
-- Pull the whole list, not one search: `gh pr list -R tangency-labs/CosmicCAM --state open --limit 500`
-  (drafts included) and `gh issue list -R tangency-labs/CosmicCAM --state open --limit 500`. Look for
+- Pull the whole list, not one search: `gh pr list -R tangency-labs/CosmicDMS --state open --limit 500`
+  (drafts included) and `gh issue list -R tangency-labs/CosmicDMS --state open --limit 500`. Look for
   work on the same issue, the same feature under another number, and PRs that change the files
   you are about to change (`gh pr list ... --json number,title,files`).
 - If someone already has it, comment on their PR or issue instead of opening a second one. Two
   PRs for one change can't both land, and one of them is wasted work and CI.
 
 ## Claim = a draft PR
-- Before working on issue #N, check nobody has it: `gh pr list -R tangency-labs/CosmicCAM --state open --search "#N"`.
+- Before working on issue #N, check nobody has it: `gh pr list -R tangency-labs/CosmicDMS --state open --search "#N"`.
 - If none, branch from the latest `origin/main`, `git commit --allow-empty -m "claim: #N"`, push,
   and open a **draft** PR titled `<summary> (#N)` right away. **The lowest-numbered open PR for an
   issue wins**; if yours lost, close it. Opening the PR is the claim: the bot assigns you and
