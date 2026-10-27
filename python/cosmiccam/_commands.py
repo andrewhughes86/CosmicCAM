@@ -239,12 +239,12 @@ class Commands:
         return self.execute("console.log.get", {k: v for k, v in params.items() if v is not None})
 
     def model_import(self, *, path: str, units: Optional[Literal["mm", "cm", "m", "in"]] = None, tolerance: Optional[float] = None, name: Optional[str] = None) -> Any:
-        """Import a CAD model (STEP, IGES) or mesh (STL, OBJ, 3MF, PLY, glTF and more).
+        """Import a CAD model (STEP, IGES, SAT) or mesh (STL, OBJ, 3MF, PLY, glTF and more).
 
         Args:
             path: Model file (any format `model.formats` lists, optionally gzipped), or upload://<name> for a file staged by the browser app.
-            units: Unit the file was authored in; files that record theirs (STEP, IGES, 3MF, AMF, glTF, COLLADA, DXF) use it, others default to mm — one of mm, cm, m, in.
-            tolerance: Most a tessellated CAD surface (STEP, IGES) may stray from the exact one, mm (default 0.01) (0.0001 to 10 mm).
+            units: Unit the file was authored in; files that record theirs (STEP, IGES, SAT, 3MF, AMF, glTF, COLLADA, DXF) use it, others default to mm — one of mm, cm, m, in.
+            tolerance: Most a tessellated CAD surface (STEP, IGES, SAT) may stray from the exact one, mm (default 0.01) (0.0001 to 10 mm).
             name: Name in the job outline (default: the file name).
 
         Returns:

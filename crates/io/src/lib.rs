@@ -1,7 +1,7 @@
 //! L3 file import and export.
 //!
 //! Model import reads faceted geometry (STL, OBJ, PLY, OFF, 3MF, AMF, glTF, COLLADA, VRML,
-//! X3D, 3DS, DXF) and exact CAD geometry (STEP, IGES), which is tessellated to the asked
+//! X3D, 3DS, DXF) and exact CAD geometry (STEP, IGES, ACIS SAT), which is tessellated to the asked
 //! tolerance, into a [`Mesh`]. Every reader treats its input as hostile: sizes and counts are
 //! capped, numbers must be finite and indices are range-checked, so a bad file is an
 //! [`ImportError`], never a panic.
@@ -23,6 +23,7 @@ pub mod iges;
 pub mod obj;
 pub mod off;
 pub mod ply;
+pub mod sat;
 pub mod step;
 pub mod stl;
 pub mod threeds;
@@ -95,12 +96,14 @@ pub enum ModelFormat {
     Dxf,
     Step,
     Iges,
+    Sat,
 }
 
 impl ModelFormat {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Step,
         Self::Iges,
+        Self::Sat,
         Self::Stl,
         Self::Obj,
         Self::ThreeMf,
@@ -131,6 +134,7 @@ impl ModelFormat {
             Self::Dxf => "dxf",
             Self::Step => "step",
             Self::Iges => "iges",
+            Self::Sat => "sat",
         }
     }
 
@@ -150,6 +154,7 @@ impl ModelFormat {
             Self::Dxf => "DXF",
             Self::Step => "STEP",
             Self::Iges => "IGES",
+            Self::Sat => "ACIS SAT",
         }
     }
 
@@ -170,12 +175,13 @@ impl ModelFormat {
             Self::Dxf => &["dxf"],
             Self::Step => &["step", "stp", "p21", "stpz"],
             Self::Iges => &["iges", "igs"],
+            Self::Sat => &["sat"],
         }
     }
 
     /// Exact CAD geometry, tessellated on import, rather than triangles.
     pub fn is_cad(self) -> bool {
-        matches!(self, Self::Step | Self::Iges)
+        matches!(self, Self::Step | Self::Iges | Self::Sat)
     }
 
     /// Every extension, as `.a, .b, …` for messages.
@@ -316,6 +322,7 @@ pub fn read_model(
         ModelFormat::Dxf => dxf::read(bytes)?,
         ModelFormat::Step => step::read(bytes, options)?,
         ModelFormat::Iges => iges::read(bytes, options)?,
+        ModelFormat::Sat => sat::read(bytes, options)?,
     };
     if imported.mesh.is_empty() {
         return Err(ImportError::Empty);
@@ -413,6 +420,7 @@ mod tests {
         assert_eq!(ModelFormat::from_path(Path::new("part.obj")), Ok(ModelFormat::Obj));
         assert_eq!(ModelFormat::from_path(Path::new("Part.STP")), Ok(ModelFormat::Step));
         assert_eq!(ModelFormat::from_path(Path::new("part.igs")), Ok(ModelFormat::Iges));
+        assert_eq!(ModelFormat::from_path(Path::new("Part.SAT")), Ok(ModelFormat::Sat));
         assert_eq!(ModelFormat::from_path(Path::new("part.ply.gz")), Ok(ModelFormat::Ply));
         assert_eq!(ModelFormat::from_path(Path::new("scene.glb")), Ok(ModelFormat::Gltf));
         assert!(

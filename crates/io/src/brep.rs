@@ -1,8 +1,8 @@
-//! Tessellation of the faces CAD readers (STEP, IGES) collect: in parallel where threads
+//! Tessellation of the faces CAD readers (STEP, IGES, SAT) collect: in parallel where threads
 //! exist, with a planar fallback for faces the trimmer cannot handle.
 
 use CosmicCAM_geom::DVec3;
-use CosmicCAM_geom::brep::{Axes, Surface};
+use CosmicCAM_geom::brep::{Axes, Curve, Surface};
 use CosmicCAM_geom::trim::{Face, tessellate};
 
 /// A face to tessellate: its surface, boundary loops (3D points, shared with its
@@ -220,4 +220,60 @@ pub fn orient_outward(faces: &mut [Vec<[DVec3; 3]>], unknown: &[bool]) {
             }
         }
     }
+}
+
+/// An edge's points along `curve` from `p1` to `p2` (its vertices), within `tol`; `same` when the
+/// edge runs the way the curve does. Lines are their two ends.
+pub fn sample_edge(curve: &Curve, p1: DVec3, p2: DVec3, same: bool, tol: f64) -> Vec<DVec3> {
+    if matches!(curve, Curve::Line { .. }) {
+        return vec![p1, p2];
+    }
+    // Walk the curve forwards from where the edge starts along it.
+    let (from, to) = if same { (p1, p2) } else { (p2, p1) };
+    let eps = tol * 1.0e-3 + 1.0e-9 * from.length();
+    let closed_edge = (from - to).length() <= eps;
+    let ta = curve.closest(from);
+    let mut tb = curve.closest(to);
+    let ts: Vec<f64> = if let Some(per) = curve.period() {
+        if closed_edge {
+            tb = ta + per;
+        }
+        while tb <= ta + 1.0e-12 {
+            tb += per;
+        }
+        curve.sample(ta, tb, tol)
+    } else {
+        let (lo, hi) = curve.domain().unwrap_or((ta.min(tb), ta.max(tb)));
+        let curve_closed = (curve.point(lo) - curve.point(hi)).length() <= eps.max(tol * 0.01);
+        if curve_closed && (closed_edge || tb < ta) {
+            // Around a closed spline, through its start.
+            let (ta, tb) = if closed_edge { (ta, ta) } else { (ta, tb) };
+            let mut a = curve.sample(ta, hi, tol);
+            let b = curve.sample(lo, tb, tol);
+            if (ta - lo).abs() <= 1.0e-12 * (hi - lo) && closed_edge {
+                a = curve.sample(lo, hi, tol);
+            } else {
+                a.pop();
+                a.extend(b);
+            }
+            a
+        } else if tb >= ta {
+            curve.sample(ta, tb, tol)
+        } else {
+            let mut r = curve.sample(tb, ta, tol);
+            r.reverse();
+            r
+        }
+    };
+    let mut pts: Vec<DVec3> = ts.iter().map(|&t| curve.point(t)).collect();
+    if let Some(f) = pts.first_mut() {
+        *f = from;
+    }
+    if let Some(l) = pts.last_mut() {
+        *l = to;
+    }
+    if !same {
+        pts.reverse();
+    }
+    pts
 }

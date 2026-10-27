@@ -65,13 +65,13 @@ CosmicCAM imports exact CAD models and meshes; `cc.model_formats()` lists them a
 
 | Kind | Formats |
 | --- | --- |
-| CAD (exact surfaces, tessellated on import) | STEP (`.step`, `.stp`, `.p21`; AP203, AP214, AP242 including assemblies and AP242 meshes), IGES (`.iges`, `.igs`) |
+| CAD (exact surfaces, tessellated on import) | STEP (`.step`, `.stp`, `.p21`; AP203, AP214, AP242 including assemblies and AP242 meshes), IGES (`.iges`, `.igs`), ACIS SAT (`.sat`; text files of any ACIS release) |
 | Meshes | STL, Wavefront OBJ, 3MF, PLY, OFF, AMF, glTF (`.gltf`, `.glb`), COLLADA (`.dae`), VRML (`.wrl`), X3D, 3DS, DXF (3D faces and meshes) |
 
-Any of them may also be gzipped (`part.stl.gz`, `.stpz`, `.x3dz`, `.wrz`). STEP and IGES curved
+Any of them may also be gzipped (`part.stl.gz`, `.stpz`, `.x3dz`, `.wrz`). STEP, IGES and SAT curved
 surfaces become triangles within `tolerance` of the exact surface (0.01 mm by default); every
 edge is shared by its two faces, so a solid comes in watertight. Files that record their unit
-(STEP, IGES, 3MF, AMF, glTF, COLLADA, DXF) are read in it; for the rest say which unit the file
+(STEP, IGES, SAT, 3MF, AMF, glTF, COLLADA, DXF) are read in it; for the rest say which unit the file
 was drawn in (`mm` by default). `units` overrides what the file says. The job is always in
 millimetres. glTF and COLLADA models drawn Y-up are turned to CosmicCAM's Z-up.
 
@@ -313,7 +313,7 @@ print(cc.setup_list())
 
 ## The demo project
 
-`cc.job_demo_open()` opens the built-in demo project (also on the Home tab): a part with a dome,
+`cc.job_demo_open()` opens the built-in demo project: a part with a dome,
 a 45° slope with a hole drilled square to it and a Ø24 bore, on its own 5-axis trunnion ("Demo
 5-axis trunnion", added to the library with the sample tools if missing, and made active). Its
 toolpaths face, rough, finish the walls, helically bore the Ø24 hole, finish the dome with the

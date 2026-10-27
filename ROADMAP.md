@@ -3,7 +3,7 @@
 | Phase | Milestone | Status |
 | --- | --- | --- |
 | 1 | Desktop UI & theme engine | **Done** (2026-10-24) |
-| 2 | Model import & geometry ingestion | **Done** (STEP, IGES and 12 mesh formats 2026-10-25) |
+| 2 | Model import & geometry ingestion | **Done** (STEP, IGES and 12 mesh formats 2026-10-25; ACIS SAT 2026-10-26) |
 | 3 | Work coordinate system (WCS) creation | **Done** (2026-10-24) |
 | 4 | Tool library & management | **Done** (20 tool types, presets, holders, sample library, 4/5-axis kinematics 2026-10-25) |
 | 5 | Stock setup & material definition | **In progress** (setups, box stock options 2026-10-25) |
@@ -425,3 +425,12 @@ Crash reports, `CosmicCAM-cli`, job file format.
 - `sim.display.set`: toolpaths drawn (none, the current one up to the tool, all), tool and
   holder, stop at collisions. `sim.compare`: the stock coloured by thickness over the part (cut
   in, on size, thin to thick stock) with a legend and a summary.
+
+## ACIS SAT import (2026-10-26)
+
+- `.sat` files of any ACIS release, read from the published SAT save file format: bodies,
+  lumps, shells, faces, loops, coedges, edges and vertices, placed by the body transform; plane,
+  cone/cylinder, sphere, torus and B-spline surfaces (exact or the approximation a procedural
+  spline carries, `ref` subtypes followed); line, circle, ellipse and B-spline edges. Units from
+  the header. Solids come in watertight, through the same tessellator as STEP and IGES.
+- Not yet: binary `.sab` files, procedural surfaces without a spline approximation.

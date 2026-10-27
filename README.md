@@ -12,7 +12,7 @@ setup with fitted stock, then a 2D contour around the part and 3D roughing of th
 
 ## Where the project is
 
-**Early development.** Phases 1 to 4 are complete. CosmicCAM imports CAD models (STEP, IGES) and
+**Early development.** Phases 1 to 4 are complete. CosmicCAM imports CAD models (STEP, IGES, ACIS SAT) and
 meshes, defines WCS, setups, stock, machines and tools, makes 2.5D and
 3D toolpaths (with 3+2 and simultaneous 4/5-axis work), simulates the stock removal and posts
 G-code for Fanuc, Haas, LinuxCNC, Grbl and Mach controls. The posts follow published controller documentation and there is no full machine
@@ -40,7 +40,7 @@ simulation yet, so **check its G-code before running it on a machine**.
   - A dark theme (default) and a high-contrast light theme, chosen in Preferences.
 - **Model import:** from the Import model button (Ctrl+I), drag-and-drop onto the window or
   `model.import` in scripts.
-  - CAD: STEP (AP203, AP214, AP242, with assemblies) and IGES. Their exact surfaces are
+  - CAD: STEP (AP203, AP214, AP242, with assemblies), IGES and ACIS SAT. Their exact surfaces are
     tessellated in pure Rust to a tolerance you choose (0.01 mm by default), and solids come in
     watertight.
   - Meshes: STL, OBJ, 3MF, PLY, OFF, AMF, glTF/GLB, COLLADA, VRML, X3D, 3DS and DXF; gzipped
@@ -80,8 +80,8 @@ simulation yet, so **check its G-code before running it on a machine**.
 - **Explorer:** right-click any item to edit, show/hide, rename, copy, paste, duplicate or
   delete it; an eye beside each toolpath and model shows or hides it (only the selected toolpath
   is drawn otherwise).
-- **Demo project:** the app opens with a ready-made 5-axis job to try things on (Home → Demo
-  project): a part with a dome, a 45° slope with an angled hole and a Ø24 bore, on its own
+- **Demo project:** the app opens with a ready-made 5-axis job to try things on (reopen it
+  with `job.demo.open` in the console): a part with a dome, a 45° slope with an angled hole and a Ø24 bore, on its own
   trunnion machine with the sample tool library, faced, roughed, finished, helically bored, the
   dome finished 5-axis and the angled hole spot drilled and drilled 3+2. `cargo xtask demo`
   rebuilds it.
@@ -167,7 +167,7 @@ cargo run --release -p CosmicCAM
 While CosmicCAM is in pre-release it opens with a **demo project** (`samples/demo.cosmic`): a
 5-axis part with a dome, an angled face and hole and a bore, on a trunnion machine with the sample
 tool library and toolpaths from facing to 5-axis finishing, ready to inspect, change and post. Reopen it any time
-with **Demo project** on the Home tab; its tools are added to your library if they are missing.
+with `job.demo.open` in the console; its tools are added to your library if they are missing.
 
 | Option | Effect |
 | --- | --- |
@@ -209,7 +209,7 @@ with cosmiccam.launch(sample=True) as cc:      # starts the app; quits it on exi
 | --- | --- |
 | `crates/geom` | L0 — vectors, meshes, exact CAD curves and surfaces, tessellation, toolpath and stock kernels (millimetres, Z up) |
 | `crates/render` | L1 — orbit camera, scene buffers, view-cube geometry (no GPU code) |
-| `crates/io` | L3 — model file readers (STEP, IGES and the mesh formats) |
+| `crates/io` | L3 — model file readers (STEP, IGES, SAT and the mesh formats) |
 | `crates/engine` | L4 — session, command registry and parameter schemas |
 | `crates/ui-egui` | L5 — theme, ribbon, dock, wgpu viewport, icons, control channel |
 | `apps/CosmicCAM` | The desktop application |

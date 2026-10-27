@@ -397,18 +397,30 @@ pub fn find(id: &str) -> Option<&'static CommandSpec> {
     all().find(|c| c.id == id)
 }
 
-/// Commands that also appear on a second ribbon tab, as shortcuts to their home panel.
+/// Commands that also appear on a second ribbon tab, as shortcuts to their home panel. The Home
+/// tab gathers the commands that get a job going, in the order a job uses them: set it up, pick
+/// the machine and tools, make the common toolpaths, then check and post them.
 pub static EXTRA_PLACEMENTS: &[(&str, Placement)] = &[
     ("model.import", Placement::large(RibbonTab::Home, "Setup")),
+    ("setup.create", Placement::large(RibbonTab::Home, "Setup")),
     ("setup.wcs.create", Placement::large(RibbonTab::Home, "Setup").with_menu(wcs::CREATE_MENU)),
-    ("setup.wcs.align", Placement::small(RibbonTab::Home, "Setup")),
-    ("setup.wcs.offset", Placement::small(RibbonTab::Home, "Setup")),
+    ("setup.stock.box", Placement::small(RibbonTab::Home, "Setup")),
+    ("setup.stock.fit", Placement::small(RibbonTab::Home, "Setup")),
+    ("machine.library.open", Placement::large(RibbonTab::Home, "Machine & tools")),
+    ("tool.library.open", Placement::large(RibbonTab::Home, "Machine & tools")),
+    ("toolpath.face", Placement::gallery(RibbonTab::Home, "Toolpaths")),
+    ("toolpath.contour", Placement::gallery(RibbonTab::Home, "Toolpaths")),
+    ("toolpath.pocket", Placement::gallery(RibbonTab::Home, "Toolpaths")),
+    ("toolpath.drill", Placement::gallery(RibbonTab::Home, "Toolpaths")),
+    ("toolpath.adaptive", Placement::gallery(RibbonTab::Home, "Toolpaths")),
+    ("sim.play", Placement::large(RibbonTab::Home, "Verify & post")),
+    ("post.gcode.export", Placement::large(RibbonTab::Home, "Verify & post")),
 ];
 
 /// Panel order on tabs where first-seen order is not the order wanted. Panels not listed
 /// follow in first-seen order.
 const PANEL_ORDER: &[(RibbonTab, &[&str])] = &[
-    (RibbonTab::Home, &["Job", "Setup", "Display", "Settings"]),
+    (RibbonTab::Home, &["Job", "Setup", "Machine & tools", "Toolpaths", "Verify & post", "Preferences"]),
     (RibbonTab::Setup, &["Setup", "Model", "Coordinates", "Stock"]),
     (RibbonTab::Toolpaths, &["2D", "Drilling", "3D", "Multi-axis", "Output"]),
 ];

@@ -78,7 +78,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "job.demo.open",
         label: "Demo project",
         tooltip: "Open the demo project: a part with a WCS, a setup, stock, tools and toolpaths to try things on",
-        placement: Some(Placement::small(RibbonTab::Home, "Job")),
+        placement: None,
         icon: Some("job_open"),
         shortcut: None,
         params: &[],

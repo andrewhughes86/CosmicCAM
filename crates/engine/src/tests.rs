@@ -377,7 +377,7 @@ fn step_imports_in_the_units_the_file_states() {
     let formats = s.execute("model.formats", &Value::Null).unwrap_or_default();
     let ids: Vec<&str> =
         formats.as_array().map(|f| f.iter().filter_map(|x| x["id"].as_str()).collect()).unwrap_or_default();
-    for id in ["step", "iges", "stl", "obj", "3mf", "ply", "gltf"] {
+    for id in ["step", "iges", "sat", "stl", "obj", "3mf", "ply", "gltf"] {
         assert!(ids.contains(&id), "{id}");
     }
 }
@@ -473,14 +473,29 @@ fn wcs_activate_and_remove() {
 }
 
 #[test]
-fn import_and_wcs_buttons_are_also_on_home() {
+fn home_gathers_the_commands_that_get_a_job_going() {
     let home: Vec<&str> = cmd::ribbon(RibbonTab::Home).iter().flat_map(|(_, c)| c.iter().map(|(s, _)| s.id)).collect();
-    for id in ["model.import", "setup.wcs.create", "setup.wcs.align", "setup.wcs.offset"] {
+    for id in [
+        "job.new",
+        "model.import",
+        "setup.create",
+        "setup.wcs.create",
+        "setup.stock.box",
+        "machine.library.open",
+        "tool.library.open",
+        "toolpath.face",
+        "toolpath.adaptive",
+        "sim.play",
+        "post.gcode.export",
+        "settings.open",
+    ] {
         assert!(home.contains(&id), "{id} missing from Home");
     }
+    assert!(!home.contains(&"job.demo.open"), "the demo is not a Home button");
+    assert!(cmd::find("job.demo.open").is_some(), "but it is still a command");
     assert!(!home.iter().any(|id| id.starts_with("view.camera") || *id == "view.fit"));
     let panels: Vec<&str> = cmd::ribbon(RibbonTab::Home).iter().map(|(p, _)| *p).collect();
-    assert_eq!(panels, ["Job", "Setup", "Preferences"]);
+    assert_eq!(panels, ["Job", "Setup", "Machine & tools", "Toolpaths", "Verify & post", "Preferences"]);
     for (id, menu) in cmd::VIEWPORT_TOOLS {
         assert!(cmd::find(id).is_some(), "{id}");
         assert!(menu.iter().all(|m| cmd::find(m).is_some()));

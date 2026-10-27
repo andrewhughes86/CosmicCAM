@@ -63,7 +63,7 @@ fn model_filters() -> Vec<(String, Vec<String>)> {
     };
     let mut out = vec![
         group("All models", &|_| true),
-        group("CAD (STEP, IGES)", &|f| f.is_cad()),
+        group("CAD (STEP, IGES, SAT)", &|f| f.is_cad()),
         group("Meshes", &|f| !f.is_cad()),
     ];
     out.extend(ModelFormat::ALL.iter().map(|f| (f.label().to_owned(), both(f.extensions()))));

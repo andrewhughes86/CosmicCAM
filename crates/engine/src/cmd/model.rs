@@ -18,7 +18,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.import",
         label: "Import model",
-        tooltip: "Import a CAD model (STEP, IGES) or mesh (STL, OBJ, 3MF, PLY, glTF and more)",
+        tooltip: "Import a CAD model (STEP, IGES, SAT) or mesh (STL, OBJ, 3MF, PLY, glTF and more)",
         placement: Some(Placement::large(RibbonTab::Setup, "Model")),
         icon: None,
         shortcut: Some("Ctrl+I"),
@@ -31,12 +31,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             Param::optional(
                 "units",
                 ParamKind::Choice(Units::IDS),
-                "Unit the file was authored in; files that record theirs (STEP, IGES, 3MF, AMF, glTF, COLLADA, DXF) use it, others default to mm",
+                "Unit the file was authored in; files that record theirs (STEP, IGES, SAT, 3MF, AMF, glTF, COLLADA, DXF) use it, others default to mm",
             ),
             Param::optional(
                 "tolerance",
                 ParamKind::Length { min: 0.0001, max: 10.0 },
-                "Most a tessellated CAD surface (STEP, IGES) may stray from the exact one, mm (default 0.01)",
+                "Most a tessellated CAD surface (STEP, IGES, SAT) may stray from the exact one, mm (default 0.01)",
             ),
             Param::optional("name", ParamKind::Str, "Name in the job outline (default: the file name)"),
         ],
