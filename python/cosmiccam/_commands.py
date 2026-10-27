@@ -840,7 +840,22 @@ class Commands:
         params = {"theme": theme}
         return self.execute("view.theme.set", {k: v for k, v in params.items() if v is not None})
 
-    def view_display_set(self, *, grid: Optional[bool] = None, wcs: Optional[bool] = None, view_cube: Optional[bool] = None, orientation_triad: Optional[bool] = None, stock: Optional[bool] = None, edges: Optional[bool] = None, readout: Optional[bool] = None) -> Any:
+    def view_wcs_visibility_set(self, *, id: str, visible: Optional[bool] = None) -> Any:
+        """Show a WCS's marker when nothing in use has one to show (only one WCS is drawn at a time).
+
+        Args:
+            id: WCS id, e.g. wcs.2.
+            visible: Show it (true, in place of any other) or not (false); omit to toggle.
+
+        Returns:
+            {"id": id, "visible": bool, "shown": [ids drawn now]}
+
+        Command: ``view.wcs.visibility.set``
+        """
+        params = {"id": id, "visible": visible}
+        return self.execute("view.wcs.visibility.set", {k: v for k, v in params.items() if v is not None})
+
+    def view_display_set(self, *, grid: Optional[bool] = None, wcs: Optional[bool] = None, view_cube: Optional[bool] = None, orientation_triad: Optional[bool] = None, stock: Optional[bool] = None, edges: Optional[bool] = None, readout: Optional[bool] = None, origin: Optional[bool] = None) -> Any:
         """Show or hide viewport elements; omitted elements are kept.
 
         Args:
@@ -851,13 +866,14 @@ class Commands:
             stock: Stock outline.
             edges: Model outline edges.
             readout: Projection and frame-rate readout.
+            origin: The model origin's triad (default hidden).
 
         Returns:
             display {grid, wcs, view_cube, orientation_triad, stock, edges, readout}
 
         Command: ``view.display.set``
         """
-        params = {"grid": grid, "wcs": wcs, "view_cube": view_cube, "orientation_triad": orientation_triad, "stock": stock, "edges": edges, "readout": readout}
+        params = {"grid": grid, "wcs": wcs, "view_cube": view_cube, "orientation_triad": orientation_triad, "stock": stock, "edges": edges, "readout": readout, "origin": origin}
         return self.execute("view.display.set", {k: v for k, v in params.items() if v is not None})
 
     def view_display_get(self) -> Any:
@@ -1484,18 +1500,19 @@ class Commands:
         params = {"id": id}
         return self.execute("toolpath.duplicate", {k: v for k, v in params.items() if v is not None})
 
-    def toolpath_remove(self, *, id: str) -> Any:
-        """Delete a toolpath from the job.
+    def toolpath_remove(self, *, id: Optional[str] = None, ids: Optional[Sequence[str]] = None) -> Any:
+        """Delete toolpaths from the job.
 
         Args:
             id: Toolpath id, e.g. toolpath.1.
+            ids: Several toolpath ids, deleted together.
 
         Returns:
-            {"removed": id}
+            {"removed": id}, or {"removed": [ids]} for `ids`
 
         Command: ``toolpath.remove``
         """
-        params = {"id": id}
+        params = {"id": id, "ids": ids}
         return self.execute("toolpath.remove", {k: v for k, v in params.items() if v is not None})
 
     def toolpath_face(self, *, id: Optional[str] = None, name: Optional[str] = None, tool: Optional[int] = None, spindle_rpm: Optional[float] = None, preset: Optional[str] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, coolant: Optional[Literal["off", "flood", "mist", "air", "through_tool"]] = None, wcs: Optional[str] = None, orientation: Optional[str] = None, post_stop: Optional[bool] = None, post_comment: Optional[str] = None, post_code_before: Optional[str] = None, post_code_after: Optional[str] = None, geometry: Optional[Sequence[str]] = None, clearance_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, clearance_offset: Optional[float] = None, retract_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, retract_offset: Optional[float] = None, feed_height_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, feed_height_offset: Optional[float] = None, top_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, top_offset: Optional[float] = None, bottom_from: Optional[Literal["selection", "model_top", "model_bottom", "stock_top", "stock_bottom", "origin"]] = None, bottom_offset: Optional[float] = None, tolerance: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, direction: Optional[Literal["climb", "conventional"]] = None, stock_radial: Optional[float] = None, stock_axial: Optional[float] = None, entry: Optional[Literal["helix", "plunge"]] = None, ramp_angle: Optional[float] = None, helix_radius: Optional[float] = None, rapid_links: Optional[bool] = None, boundary: Optional[Literal["stock", "model", "selection"]] = None, boundary_offset: Optional[float] = None, overrun: Optional[float] = None, angle: Optional[float] = None, pattern: Optional[Literal["zigzag", "one_way"]] = None, multiple_depths: Optional[bool] = None) -> Any:

@@ -635,22 +635,35 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "toolpath.remove",
         label: "Delete toolpath",
-        tooltip: "Delete a toolpath from the job",
+        tooltip: "Delete toolpaths from the job",
         placement: None,
         icon: None,
         shortcut: None,
-        params: &[Param::required("id", ParamKind::Str, "Toolpath id, e.g. toolpath.1")],
-        returns: "{\"removed\": id}",
+        params: &[
+            Param::optional("id", ParamKind::Str, "Toolpath id, e.g. toolpath.1"),
+            Param::optional("ids", ParamKind::StrList { max: 512 }, "Several toolpath ids, deleted together"),
+        ],
+        returns: "{\"removed\": id}, or {\"removed\": [ids]} for `ids`",
         enabled: always,
         run: |s, p| {
-            let id = params::req_str(p, "id")?;
-            find(s, id)?;
-            s.job.toolpaths.retain(|t| t.id != id);
-            if s.view.selection.as_deref() == Some(id) {
+            let single = params::opt_str(p, "id")?.map(str::to_owned);
+            let many = params::str_list(p, "ids")?;
+            let ids: Vec<String> = single.iter().cloned().chain(many.iter().cloned()).collect();
+            if ids.is_empty() {
+                return Err(EngineError::InvalidParams("give the toolpath `id` (or `ids`)".into()));
+            }
+            for id in &ids {
+                find(s, id)?;
+            }
+            s.job.toolpaths.retain(|t| !ids.contains(&t.id));
+            if s.view.selection.as_ref().is_some_and(|sel| ids.contains(sel)) {
                 s.view.selection = None;
             }
             s.job.setup_changed();
-            Ok(json!({ "removed": id }))
+            Ok(match (single, many.is_empty()) {
+                (Some(id), true) => json!({ "removed": id }),
+                _ => json!({ "removed": ids }),
+            })
         },
     },
 ];

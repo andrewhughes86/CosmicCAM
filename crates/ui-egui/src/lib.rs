@@ -41,11 +41,40 @@ pub type Request = (String, serde_json::Value);
 
 pub const APP_ID: &str = "CosmicCAM";
 
+/// The application icon's master (`assets/icons/app/cosmiccam.svg`, a 256-unit square).
+pub const APP_ICON_SVG: &str = include_str!("../../../assets/icons/app/cosmiccam.svg");
+
+/// The application icon for the window and the taskbar, rendered at `px` pixels; None if it
+/// cannot be drawn (the window then has the system's default).
+pub fn app_icon(px: u32) -> Option<egui::IconData> {
+    use resvg::{tiny_skia, usvg};
+    let px = px.clamp(16, 1024);
+    std::panic::catch_unwind(|| {
+        let tree = usvg::Tree::from_str(APP_ICON_SVG, &usvg::Options::default()).ok()?;
+        let mut pixmap = tiny_skia::Pixmap::new(px, px)?;
+        let scale = px as f32 / 256.0;
+        resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+        // The window system wants straight (not premultiplied) alpha.
+        let rgba = pixmap.pixels().iter().flat_map(|p| {
+            let c = p.demultiply();
+            [c.red(), c.green(), c.blue(), c.alpha()]
+        });
+        Some(egui::IconData { rgba: rgba.collect(), width: px, height: px })
+    })
+    .ok()
+    .flatten()
+}
+
 /// Native window configuration: wgpu renderer, sensible default and minimum sizes.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn native_options() -> eframe::NativeOptions {
+    let viewport = egui::ViewportBuilder::default();
+    let viewport = match app_icon(256) {
+        Some(icon) => viewport.with_icon(std::sync::Arc::new(icon)),
+        None => viewport,
+    };
     eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
+        viewport: viewport
             .with_title("CosmicCAM")
             // The ribbon's tab strip is the title bar, with its own window controls.
             .with_decorations(false)
@@ -81,4 +110,17 @@ pub async fn run_web(canvas: eframe::web_sys::HtmlCanvasElement, session: Sessio
         )
         .await
         .map_err(|e| format!("{e:?}"))
+}
+
+#[cfg(test)]
+mod app_icon_tests {
+    #[test]
+    fn the_app_icon_renders() {
+        let icon = super::app_icon(64);
+        assert!(icon.as_ref().is_some_and(|i| i.width == 64 && i.rgba.len() == 64 * 64 * 4));
+        // Opaque in the middle, clear in the corners (a rounded tile).
+        let px = |x: usize, y: usize| icon.as_ref().map_or(0, |i| i.rgba[(y * 64 + x) * 4 + 3]);
+        assert_eq!(px(32, 32), 255);
+        assert_eq!(px(0, 0), 0);
+    }
 }

@@ -45,8 +45,49 @@ struct SyntheticClick {
     at: egui::Pos2,
     /// Primary, or secondary for a right-click.
     button: egui::PointerButton,
+    /// Keys held during the click (Ctrl, Shift…).
+    modifiers: Modifiers,
+    /// For a drag: where the button is let go, after moving there over a few frames.
+    to: Option<egui::Pos2>,
     step: u8,
     reply: Option<Incoming>,
+}
+
+/// Frames a synthetic drag takes to move from where it presses to where it lets go.
+const DRAG_FRAMES: u8 = 8;
+
+/// The moving frames of a synthetic click: none for a click, some for a drag.
+fn moves_of(click: &SyntheticClick) -> u8 {
+    if click.to.is_some() { DRAG_FRAMES } else { 0 }
+}
+
+/// A key press injected over the control channel, after any queued clicks and typing.
+struct SyntheticKey {
+    key: egui::Key,
+    modifiers: Modifiers,
+    reply: Option<Incoming>,
+}
+
+/// Keys named in a control request's `modifiers` list.
+fn modifiers_of(p: &Value) -> Modifiers {
+    let mut m = Modifiers::NONE;
+    for name in p.get("modifiers").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+        match name {
+            "ctrl" | "control" => {
+                m.ctrl = true;
+                m.command = true;
+            }
+            "command" | "cmd" => {
+                m.command = true;
+                m.mac_cmd = cfg!(target_os = "macos");
+                m.ctrl = !cfg!(target_os = "macos");
+            }
+            "shift" => m.shift = true,
+            "alt" => m.alt = true,
+            _ => {}
+        }
+    }
+    m
 }
 
 /// Text typed into the focused field through the control channel, after any queued clicks.
@@ -64,6 +105,8 @@ pub struct CosmicApp {
     session: Session,
     clicks: Vec<SyntheticClick>,
     typing: Vec<SyntheticText>,
+    /// Key presses waiting to be played into the next frame.
+    keys: Vec<SyntheticKey>,
     dock: DockState<Tab>,
     layout_generation: u64,
     viewport: Viewport,
@@ -90,7 +133,8 @@ pub struct CosmicApp {
     /// An item being renamed from the explorer: (command, id, name typed so far).
     rename: Option<(String, String, String)>,
     /// An item waiting for the user to confirm deleting it: (command, id, label).
-    confirm_delete: Option<(String, String, String)>,
+    /// A delete waiting to be confirmed: the command, its parameters and what it deletes.
+    confirm_delete: Option<(String, Value, String)>,
     /// The post-processor chooser, while it is open.
     post_chooser: bool,
     /// The machine's post settings as last read: (post id, settings), or why they could not be.
@@ -178,6 +222,7 @@ impl CosmicApp {
             session,
             clicks: Vec::new(),
             typing: Vec::new(),
+            keys: Vec::new(),
             dock: dock::default_layout(),
             layout_generation,
             viewport: Viewport::new(),
@@ -265,11 +310,15 @@ impl CosmicApp {
         // The explorer's Rename… and Delete open a small dialog first.
         if id == "ui.rename" || id == "ui.delete" {
             let field = |k: &str| params.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
-            let entry = (field("command"), field("id"), field(if id == "ui.rename" { "name" } else { "label" }));
             if id == "ui.rename" {
-                self.rename = Some(entry);
+                self.rename = Some((field("command"), field("id"), field("name")));
             } else {
-                self.confirm_delete = Some(entry);
+                // Several toolpaths go together (`ids`); anything else by its `id`.
+                let target = match params.get("ids") {
+                    Some(ids) => json!({ "ids": ids }),
+                    None => json!({ "id": field("id") }),
+                };
+                self.confirm_delete = Some((field("command"), target, field("label")));
             }
             return;
         }
@@ -382,13 +431,27 @@ impl CosmicApp {
                             Some("middle") => egui::PointerButton::Middle,
                             _ => egui::PointerButton::Primary,
                         };
-                        self.clicks.push(SyntheticClick { at, button, step: 0, reply: Some(incoming) });
+                        let to = p.get("to").and_then(|t| {
+                            let c =
+                                |k: &str| t.get(k).and_then(Value::as_f64).filter(|v| v.is_finite() && v.abs() < 1.0e5);
+                            Some(egui::pos2(c("x")? as f32, c("y")? as f32))
+                        });
+                        let modifiers = modifiers_of(&p);
+                        self.clicks.push(SyntheticClick { at, button, modifiers, to, step: 0, reply: Some(incoming) });
                         ctx.request_repaint();
                     }
                     (Some(_), Some(_)) => incoming.err("busy", "too many clicks queued"),
                     _ => incoming.err("invalid_params", "`x` and `y` must be numbers (window points)"),
                 }
             }
+            "ui.key" => match p.get("key").and_then(Value::as_str).and_then(egui::Key::from_name) {
+                Some(key) if self.keys.len() < 16 => {
+                    self.keys.push(SyntheticKey { key, modifiers: modifiers_of(&p), reply: Some(incoming) });
+                    ctx.request_repaint();
+                }
+                Some(_) => incoming.err("busy", "too many keys queued"),
+                None => incoming.err("invalid_params", "`key` must be a key name such as Delete, Escape or Enter"),
+            },
             "ui.type" => match p.get("text").and_then(Value::as_str) {
                 Some(text) if text.chars().count() <= MAX_TYPED_CHARS && self.typing.len() < 16 => {
                     let replace = p.get("replace").and_then(Value::as_bool).unwrap_or(false);
@@ -703,6 +766,25 @@ impl eframe::App for CosmicApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         let Some(click) = self.clicks.first_mut() else {
             // Typing waits for the clicks before it, which usually focus the field.
+            if self.typing.is_empty() && !self.keys.is_empty() {
+                let k = self.keys.remove(0);
+                raw_input.events.push(Event::ModifiersChanged(k.modifiers));
+                for pressed in [true, false] {
+                    raw_input.events.push(Event::Key {
+                        key: k.key,
+                        physical_key: None,
+                        pressed,
+                        repeat: false,
+                        modifiers: k.modifiers,
+                    });
+                }
+                raw_input.events.push(Event::ModifiersChanged(Modifiers::NONE));
+                if let Some(reply) = k.reply {
+                    reply.ok(json!({ "key": k.key.name() }));
+                }
+                ctx.request_repaint();
+                return;
+            }
             if !self.typing.is_empty() {
                 let typed = self.typing.remove(0);
                 if typed.replace {
@@ -722,17 +804,29 @@ impl eframe::App for CosmicApp {
             }
             return;
         };
-        let button =
-            |pressed| Event::PointerButton { pos: click.at, button: click.button, pressed, modifiers: Modifiers::NONE };
+        let modifiers = click.modifiers;
+        if click.step <= 2 + moves_of(click) {
+            raw_input.events.push(Event::ModifiersChanged(modifiers));
+        }
+        let button = |pos, pressed| Event::PointerButton { pos, button: click.button, pressed, modifiers };
+        // A click: move, press, release. A drag moves in steps between press and release.
+        let moves = moves_of(click);
+        let end = click.to.unwrap_or(click.at);
         match click.step {
             0 => raw_input.events.push(Event::PointerMoved(click.at)),
-            1 => raw_input.events.push(button(true)),
-            _ => raw_input.events.push(button(false)),
+            1 => raw_input.events.push(button(click.at, true)),
+            n if n < 2 + moves => {
+                let t = f32::from(n - 1) / f32::from(moves);
+                raw_input.events.push(Event::PointerMoved(click.at.lerp(end, t)));
+            }
+            n if n == 2 + moves => raw_input.events.push(button(end, false)),
+            // The keys come up a frame after the button, so the click sees them held.
+            _ => raw_input.events.push(Event::ModifiersChanged(Modifiers::NONE)),
         }
         click.step += 1;
-        if click.step > 2 {
+        if click.step > 3 + moves {
             if let Some(reply) = click.reply.take() {
-                reply.ok(json!({ "x": click.at.x, "y": click.at.y }));
+                reply.ok(json!({ "x": end.x, "y": end.y }));
             }
             self.clicks.remove(0);
         }
@@ -853,7 +947,11 @@ impl eframe::App for CosmicApp {
         self.viewport.stock_preview = self.setup_panel.as_ref().and_then(|p| p.preview_stock());
         self.viewport.pick_mode = match &self.toolpath_panel {
             Some(panel) => Some(panel.mode(&self.session)),
-            None => self.tools.pick_mode(),
+            // The WCS tools work on the active WCS: it shows while they run.
+            None => self.tools.pick_mode().map(|mut m| {
+                m.wcs.extend(self.session.job.active_wcs.clone());
+                m
+            }),
         };
         Panel::central(Surface::Workspace).show(ui, tokens, |ui| {
             let mut style = Style::from_egui(ui.style());
@@ -973,7 +1071,7 @@ impl eframe::App for CosmicApp {
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     if ui.button("Delete").clicked() {
-                        requests.push((command.clone(), json!({ "id": target })));
+                        requests.push((command.clone(), target.clone()));
                         self.confirm_delete = None;
                     }
                     if ui.button("Cancel").clicked() {

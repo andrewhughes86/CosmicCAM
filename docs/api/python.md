@@ -97,9 +97,10 @@ dropped on the window are imported too.
 ## Work coordinate systems
 
 A WCS is the part zero the machine works from, with its axis directions. The active WCS is the
-one toolpaths will be programmed in; each WCS is drawn as a triad in the viewport (the active
-one in full colour, axes labelled X, Y and Z) and listed under Setups in the job outline. Once
-a WCS exists the world (model) origin triad is drawn faint.
+one toolpaths will be programmed in. The viewport draws one WCS at a time as a triad (axes
+labelled X, Y and Z): the one a WCS tool or the toolpath being edited works in, else the one
+of the selection, else the one switched on in the outline. The
+model origin's triad is hidden until switched on (`view_display_set(origin=True)`).
 
 `setup.wcs.create` defines a WCS from two independent groups of parameters. `setup.wcs.align`
 takes the same groups and re-defines an existing WCS; a group left out is kept.
@@ -436,6 +437,17 @@ Only the selected toolpath is drawn, plus any switched on. Models can be hidden 
 models are still machined, but cannot be picked). Copy and paste work within a job and between
 open jobs.
 
+The explorer shows the job as Origin (the model origin's triad, hidden until switched on with
+`view_display_set(origin=True)`), Models, Fixtures, NC Programs (one per machine, with its
+post-processor) and Setups, each setup holding its stock, its WCS and its toolpaths in program
+order, labelled with their tool (`[T1] Face top`). A WCS a toolpath alone uses (a 3+2
+orientation, say) is part of that toolpath and not listed. Only one WCS marker shows at a time:
+that of a toolpath being created or edited, else that of the selected setup, toolpath or WCS;
+`view_wcs_visibility_set(id="wcs.2")` switches one on (replacing any other).
+Right-click a toolpath to simulate just that one (`sim_start(toolpaths=["toolpath.2"])`). In the app, Ctrl and Shift pick several toolpaths
+for Delete (the key or the menu), dragging one moves it, and a script does the same with
+`toolpath_remove(ids=[…])` and `toolpath_move`.
+
 ```python
 cc.toolpath_visibility_set(id="toolpath.2", visible=True)   # omit visible to toggle
 cc.model_visibility_set(id="model.1", visible=False)
@@ -595,7 +607,7 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-187 commands in 17 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+188 commands in 17 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.demo.open`](#jobdemoopen), [`job.clipboard.copy`](#jobclipboardcopy), [`job.clipboard.paste`](#jobclipboardpaste), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
@@ -604,7 +616,7 @@ with cosmiccam.launch(sample=True) as cc:
 - **console**: [`console.clear`](#consoleclear), [`console.log.get`](#consolelogget)
 - **model**: [`model.import`](#modelimport), [`model.formats`](#modelformats), [`model.list`](#modellist), [`model.visibility.set`](#modelvisibilityset), [`model.rename`](#modelrename), [`model.remove`](#modelremove), [`model.faces.list`](#modelfaceslist), [`model.face.get`](#modelfaceget), [`model.pick`](#modelpick), [`model.edges.list`](#modeledgeslist), [`model.edge.get`](#modeledgeget), [`model.edge.pick`](#modeledgepick), [`model.vertices.list`](#modelverticeslist), [`model.vertex.pick`](#modelvertexpick)
 - **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.wcs.rotate`](#setupwcsrotate), [`setup.wcs.rename`](#setupwcsrename), [`setup.wcs.activate`](#setupwcsactivate), [`setup.wcs.remove`](#setupwcsremove), [`setup.wcs.list`](#setupwcslist), [`setup.wcs.get`](#setupwcsget), [`setup.create`](#setupcreate), [`setup.edit`](#setupedit), [`setup.activate`](#setupactivate), [`setup.remove`](#setupremove), [`setup.list`](#setuplist), [`setup.get`](#setupget), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.margins`](#setupstockmargins), [`setup.stock.fit`](#setupstockfit), [`setup.stock.get`](#setupstockget)
-- **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
+- **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.wcs.visibility.set`](#viewwcsvisibilityset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
 - **toolpath**: [`toolpath.contour`](#toolpathcontour), [`toolpath.chamfer`](#toolpathchamfer), [`toolpath.slot`](#toolpathslot), [`toolpath.trace`](#toolpathtrace), [`toolpath.list`](#toolpathlist), [`toolpath.get`](#toolpathget), [`toolpath.edit`](#toolpathedit), [`toolpath.visibility.set`](#toolpathvisibilityset), [`toolpath.rename`](#toolpathrename), [`toolpath.move`](#toolpathmove), [`toolpath.regenerate`](#toolpathregenerate), [`toolpath.template.save`](#toolpathtemplatesave), [`toolpath.template.list`](#toolpathtemplatelist), [`toolpath.template.apply`](#toolpathtemplateapply), [`toolpath.template.remove`](#toolpathtemplateremove), [`toolpath.duplicate`](#toolpathduplicate), [`toolpath.remove`](#toolpathremove), [`toolpath.face`](#toolpathface), [`toolpath.pocket`](#toolpathpocket), [`toolpath.adaptive`](#toolpathadaptive), [`toolpath.scallop`](#toolpathscallop), [`toolpath.steep_shallow`](#toolpathsteep_shallow), [`toolpath.pencil`](#toolpathpencil), [`toolpath.spiral`](#toolpathspiral), [`toolpath.radial`](#toolpathradial), [`toolpath.flat`](#toolpathflat), [`toolpath.drill`](#toolpathdrill), [`toolpath.thread`](#toolpaththread), [`toolpath.bore`](#toolpathbore), [`toolpath.rough`](#toolpathrough), [`toolpath.waterline`](#toolpathwaterline), [`toolpath.raster`](#toolpathraster), [`toolpath.multiaxis`](#toolpathmultiaxis), [`toolpath.cl.export`](#toolpathclexport)
@@ -1758,10 +1770,26 @@ Set the colour theme.
 
 Returns: {"theme": id}
 
+#### `view.wcs.visibility.set`
+
+```python
+cc.view_wcs_visibility_set(id=…, visible=None)
+```
+
+Show a WCS's marker when nothing in use has one to show (only one WCS is drawn at a time).
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | WCS id, e.g. wcs.2 |
+| `visible` | bool | no | Show it (true, in place of any other) or not (false); omit to toggle |
+
+Returns: {"id": id, "visible": bool, "shown": [ids drawn now]}
+
 #### `view.display.set`
 
 ```python
-cc.view_display_set(grid=None, wcs=None, view_cube=None, orientation_triad=None, stock=None, edges=None, readout=None)
+cc.view_display_set(grid=None, wcs=None, view_cube=None, orientation_triad=None, stock=None, edges=None, readout=None, origin=None)
 ```
 
 Show or hide viewport elements; omitted elements are kept.
@@ -1776,6 +1804,7 @@ Show or hide viewport elements; omitted elements are kept.
 | `stock` | bool | no | Stock outline |
 | `edges` | bool | no | Model outline edges |
 | `readout` | bool | no | Projection and frame-rate readout |
+| `origin` | bool | no | The model origin's triad (default hidden) |
 
 Returns: display {grid, wcs, view_cube, orientation_triad, stock, edges, readout}
 
@@ -2457,17 +2486,18 @@ Returns: the copy, as toolpath.get returns it
 #### `toolpath.remove`
 
 ```python
-cc.toolpath_remove(id=…)
+cc.toolpath_remove(id=None, ids=None)
 ```
 
-Delete a toolpath from the job.
+Delete toolpaths from the job.
 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `id` | string | yes | Toolpath id, e.g. toolpath.1 |
+| `id` | string | no | Toolpath id, e.g. toolpath.1 |
+| `ids` | list | no | Several toolpath ids, deleted together |
 
-Returns: {"removed": id}
+Returns: {"removed": id}, or {"removed": [ids]} for `ids`
 
 #### `toolpath.face`
 

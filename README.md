@@ -78,8 +78,8 @@ simulation yet, so **check its G-code before running it on a machine**.
   rebuilds it.
 - **Job files:** save and open jobs as `.cosmic` files, each open job in its own tab, carrying the
   tools their toolpaths use; on Linux,
-  `packaging/linux/install-file-type.sh` gives `.cosmic` files their own icon and opens them in
-  CosmicCAM.
+  `packaging/linux/install-file-type.sh` installs the CosmicCAM launcher and icon (so the
+  taskbar shows it), gives `.cosmic` files their own icon and opens them in CosmicCAM.
 - **Post-processors:** Python posts for Fanuc, Haas, LinuxCNC/PathPilot, Grbl and Mach3/Mach4
   (or the built-in generic writer), chosen per machine on the Export tab: arcs (G2/G3, helical)
   fitted within a tolerance, each controller's work offsets, canned cycles, tool changes and

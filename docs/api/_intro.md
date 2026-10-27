@@ -95,9 +95,10 @@ dropped on the window are imported too.
 ## Work coordinate systems
 
 A WCS is the part zero the machine works from, with its axis directions. The active WCS is the
-one toolpaths will be programmed in; each WCS is drawn as a triad in the viewport (the active
-one in full colour, axes labelled X, Y and Z) and listed under Setups in the job outline. Once
-a WCS exists the world (model) origin triad is drawn faint.
+one toolpaths will be programmed in. The viewport draws one WCS at a time as a triad (axes
+labelled X, Y and Z): the one a WCS tool or the toolpath being edited works in, else the one
+of the selection, else the one switched on in the outline. The
+model origin's triad is hidden until switched on (`view_display_set(origin=True)`).
 
 `setup.wcs.create` defines a WCS from two independent groups of parameters. `setup.wcs.align`
 takes the same groups and re-defines an existing WCS; a group left out is kept.
@@ -433,6 +434,17 @@ pitch is the tool's.
 Only the selected toolpath is drawn, plus any switched on. Models can be hidden too (hidden
 models are still machined, but cannot be picked). Copy and paste work within a job and between
 open jobs.
+
+The explorer shows the job as Origin (the model origin's triad, hidden until switched on with
+`view_display_set(origin=True)`), Models, Fixtures, NC Programs (one per machine, with its
+post-processor) and Setups, each setup holding its stock, its WCS and its toolpaths in program
+order, labelled with their tool (`[T1] Face top`). A WCS a toolpath alone uses (a 3+2
+orientation, say) is part of that toolpath and not listed. Only one WCS marker shows at a time:
+that of a toolpath being created or edited, else that of the selected setup, toolpath or WCS;
+`view_wcs_visibility_set(id="wcs.2")` switches one on (replacing any other).
+Right-click a toolpath to simulate just that one (`sim_start(toolpaths=["toolpath.2"])`). In the app, Ctrl and Shift pick several toolpaths
+for Delete (the key or the menu), dragging one moves it, and a script does the same with
+`toolpath_remove(ids=[…])` and `toolpath_move`.
 
 ```python
 cc.toolpath_visibility_set(id="toolpath.2", visible=True)   # omit visible to toggle

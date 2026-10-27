@@ -9,10 +9,106 @@ use serde_json::{Value, json};
 use crate::Request;
 use crate::theme::Tokens;
 
+/// What the explorer keeps between frames: the toolpaths picked with Ctrl and Shift, the
+/// anchor of a Shift range, and the toolpath being dragged to a new place.
+#[derive(Clone, Default)]
+struct ExplorerState {
+    picked: Vec<String>,
+    anchor: Option<String>,
+    dragging: Option<String>,
+}
+
+/// Per-frame drawing context of the explorer.
+struct Draw<'a> {
+    session: &'a Session,
+    tokens: &'a Tokens,
+    state: ExplorerState,
+    /// Toolpath rows drawn this frame, top to bottom, for dropping a dragged one.
+    rows: Vec<(String, egui::Rect)>,
+}
+
+impl Draw<'_> {
+    fn picked(&self, id: &str) -> bool {
+        self.state.picked.iter().any(|p| p == id)
+    }
+
+    /// The toolpaths a menu or the Delete key acts on: the picked ones, else the selection.
+    fn targets(&self) -> Vec<String> {
+        if !self.state.picked.is_empty() {
+            return self.state.picked.clone();
+        }
+        self.session.view.selection.iter().filter(|s| s.starts_with("toolpath.")).cloned().collect()
+    }
+}
+
 pub fn explorer(ui: &mut Ui, session: &Session, tokens: &Tokens, requests: &mut Vec<Request>) {
+    let state_id = egui::Id::new("explorer-state");
+    let mut state: ExplorerState = ui.data(|d| d.get_temp(state_id)).unwrap_or_default();
+    // Toolpaths that no longer exist drop out of the picks.
+    state.picked.retain(|id| session.job.toolpaths.iter().any(|t| &t.id == id));
+    let mut draw = Draw { session, tokens, state, rows: Vec::new() };
     let selection = session.view.selection.as_deref();
-    for node in session.outline() {
-        outline_node(ui, &node, session, tokens, selection, requests);
+    let no_drag = egui::scroll_area::ScrollSource {
+        drag: egui::scroll_area::DragScroll::Never,
+        ..egui::scroll_area::ScrollSource::ALL
+    };
+    ScrollArea::both().scroll_source(no_drag).auto_shrink([false, false]).show(ui, |ui| {
+        for node in session.outline() {
+            outline_node(ui, &node, &mut draw, selection, requests);
+        }
+    });
+    // Delete removes the picked toolpaths (when no text field has the keyboard).
+    let typing = ui.ctx().memory(|m| m.focused().is_some());
+    if !typing && ui.input(|i| i.key_pressed(egui::Key::Delete)) {
+        let targets = draw.targets();
+        if !targets.is_empty() {
+            requests.push(delete_toolpaths(&targets, session));
+        }
+    }
+    drop_dragged(ui, &mut draw, requests);
+    ui.data_mut(|d| d.insert_temp(state_id, draw.state));
+}
+
+/// The delete prompt for `ids`: one toolpath by name, several by count.
+fn delete_toolpaths(ids: &[String], session: &Session) -> Request {
+    let label = match ids {
+        [one] => session.job.toolpaths.iter().find(|t| &t.id == one).map_or(one.clone(), |t| t.name.clone()),
+        many => format!("{} toolpaths", many.len()),
+    };
+    ("ui.delete".into(), json!({ "command": "toolpath.remove", "ids": ids, "label": label }))
+}
+
+/// While a toolpath is dragged, a line shows where it will go; letting go moves it there.
+fn drop_dragged(ui: &mut Ui, draw: &mut Draw<'_>, requests: &mut Vec<Request>) {
+    let Some(dragged) = draw.state.dragging.clone() else { return };
+    let pointer = ui.ctx().pointer_interact_pos();
+    // The row under the pointer, and whether the drop goes after it.
+    let target = pointer.and_then(|p| {
+        draw.rows
+            .iter()
+            .min_by(|a, b| (a.1.center().y - p.y).abs().total_cmp(&(b.1.center().y - p.y).abs()))
+            .map(|(id, rect)| (id.clone(), *rect, p.y > rect.center().y))
+    });
+    if let Some((_, rect, after)) = &target {
+        let y = if *after { rect.bottom() + 1.0 } else { rect.top() - 1.0 };
+        ui.painter().hline(rect.x_range(), y, egui::Stroke::new(2.0, draw.tokens.accent));
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+    if ui.input(|i| i.pointer.any_released()) {
+        draw.state.dragging = None;
+        let Some((over, _, after)) = target else { return };
+        let order: Vec<&str> = draw.session.job.toolpaths.iter().map(|t| t.id.as_str()).collect();
+        let (Some(from), Some(at)) = (order.iter().position(|i| *i == dragged), order.iter().position(|i| *i == over))
+        else {
+            return;
+        };
+        let mut to = if after { at + 1 } else { at };
+        if from < to {
+            to -= 1;
+        }
+        if to != from {
+            requests.push(("toolpath.move".into(), json!({ "id": dragged, "to": to })));
+        }
     }
 }
 
@@ -52,16 +148,14 @@ fn eye(ui: &mut Ui, visible: bool, tokens: &Tokens) -> egui::Response {
 fn outline_node(
     ui: &mut Ui,
     node: &OutlineNode,
-    session: &Session,
-    tokens: &Tokens,
+    draw: &mut Draw<'_>,
     selection: Option<&str>,
     requests: &mut Vec<Request>,
 ) {
-    let selected = selection == Some(node.id.as_str());
-    let select = |requests: &mut Vec<Request>| {
-        requests.push(("selection.set".into(), json!({ "id": node.id })));
-    };
-    // Double-clicking a toolpath opens it for editing; a setup is made active and opened.
+    let is_toolpath = node.id.starts_with("toolpath.");
+    let selected = selection == Some(node.id.as_str()) || (is_toolpath && draw.picked(&node.id));
+    // Double-clicking a toolpath opens it for editing; a setup is made active and opened; an
+    // NC program opens its post-processor.
     let open = |row: &egui::Response, requests: &mut Vec<Request>| {
         if !row.double_clicked() {
             return;
@@ -71,56 +165,135 @@ fn outline_node(
         } else if node.id.starts_with("setup.") && !node.id.contains('/') {
             requests.push(("setup.activate".into(), json!({ "id": node.id })));
             requests.push(("setup.edit".into(), json!({ "id": node.id })));
+        } else if let Some(machine) = node.id.strip_prefix(CosmicCAM_engine::session::PROGRAM_PREFIX) {
+            requests.push(("machine.activate".into(), json!({ "id": machine })));
+            requests.push(("post.processor.select".into(), Value::Null));
         }
     };
-    let toggle = |requests: &mut Vec<Request>| {
-        let command = if node.id.starts_with("model.") { "model.visibility.set" } else { "toolpath.visibility.set" };
-        requests.push((command.into(), json!({ "id": node.id })));
+    // One row: the eye (or room for it), the icon, the label; toolpaths can be dragged.
+    let row = |ui: &mut Ui, draw: &mut Draw<'_>, requests: &mut Vec<Request>| {
+        match node.visible {
+            Some(visible) => {
+                if eye(ui, visible, draw.tokens).clicked() {
+                    requests.push(toggle(node, visible, draw.session));
+                }
+            }
+            None => ui.add_space(18.0),
+        }
+        row_icon(ui, node, draw);
+        let response = ui.selectable_label(selected, &node.label);
+        let response = if is_toolpath { response.interact(egui::Sense::click_and_drag()) } else { response };
+        if response.clicked() {
+            click(ui, node, draw, requests);
+        }
+        if is_toolpath {
+            draw.rows.push((node.id.clone(), response.rect));
+            if response.drag_started() {
+                draw.state.dragging = Some(node.id.clone());
+            }
+        }
+        open(&response, requests);
+        context_menu(&response, node, draw, requests);
     };
     if node.children.is_empty() {
-        ui.horizontal(|ui| {
-            match node.visible {
-                Some(visible) => {
-                    if eye(ui, visible, tokens).clicked() {
-                        toggle(requests);
-                    }
-                }
-                None => ui.add_space(18.0),
-            }
-            let row = ui.selectable_label(selected, &node.label);
-            if row.clicked() {
-                select(requests);
-            }
-            open(&row, requests);
-            context_menu(&row, node, session, tokens, requests);
-        });
+        ui.horizontal(|ui| row(ui, draw, requests));
         return;
     }
-    let id = ui.make_persistent_id(("outline", &node.id));
-    CollapsingState::load_with_default_open(ui.ctx(), id, true)
-        .show_header(ui, |ui| {
-            let row = ui.selectable_label(selected, &node.label);
-            if row.clicked() {
-                select(requests);
-            }
-            open(&row, requests);
-            context_menu(&row, node, session, tokens, requests);
-        })
-        .body(|ui| {
+    // Ids stay unique where one WCS shows under several toolpaths.
+    let id = ui.make_persistent_id(("outline", &node.id, ui.id()));
+    CollapsingState::load_with_default_open(ui.ctx(), id, true).show_header(ui, |ui| row(ui, draw, requests)).body(
+        |ui| {
             for child in &node.children {
-                outline_node(ui, child, session, tokens, selection, requests);
+                outline_node(ui, child, draw, selection, requests);
             }
-        });
+        },
+    );
+}
+
+/// The icon in front of a row: a toolpath's strategy, a WCS triad or the stock block.
+fn row_icon(ui: &mut Ui, node: &OutlineNode, draw: &Draw<'_>) {
+    let id = node.id.as_str();
+    let name = if id.starts_with("toolpath.") {
+        let strategy =
+            draw.session.job.toolpaths.iter().find(|t| t.id == id).map(|t| t.strategy.as_str()).unwrap_or_default();
+        CosmicCAM_engine::cmd::find(CosmicCAM_engine::toolpath::strategy_command(strategy))
+            .map(crate::icon_svg::name_for)
+    } else if id.starts_with("wcs.") {
+        Some("explorer_wcs".to_owned())
+    } else if id == "stock" || id.ends_with("/stock") {
+        Some("setup_stock_box".to_owned())
+    } else {
+        None
+    };
+    let Some(name) = name else { return };
+    let size = ui.text_style_height(&egui::TextStyle::Body).round().max(12.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    crate::ribbon::paint_named_icon(ui, rect, &name, draw.tokens, true);
+}
+
+/// A click on a row selects it; on toolpaths Ctrl adds or removes one and Shift picks the run
+/// from the last one clicked.
+fn click(ui: &Ui, node: &OutlineNode, draw: &mut Draw<'_>, requests: &mut Vec<Request>) {
+    let modifiers = ui.input(|i| i.modifiers);
+    let st = &mut draw.state;
+    if node.id.starts_with("toolpath.") {
+        let order: Vec<&str> = draw.session.job.toolpaths.iter().map(|t| t.id.as_str()).collect();
+        if modifiers.command {
+            if st.picked.is_empty()
+                && let Some(sel) = draw.session.view.selection.as_ref().filter(|s| s.starts_with("toolpath."))
+            {
+                st.picked.push(sel.clone());
+            }
+            match st.picked.iter().position(|p| *p == node.id) {
+                Some(i) => {
+                    st.picked.remove(i);
+                }
+                None => st.picked.push(node.id.clone()),
+            }
+            st.anchor = Some(node.id.clone());
+        } else if modifiers.shift
+            && let Some(anchor) = st.anchor.clone().or_else(|| draw.session.view.selection.clone())
+            && let (Some(a), Some(b)) =
+                (order.iter().position(|i| *i == anchor), order.iter().position(|i| *i == node.id))
+        {
+            let (lo, hi) = (a.min(b), a.max(b));
+            st.picked = order.get(lo..=hi).unwrap_or_default().iter().map(|s| (*s).to_owned()).collect();
+        } else {
+            st.picked.clear();
+            st.anchor = Some(node.id.clone());
+        }
+    } else {
+        st.picked.clear();
+        st.anchor = None;
+    }
+    requests.push(("selection.set".into(), json!({ "id": node.id })));
+}
+
+/// The command an eye button runs for `node`.
+fn toggle(node: &OutlineNode, visible: bool, session: &Session) -> Request {
+    if node.id == CosmicCAM_engine::session::ORIGIN_ID {
+        return ("view.display.set".into(), json!({ "origin": !visible }));
+    }
+    if node.id.starts_with("wcs.") {
+        // Shown because the selection uses it: switching it on keeps it; off lets it go.
+        let kept = session.view.shown_wcs.contains(&node.id);
+        return ("view.wcs.visibility.set".into(), json!({ "id": node.id, "visible": !kept }));
+    }
+    if node.id == "stock" || node.id.ends_with("/stock") {
+        // A setup's stock shows when its setup is the active one.
+        let setup = node.id.trim_end_matches("/stock");
+        if setup.starts_with("setup.") && !visible && session.job.active_setup.as_deref() != Some(setup) {
+            return ("setup.activate".into(), json!({ "id": setup }));
+        }
+        return ("view.display.set".into(), json!({ "stock": !visible }));
+    }
+    let command = if node.id.starts_with("model.") { "model.visibility.set" } else { "toolpath.visibility.set" };
+    (command.into(), json!({ "id": node.id }))
 }
 
 /// The right-click menu of an explorer row: what can be done with that item.
-fn context_menu(
-    row: &egui::Response,
-    node: &OutlineNode,
-    session: &Session,
-    tokens: &Tokens,
-    requests: &mut Vec<Request>,
-) {
+fn context_menu(row: &egui::Response, node: &OutlineNode, draw: &Draw<'_>, requests: &mut Vec<Request>) {
+    let (session, tokens) = (draw.session, draw.tokens);
     let id = node.id.as_str();
     let name = node.label.trim_end_matches(" (active)").to_owned();
     let clip = session.clipboard.as_ref().map(CosmicCAM_engine::session::Clip::kind);
@@ -151,9 +324,32 @@ fn context_menu(
                     item(ui, requests, "Paste WCS", paste());
                 }
             }
-            "tools" => {
-                item(ui, requests, "Tool library…", run("tool.library.open", Value::Null));
-                item(ui, requests, "New flat end mill…", run("tool.create.flat", Value::Null));
+            "origin" => {
+                let shown = session.prefs.display.origin;
+                item(
+                    ui,
+                    requests,
+                    if shown { "Hide" } else { "Show" },
+                    run("view.display.set", json!({ "origin": !shown })),
+                );
+            }
+            "fixtures" => {
+                ui.label(RichText::new("Fixtures are not modelled yet").color(tokens.text_muted));
+            }
+            "programs" => {
+                item(ui, requests, "Export G-code…", run("post.gcode.export", Value::Null));
+            }
+            pr if pr.starts_with(CosmicCAM_engine::session::PROGRAM_PREFIX) => {
+                let machine = pr.trim_start_matches(CosmicCAM_engine::session::PROGRAM_PREFIX);
+                let activate = ("machine.activate".to_owned(), json!({ "id": machine }));
+                item(
+                    ui,
+                    requests,
+                    "Post-processor…",
+                    vec![activate.clone(), ("post.processor.select".into(), Value::Null)],
+                );
+                item(ui, requests, "Export G-code…", vec![activate.clone(), ("post.gcode.export".into(), Value::Null)]);
+                item(ui, requests, "Check limits", vec![activate, ("post.limits.check".into(), Value::Null)]);
             }
             "toolpaths" => {
                 let all = |visible: bool| -> Vec<Request> {
@@ -179,8 +375,23 @@ fn context_menu(
                     run("view.display.set", json!({ "stock": !session.prefs.display.stock })),
                 );
             }
+            t if t.starts_with("toolpath.") && draw.picked(t) && draw.state.picked.len() > 1 => {
+                let ids = draw.state.picked.clone();
+                let show = |visible: bool| -> Vec<Request> {
+                    ids.iter()
+                        .map(|i| ("toolpath.visibility.set".to_owned(), json!({ "id": i, "visible": visible })))
+                        .collect()
+                };
+                item(ui, requests, "Simulate these", run("sim.start", json!({ "toolpaths": ids })));
+                item(ui, requests, "Show", show(true));
+                item(ui, requests, "Hide", show(false));
+                item(ui, requests, "Regenerate", run("toolpath.regenerate", json!({ "ids": ids })));
+                ui.separator();
+                item(ui, requests, &format!("Delete {} toolpaths", ids.len()), vec![delete_toolpaths(&ids, session)]);
+            }
             t if t.starts_with("toolpath.") => {
                 item(ui, requests, "Edit…", run("toolpath.edit", json!({ "id": id })));
+                item(ui, requests, "Simulate", run("sim.start", json!({ "toolpaths": [id] })));
                 item(ui, requests, show_label(node.visible), run("toolpath.visibility.set", json!({ "id": id })));
                 item(ui, requests, "Rename…", rename("toolpath.rename"));
                 ui.separator();
@@ -195,7 +406,7 @@ fn context_menu(
                 item(ui, requests, "Regenerate", run("toolpath.regenerate", json!({ "ids": [id] })));
                 item(ui, requests, "Save as template…", rename("toolpath.template.save"));
                 ui.separator();
-                item(ui, requests, "Delete", delete("toolpath.remove"));
+                item(ui, requests, "Delete", vec![delete_toolpaths(&[id.to_owned()], session)]);
             }
             m if m.starts_with("model.") => {
                 item(ui, requests, show_label(node.visible), run("model.visibility.set", json!({ "id": id })));
@@ -230,6 +441,9 @@ fn context_menu(
                 item(ui, requests, "Edit…", edit);
                 item(ui, requests, "Activate", run("setup.activate", json!({ "id": id })));
                 item(ui, requests, "Rename…", rename("setup.edit"));
+                if clip == Some("toolpath") {
+                    item(ui, requests, "Paste toolpath", paste());
+                }
                 ui.separator();
                 item(ui, requests, "Delete", delete("setup.remove"));
             }

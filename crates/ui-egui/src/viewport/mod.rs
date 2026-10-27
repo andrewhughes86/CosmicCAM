@@ -53,6 +53,8 @@ pub struct PickMode {
     pub independent_of: Vec<Vec3>,
     /// A toolpath being edited, drawn over the scene: its start and moves.
     pub path: Option<(Vec3, std::sync::Arc<Vec<CosmicCAM_engine::toolpath::Move>>)>,
+    /// WCS the tool works in, drawn while it runs.
+    pub wcs: Vec<String>,
 }
 
 /// Viewport colour class of a toolpath move.
@@ -755,7 +757,9 @@ impl Viewport {
             }
         }
         let active = session.job.active_wcs.as_deref();
-        for w in &session.job.wcs {
+        // Names only on the WCS whose markers are drawn.
+        let visible = session.visible_wcs(&self.mode.as_ref().map(|m| m.wcs.clone()).unwrap_or_default());
+        for w in session.job.wcs.iter().filter(|w| visible.contains(&w.id)) {
             let Some(at) = to_screen(w.origin) else { continue };
             let is_active = active == Some(w.id.as_str());
             let color = if is_active { tokens.text } else { tokens.text_muted };
@@ -777,12 +781,16 @@ impl Viewport {
         let selected = session.view.selection.as_deref();
         let shown: Vec<&CosmicCAM_engine::toolpath::Toolpath> =
             session.job.toolpaths.iter().filter(|t| t.visible || selected == Some(t.id.as_str())).collect();
+        // WCS markers show while in use (selected, or used by the selection or the open tool).
+        let tool_wcs = self.mode.as_ref().map(|m| m.wcs.clone()).unwrap_or_default();
+        let visible_wcs = session.visible_wcs(&tool_wcs);
         let shown_key = {
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
             for t in &shown {
                 t.id.hash(&mut h);
             }
+            visible_wcs.hash(&mut h);
             h.finish()
         };
         // While simulating, the cut stock stands in for the part, its box and the toolpaths.
@@ -817,22 +825,25 @@ impl Viewport {
         world.triangles.extend_from_slice(&content.triangles);
         world.lines.extend_from_slice(&content.lines);
         let triad_size = (content.bounds.radius() * 0.4).clamp(15.0, 200.0);
-        // The world (model) origin always has a triad: in full colour until a WCS exists,
-        // then faint. Each WCS gets one too, the active one in full colour.
+        // The model origin's triad when it is switched on (Origin in the explorer): in full
+        // colour until a WCS exists, then faint. Each WCS gets one, the active one in full colour.
         let mut triad = SceneGeometry::default();
         self.triads.clear();
-        if display.wcs {
+        let mut frames = Vec::new();
+        if display.origin {
             let world = if session.job.wcs.is_empty() { TriadStyle::Full } else { TriadStyle::Faint };
-            let mut frames = vec![(Vec3::ZERO, [Vec3::X, Vec3::Y, Vec3::Z], world)];
+            frames.push((Vec3::ZERO, [Vec3::X, Vec3::Y, Vec3::Z], world));
+        }
+        if display.wcs {
             let active = session.job.active_wcs.as_deref();
-            for w in &session.job.wcs {
+            for w in session.job.wcs.iter().filter(|w| visible_wcs.contains(&w.id)) {
                 let style = if active == Some(w.id.as_str()) { TriadStyle::Full } else { TriadStyle::Dim };
                 frames.push((w.origin, [w.x_axis, w.y_axis(), w.z_axis], style));
             }
-            for (origin, axes, style) in frames {
-                triad.push_triad(origin, axes, triad_size, &palette, style);
-                self.triads.push((origin, axes, scene::triad_length(triad_size, style), style));
-            }
+        }
+        for (origin, axes, style) in frames {
+            triad.push_triad(origin, axes, triad_size, &palette, style);
+            self.triads.push((origin, axes, scene::triad_length(triad_size, style), style));
         }
 
         // Re-frame the view when the geometry changes, not when a WCS moves.
@@ -962,6 +973,7 @@ fn select_mode(session: &Session) -> PickMode {
         preview: None,
         independent_of: Vec::new(),
         path: None,
+        wcs: Vec::new(),
     };
     if let Some((m, entity)) = session.view.selection.as_deref().and_then(|id| session.job.entity(id)) {
         match entity {

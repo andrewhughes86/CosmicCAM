@@ -61,6 +61,7 @@ const DISPLAY_PARAMS: &[Param] = &[
     Param::optional("stock", ParamKind::Bool, "Stock outline"),
     Param::optional("edges", ParamKind::Bool, "Model outline edges"),
     Param::optional("readout", ParamKind::Bool, "Projection and frame-rate readout"),
+    Param::optional("origin", ParamKind::Bool, "The model origin's triad (default hidden)"),
 ];
 
 macro_rules! preset_command {
@@ -310,6 +311,39 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             let theme =
                 Theme::from_id(id).ok_or_else(|| EngineError::InvalidParams(format!("unknown theme `{id}`")))?;
             set_theme(s, theme)
+        },
+    },
+    CommandSpec {
+        id: "view.wcs.visibility.set",
+        label: "Show or hide WCS",
+        tooltip: "Show a WCS's marker when nothing in use has one to show (only one WCS is drawn at a time)",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[
+            Param::required("id", ParamKind::Str, "WCS id, e.g. wcs.2"),
+            Param::optional(
+                "visible",
+                ParamKind::Bool,
+                "Show it (true, in place of any other) or not (false); omit to toggle",
+            ),
+        ],
+        returns: "{\"id\": id, \"visible\": bool, \"shown\": [ids drawn now]}",
+        enabled: always,
+        run: |s, p| {
+            let id = params::req_str(p, "id")?.to_owned();
+            if s.job.wcs_by_id(&id).is_none() {
+                return Err(EngineError::InvalidParams(format!("no WCS `{id}`")));
+            }
+            let on = s.view.shown_wcs.contains(&id);
+            let want = params::opt_bool(p, "visible")?.unwrap_or(!on);
+            // One WCS at a time: showing this one replaces any other.
+            if want {
+                s.view.shown_wcs = vec![id.clone()];
+            } else {
+                s.view.shown_wcs.retain(|w| *w != id);
+            }
+            Ok(json!({ "id": id, "visible": want, "shown": s.visible_wcs(&[]) }))
         },
     },
     CommandSpec {

@@ -464,6 +464,7 @@ impl ToolpathPanel {
             preview: None,
             independent_of: Vec::new(),
             path: self.preview.as_ref().ok().map(|(start, moves, _)| (*start, Arc::clone(moves))),
+            wcs: self.wcs_in_use(session),
         };
         for r in &self.geometry {
             match session.job.entity(r) {
@@ -473,6 +474,13 @@ impl ToolpathPanel {
             }
         }
         mode
+    }
+
+    /// The WCS to show while the toolpath is set up: the one it tilts to, else the one it is
+    /// programmed in (else the active one).
+    fn wcs_in_use(&self, session: &Session) -> Vec<String> {
+        let text = |k: &str| self.values.get(k).and_then(Value::as_str).filter(|v| !v.is_empty()).map(str::to_owned);
+        text("orientation").or_else(|| text("wcs")).or_else(|| session.job.active_wcs.clone()).into_iter().collect()
     }
 
     /// A click in the viewport (Geometry tab) adds the edge or face, or removes it if picked.

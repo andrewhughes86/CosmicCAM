@@ -1484,7 +1484,10 @@ fn setups_hold_a_machine_a_wcs_and_their_stock() {
     assert_eq!(s.job.stock.map(|b| b.size().x), Some(110.0));
     let group = s.outline_node("setups").map(|g| g.children).unwrap_or_default();
     let names: Vec<String> = group.iter().map(|n| n.label.clone()).collect();
-    assert_eq!(names, ["Op1 (active)", "Op2", "Vice (active)"]);
+    assert_eq!(names, ["Op1 (active)", "Op2"]);
+    // Each setup's WCS sits in it, after its stock.
+    let op1 = group.first().map(|n| n.children.iter().map(|c| c.label.clone()).collect::<Vec<_>>()).unwrap_or_default();
+    assert_eq!(op1, ["Stock", "Vice (active)"]);
     assert!(s.outline_node("setup.1/stock").is_some());
 
     // They are saved with the job.
@@ -1855,6 +1858,73 @@ fn templates_reorder_and_regenerate_toolpaths() {
     assert!(s.job.toolpaths.iter().any(|t| t.id == aid && t.name == "Rough it"));
     assert!(s.execute("toolpath.template.remove", &json!({"name": "Steel roughing"})).is_ok());
     assert!(s.execute("toolpath.template.apply", &json!({"name": "Steel roughing"})).is_err());
+}
+
+#[test]
+fn the_outline_groups_the_job_and_toolpaths_sit_under_their_setup() {
+    let mut s = Session::new();
+    assert!(s.execute("job.demo.open", &Value::Null).is_ok());
+    let job = s.outline_node("job").unwrap_or_else(unreachable_node);
+    let labels: Vec<&str> = job.children.iter().map(|n| n.label.as_str()).collect();
+    assert_eq!(labels, ["Origin", "Models", "Fixtures", "NC Programs", "Setups"]);
+    // The model origin is hidden until shown.
+    assert_eq!(job.children[0].visible, Some(false));
+    assert!(s.execute("view.display.set", &json!({"origin": true})).is_ok());
+    assert_eq!(s.outline_node("origin").and_then(|n| n.visible), Some(true));
+    // One program per machine, named with its post.
+    let programs = &job.children[3];
+    assert_eq!(programs.children.len(), 1);
+    assert!(programs.children[0].label.contains("(fanuc)"), "{}", programs.children[0].label);
+    // The setup holds its stock, its WCS, then its toolpaths labelled with their tool.
+    let setup = &job.children[4].children[0];
+    assert_eq!(setup.children[0].label, "Stock");
+    assert!(setup.children[1].id.starts_with("wcs."), "{}", setup.children[1].id);
+    let first = &s.job.toolpaths[0];
+    assert_eq!(setup.children[2].label, format!("[T{}] {}", first.tool, first.name));
+    assert_eq!(setup.children.len(), 2 + s.job.toolpaths.len());
+    // A toolpath's WCS are part of it: not listed, and only ever one WCS shows, in use.
+    assert!(setup.children.iter().all(|n| n.children.is_empty()));
+    let tilted = s
+        .job
+        .toolpaths
+        .iter()
+        .find(|t| t.params.get("orientation").is_some())
+        .map(|t| t.id.clone())
+        .unwrap_or_default();
+    let slope = s.wcs_in_use(&tilted).first().cloned().unwrap_or_default();
+    let main = setup.children[1].id.clone();
+    assert!(slope.starts_with("wcs.") && slope != main && s.outline_node(&slope).is_none());
+    assert!(s.visible_wcs(&[]).is_empty());
+    assert!(s.execute("selection.set", &json!({"id": tilted})).is_ok());
+    assert_eq!(s.visible_wcs(&[]), std::slice::from_ref(&slope), "the toolpath shows the WCS it tilts to, alone");
+    assert!(s.execute("selection.set", &json!({"id": setup.id})).is_ok());
+    assert_eq!(s.visible_wcs(&[]), std::slice::from_ref(&main));
+    // What a tool in use works in wins over the selection.
+    assert_eq!(s.visible_wcs(std::slice::from_ref(&slope)), std::slice::from_ref(&slope));
+    assert!(s.execute("selection.set", &json!({"id": "job"})).is_ok());
+    assert!(s.execute("view.wcs.visibility.set", &json!({"id": main})).is_ok());
+    let r = s.execute("view.wcs.visibility.set", &json!({"id": slope})).unwrap_or_default();
+    assert_eq!(r["visible"], true);
+    assert_eq!(s.visible_wcs(&[]), std::slice::from_ref(&slope), "showing one replaces the other");
+    assert!(!s.job.is_modified(), "showing a WCS is not a change to the job");
+    // Several toolpaths go at once.
+    let ids: Vec<String> = s.job.toolpaths.iter().take(2).map(|t| t.id.clone()).collect();
+    let before = s.job.toolpaths.len();
+    let r = s.execute("toolpath.remove", &json!({"ids": ids})).unwrap_or_default();
+    assert_eq!(r["removed"].as_array().map(Vec::len), Some(2));
+    assert_eq!(s.job.toolpaths.len(), before - 2);
+    assert!(s.execute("toolpath.remove", &json!({})).is_err());
+}
+
+/// A node to fall back on in tests (never used when the outline has a job).
+fn unreachable_node() -> crate::session::OutlineNode {
+    crate::session::OutlineNode {
+        visible: None,
+        id: String::new(),
+        label: String::new(),
+        children: Vec::new(),
+        properties: Vec::new(),
+    }
 }
 
 #[test]

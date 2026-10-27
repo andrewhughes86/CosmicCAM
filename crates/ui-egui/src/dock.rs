@@ -144,8 +144,9 @@ impl TabViewer for Viewer<'_> {
 
     fn scroll_bars(&self, tab: &Tab) -> [bool; 2] {
         match tab {
-            Pane::Viewport | Pane::Console => [false, false],
-            Pane::Explorer | Pane::Inspector | Pane::Library => [true, true],
+            // The explorer scrolls itself, so dragging a toolpath does not drag the view.
+            Pane::Viewport | Pane::Console | Pane::Explorer => [false, false],
+            Pane::Inspector | Pane::Library => [true, true],
         }
     }
 }

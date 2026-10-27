@@ -85,7 +85,8 @@ fn tab_strip(ui: &mut Ui, session: &Session, tokens: &Tokens, active: RibbonTab,
             painter.vline(rect.right(), rect.y_range(), s);
             painter.hline(rect.x_range(), rect.top(), s);
             painter.hline(rect.x_range().shrink(1.0), rect.bottom() - 0.5, Stroke::new(1.0, tokens.panel_bg));
-            painter.hline(rect.x_range().shrink(6.0), rect.top() + 1.5, Stroke::new(2.0, tokens.accent));
+            // The accent underlines the tab's name.
+            painter.hline(rect.x_range().shrink(6.0), rect.bottom() - 2.5, Stroke::new(2.0, tokens.accent));
         } else if response.hovered() {
             painter.rect_filled(rect, top_only, tokens.hover_bg);
         }

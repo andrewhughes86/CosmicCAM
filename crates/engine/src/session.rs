@@ -57,11 +57,13 @@ pub struct Display {
     pub edges: bool,
     /// Projection and frame-rate readout.
     pub readout: bool,
+    /// The model origin's triad (hidden by default).
+    pub origin: bool,
 }
 
 impl Display {
     pub const KEYS: &'static [&'static str] =
-        &["grid", "wcs", "view_cube", "orientation_triad", "stock", "edges", "readout"];
+        &["grid", "wcs", "view_cube", "orientation_triad", "stock", "edges", "readout", "origin"];
 
     pub fn get(&self, key: &str) -> Option<bool> {
         Some(match key {
@@ -72,6 +74,7 @@ impl Display {
             "stock" => self.stock,
             "edges" => self.edges,
             "readout" => self.readout,
+            "origin" => self.origin,
             _ => return None,
         })
     }
@@ -85,6 +88,7 @@ impl Display {
             "stock" => &mut self.stock,
             "edges" => &mut self.edges,
             "readout" => &mut self.readout,
+            "origin" => &mut self.origin,
             _ => return false,
         };
         *slot = on;
@@ -106,6 +110,7 @@ impl Default for Display {
             stock: true,
             edges: true,
             readout: true,
+            origin: false,
         }
     }
 }
@@ -212,6 +217,9 @@ pub struct ViewState {
     pub layout_generation: u64,
     /// Selected explorer node id.
     pub selection: Option<String>,
+    /// WCS switched on in the explorer; the rest show only when in use (see
+    /// [`Session::visible_wcs`]).
+    pub shown_wcs: Vec<String>,
 }
 
 impl Default for ViewState {
@@ -222,12 +230,18 @@ impl Default for ViewState {
             aspect: 1.6,
             layout_generation: 0,
             selection: None,
+            shown_wcs: Vec::new(),
         }
     }
 }
 
 /// Most models one job holds.
 pub const MAX_MODELS: usize = 256;
+
+/// The outline node of the model origin.
+pub const ORIGIN_ID: &str = "origin";
+/// Outline ids of NC programs: this prefix and the machine's id.
+pub const PROGRAM_PREFIX: &str = "program/";
 
 /// An imported model. The mesh is shared, so snapshotting the session stays cheap.
 #[derive(Clone, Debug)]
@@ -1194,26 +1208,94 @@ impl Session {
             properties: vec![("Items".into(), children.len().to_string())],
             children,
         };
+        let origin = OutlineNode {
+            visible: Some(self.prefs.display.origin),
+            id: ORIGIN_ID.into(),
+            label: "Origin".into(),
+            children: Vec::new(),
+            properties: vec![
+                ("Position".into(), u.fmt_point([0.0, 0.0, 0.0])),
+                ("What it is".into(), "The model's own origin, where its coordinates are measured from".into()),
+            ],
+        };
+        let mut fixtures = group("fixtures", "Fixtures", Vec::new());
+        fixtures.properties.push(("Note".into(), "Vices, clamps and plates are not modelled yet".into()));
         vec![OutlineNode {
             visible: None,
             id: "job".into(),
             label: format!("Job: {}", self.job.name),
             properties: vec![("Name".into(), self.job.name.clone()), ("Units".into(), u.label().into())],
             children: vec![
+                origin,
                 group("models", "Models", models),
+                fixtures,
+                group("programs", "NC Programs", self.program_nodes()),
                 group("setups", "Setups", self.setup_nodes()),
-                group("tools", "Tools", Vec::new()),
-                group("toolpaths", "Toolpaths", self.toolpath_nodes()),
             ],
         }]
     }
 
-    fn toolpath_nodes(&self) -> Vec<OutlineNode> {
+    /// One NC program per machine the setups run on (the active machine without setups):
+    /// its post-processor and what it holds.
+    fn program_nodes(&self) -> Vec<OutlineNode> {
+        let mut machines: Vec<String> = self.job.setups.iter().map(|st| st.machine.clone()).collect();
+        if machines.is_empty()
+            && let Some(m) = self.library.active.clone()
+        {
+            machines.push(m);
+        }
+        machines.dedup();
+        let rapid = self.library.active_machine().map_or(10_000.0, |m| m.max_feed.max(10_000.0));
+        machines
+            .iter()
+            .filter_map(|id| self.library.machine(id))
+            .map(|m| {
+                let post = if m.post.is_empty() { "generic".to_owned() } else { m.post.clone() };
+                let toolpaths: Vec<&crate::toolpath::Toolpath> =
+                    self.job.toolpaths.iter().filter(|t| t.machine == m.id).collect();
+                let time: f64 = toolpaths.iter().map(|t| t.stats(rapid).2).sum();
+                let tools: std::collections::BTreeSet<u32> = toolpaths.iter().map(|t| t.tool).collect();
+                OutlineNode {
+                    visible: None,
+                    id: format!("{PROGRAM_PREFIX}{}", m.id),
+                    label: format!("{} ({post})", m.name),
+                    children: Vec::new(),
+                    properties: vec![
+                        ("Machine".into(), m.name.clone()),
+                        ("Post-processor".into(), post),
+                        ("Toolpaths".into(), toolpaths.len().to_string()),
+                        ("Tools".into(), tools.iter().map(|t| format!("T{t}")).collect::<Vec<_>>().join(", ")),
+                        (
+                            "Estimated time".into(),
+                            format!("{}:{:02}", (time / 60.0).floor(), (time % 60.0).round() as u32),
+                        ),
+                    ],
+                }
+            })
+            .collect()
+    }
+
+    /// The setup a toolpath belongs to: the one on its machine with its WCS, else the first on
+    /// its machine, else the active setup.
+    fn setup_of(&self, t: &crate::toolpath::Toolpath) -> Option<&str> {
+        let setups = &self.job.setups;
+        setups
+            .iter()
+            .find(|st| st.machine == t.machine && st.wcs == t.wcs)
+            .or_else(|| setups.iter().find(|st| st.machine == t.machine))
+            .map(|st| st.id.as_str())
+            .or(self.job.active_setup.as_deref())
+            .or_else(|| setups.first().map(|st| st.id.as_str()))
+    }
+
+    /// The toolpaths of `setup` (all of them for None), in program order.
+    fn toolpath_nodes(&self, setup: Option<&str>) -> Vec<OutlineNode> {
         let u = self.prefs.units;
         let rapid = self.library.active_machine().map_or(10_000.0, |m| m.max_feed.max(10_000.0));
         self.job
             .toolpaths
             .iter()
+            .filter(|t| setup.is_none() || self.setup_of(t) == setup)
             .map(|t| {
                 let (cut, rapid_len, time) = t.stats(rapid);
                 let mut properties = vec![
@@ -1229,7 +1311,7 @@ impl Session {
                 OutlineNode {
                     visible: Some(t.visible),
                     id: t.id.clone(),
-                    label: t.name.clone(),
+                    label: format!("[T{}] {}", t.tool, t.name),
                     children: Vec::new(),
                     properties,
                 }
@@ -1243,7 +1325,7 @@ impl Session {
         let stock = self.job.stock.map(|b| {
             let size = b.size();
             OutlineNode {
-                visible: None,
+                visible: Some(self.prefs.display.stock),
                 id: STOCK_ID.into(),
                 label: "Stock".into(),
                 children: Vec::new(),
@@ -1256,7 +1338,7 @@ impl Session {
             }
         });
         if self.job.setups.is_empty() {
-            return stock.into_iter().chain(self.wcs_nodes()).collect();
+            return stock.into_iter().chain(self.wcs_nodes()).chain(self.toolpath_nodes(None)).collect();
         }
         // With setups, each one holds its stock; the coordinate systems follow.
         self.job.setups.iter().map(|st| self.setup_node(st)).chain(self.wcs_nodes()).collect()
@@ -1271,7 +1353,7 @@ impl Session {
             .as_deref()
             .map_or_else(|| "Origin".to_owned(), |id| self.job.wcs_by_id(id).map_or(id.to_owned(), |w| w.name.clone()));
         let stock = st.stock.map(|b| OutlineNode {
-            visible: None,
+            visible: Some(self.prefs.display.stock && active),
             id: format!("{}/stock", st.id),
             label: "Stock".into(),
             children: Vec::new(),
@@ -1286,7 +1368,11 @@ impl Session {
             visible: None,
             id: st.id.clone(),
             label: if active { format!("{} (active)", st.name) } else { st.name.clone() },
-            children: stock.into_iter().collect(),
+            children: stock
+                .into_iter()
+                .chain(st.wcs.as_deref().and_then(|id| self.job.wcs_by_id(id)).map(|w| self.wcs_node(w)))
+                .chain(self.toolpath_nodes(Some(&st.id)))
+                .collect(),
             properties: vec![
                 ("Name".into(), st.name.clone()),
                 ("Active".into(), if active { "Yes" } else { "No" }.into()),
@@ -1297,29 +1383,74 @@ impl Session {
         }
     }
 
-    fn wcs_nodes(&self) -> Vec<OutlineNode> {
+    /// The one WCS drawn in the viewport (never more): the first of `extra` (what a tool
+    /// being used works in), else the one the selection uses (a setup's, a toolpath's, a picked
+    /// WCS), else the one switched on in the explorer. Empty when none applies.
+    pub fn visible_wcs(&self, extra: &[String]) -> Vec<String> {
+        let exists = |id: &&String| self.job.wcs_by_id(id).is_some();
+        let from_selection = self.view.selection.as_deref().map(|sel| self.wcs_in_use(sel)).unwrap_or_default();
+        extra
+            .iter()
+            .find(exists)
+            .or_else(|| from_selection.iter().find(exists))
+            .or_else(|| self.view.shown_wcs.iter().find(exists))
+            .cloned()
+            .into_iter()
+            .collect()
+    }
+
+    /// The WCS an outline item uses, the one to show first: a setup's, a toolpath's tilt
+    /// (orientation) WCS before its program WCS, or the WCS itself.
+    pub fn wcs_in_use(&self, id: &str) -> Vec<String> {
+        let base = id.split('/').next().unwrap_or(id);
+        if base.starts_with("wcs.") {
+            return vec![base.to_owned()];
+        }
+        if let Some(st) = self.job.setups.iter().find(|st| st.id == base) {
+            return st.wcs.iter().cloned().collect();
+        }
+        if let Some(t) = self.job.toolpaths.iter().find(|t| t.id == base) {
+            let tilt = t.params.get("orientation").and_then(Value::as_str).filter(|o| !o.is_empty()).map(str::to_owned);
+            return tilt.into_iter().chain(t.wcs.iter().cloned()).collect();
+        }
+        Vec::new()
+    }
+
+    fn wcs_node(&self, w: &Wcs) -> OutlineNode {
         let u = self.prefs.units;
         let v = |p: Vec3| format!("{:.3}, {:.3}, {:.3}", p.x, p.y, p.z);
+        let active = self.job.active_wcs.as_deref() == Some(&w.id);
+        let shown = self.visible_wcs(&[]).contains(&w.id);
+        OutlineNode {
+            visible: Some(shown),
+            id: w.id.clone(),
+            label: if active { format!("{} (active)", w.name) } else { w.name.clone() },
+            children: Vec::new(),
+            properties: vec![
+                ("Name".into(), w.name.clone()),
+                ("Active".into(), if active { "Yes" } else { "No" }.into()),
+                ("Origin".into(), u.fmt_point(w.origin.to_array())),
+                ("X axis".into(), v(w.x_axis)),
+                ("Y axis".into(), v(w.y_axis())),
+                ("Z axis".into(), v(w.z_axis)),
+            ],
+        }
+    }
+
+    /// The WCS that belong to no setup and no toolpath, listed after the setups. A WCS a
+    /// toolpath works in is part of that toolpath and not listed.
+    fn wcs_nodes(&self) -> Vec<OutlineNode> {
         self.job
             .wcs
             .iter()
-            .map(|w| {
-                let active = self.job.active_wcs.as_deref() == Some(&w.id);
-                OutlineNode {
-                    visible: None,
-                    id: w.id.clone(),
-                    label: if active { format!("{} (active)", w.name) } else { w.name.clone() },
-                    children: Vec::new(),
-                    properties: vec![
-                        ("Name".into(), w.name.clone()),
-                        ("Active".into(), if active { "Yes" } else { "No" }.into()),
-                        ("Origin".into(), u.fmt_point(w.origin.to_array())),
-                        ("X axis".into(), v(w.x_axis)),
-                        ("Y axis".into(), v(w.y_axis())),
-                        ("Z axis".into(), v(w.z_axis)),
-                    ],
-                }
+            .filter(|w| {
+                let main = self.job.setups.iter().any(|st| st.wcs.as_deref() == Some(w.id.as_str()));
+                let used = self.job.toolpaths.iter().any(|t| self.wcs_in_use(&t.id).contains(&w.id));
+                let without_setups =
+                    self.job.setups.is_empty() && self.job.active_wcs.as_deref() == Some(w.id.as_str());
+                !(main || used) || without_setups
             })
+            .map(|w| self.wcs_node(w))
             .collect()
     }
 

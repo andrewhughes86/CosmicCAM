@@ -118,13 +118,29 @@ class CosmicCAM(Commands):
             params["settle"] = False
         return self.request("ui.screenshot", params)
 
-    def click(self, x: float, y: float, button: str = "left") -> Any:
+    def click(self, x: float, y: float, button: str = "left", modifiers: Optional[List[str]] = None) -> Any:
         """Clicks a mouse button (``"left"``, ``"right"`` or ``"middle"``) at window point (x, y),
-        as a user would."""
+        as a user would, holding ``modifiers`` (``"ctrl"``, ``"shift"``, ``"alt"``, ``"command"``)."""
         params: Dict[str, Any] = {"x": x, "y": y}
         if button != "left":
             params["button"] = button
+        if modifiers:
+            params["modifiers"] = list(modifiers)
         return self.request("ui.click", params)
+
+    def drag(self, x: float, y: float, to_x: float, to_y: float, modifiers: Optional[List[str]] = None) -> Any:
+        """Presses the left button at (x, y), moves to (to_x, to_y) and lets go, as a user would."""
+        params: Dict[str, Any] = {"x": x, "y": y, "to": {"x": to_x, "y": to_y}}
+        if modifiers:
+            params["modifiers"] = list(modifiers)
+        return self.request("ui.click", params)
+
+    def key(self, key: str, modifiers: Optional[List[str]] = None) -> Any:
+        """Presses and releases a key by name (``"Delete"``, ``"Escape"``, ``"Enter"``…)."""
+        params: Dict[str, Any] = {"key": key}
+        if modifiers:
+            params["modifiers"] = list(modifiers)
+        return self.request("ui.key", params)
 
     def type_text(self, text: str, replace: bool = False) -> Any:
         """Types text into the focused field, as a user would; replace=True selects what it holds first."""

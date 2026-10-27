@@ -381,3 +381,20 @@ Crash reports, `CosmicCAM-cli`, job file format.
   panel), move up/down and regenerate (also in the explorer menu).
 - Still to come: morphed spiral and flowline finishing, rest finishing from a reference tool,
   4th-axis wrapping, adaptive clearing with a variable load in corners.
+
+## Explorer and ribbon (2026-10-26)
+
+- The ribbon's active tab is underlined beneath its name.
+- The explorer lists the job as Origin (model origin triad, hidden by default), Models,
+  Fixtures, NC Programs (one per machine, its post, toolpaths, tools and time; double-click
+  opens the post-processor) and Setups; toolpaths sit under their setup as `[T1] Name` with
+  their strategy's icon. Tools left the explorer (the tool library has its own window).
+- Toolpaths: Ctrl and Shift multi-select, Delete key and menu delete several at once
+  (`toolpath.remove` takes `ids`), drag and drop to reorder.
+- Control channel: `ui.click` takes `modifiers` and a drag target `to`; `ui.key` presses keys.
+- WCS and stock rows have icons and eyes; a setup lists its stock, its WCS, then its toolpaths.
+  A WCS only a toolpath uses is part of it and not listed. One WCS marker shows at a time: the
+  one in use (the toolpath being edited, the WCS tools), else the selection's, else the one
+  switched on (`view.wcs.visibility.set`). Right-click Simulate runs one toolpath alone.
+- CosmicCAM has its own application icon (window and taskbar; on Linux the install script adds
+  the launcher entry and icon).
