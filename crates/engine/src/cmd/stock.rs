@@ -40,6 +40,30 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         enabled: always,
         run: |s, _| Ok(s.job.stock.as_ref().map_or(Value::Null, stock_json)),
     },
+    CommandSpec {
+        id: "setup.stock.in_process.get",
+        label: "In-process stock",
+        tooltip: "The stock as the toolpaths up to one leave it; the viewport shows it for the selected toolpath",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[Param::required("id", ParamKind::Str, "Toolpath id: the stock after it, e.g. toolpath.3")],
+        returns: "{id, removed_volume, remaining_volume, cell, mode, events}",
+        enabled: always,
+        run: |s, p| {
+            let id = params::req_str(p, "id")?;
+            let sim = crate::sim::in_process(s, id)?;
+            let v = sim.to_json();
+            Ok(json!({
+                "id": id,
+                "removed_volume": v["removed_volume"],
+                "remaining_volume": v["remaining_volume"],
+                "cell": v["cell"],
+                "mode": v["mode"],
+                "events": v["events"],
+            }))
+        },
+    },
 ];
 
 fn fit(s: &mut Session, p: &Value) -> EngineResult<Value> {

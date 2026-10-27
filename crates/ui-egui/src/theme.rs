@@ -39,6 +39,8 @@ pub struct Tokens {
     pub axis_z: Color32,
     pub part: Color32,
     pub part_edge: Color32,
+    /// The stock: its outline, and the in-process and simulated stock.
+    pub stock: Color32,
     pub stock_edge: Color32,
     pub cube_face: Color32,
     pub cube_face_hover: Color32,
@@ -79,7 +81,8 @@ pub const DARK: Tokens = Tokens {
     axis_z: hex(0x4C8DFF),
     part: hex(0x9FB0C8),
     part_edge: hex(0x0B1220),
-    stock_edge: hex(0x22D3EE),
+    stock: hex(0xA78BFA),
+    stock_edge: hex(0xA78BFA),
     cube_face: hex(0x3A5075),
     cube_face_hover: hex(0x0E7490),
     cube_edge: hex(0x9AA9C2),
@@ -113,7 +116,8 @@ pub const LIGHT: Tokens = Tokens {
     axis_z: hex(0x2563EB),
     part: hex(0x8D9BAE),
     part_edge: hex(0x27303B),
-    stock_edge: hex(0x0369A1),
+    stock: hex(0x8B5CF6),
+    stock_edge: hex(0x7C3AED),
     cube_face: hex(0xF1F3F6),
     cube_face_hover: hex(0xBAE6FD),
     cube_edge: hex(0x4B5563),
@@ -147,6 +151,13 @@ impl Tokens {
             path_link: linear(self.text_muted),
         }
     }
+}
+
+/// `a` turned `t` (0 to 1) of the way to `b`.
+pub fn blend(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let mix = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round() as u8;
+    Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
 }
 
 /// sRGB colour to linear RGBA for the GPU.

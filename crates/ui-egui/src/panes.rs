@@ -374,6 +374,13 @@ fn context_menu(row: &egui::Response, node: &OutlineNode, draw: &Draw<'_>, reque
                     if session.prefs.display.stock { "Hide stock" } else { "Show stock" },
                     run("view.display.set", json!({ "stock": !session.prefs.display.stock })),
                 );
+                let in_process = session.prefs.display.in_process;
+                item(
+                    ui,
+                    requests,
+                    if in_process { "Show the stock's outline only" } else { "Show the stock cut so far" },
+                    run("view.display.set", json!({ "in_process": !in_process })),
+                );
             }
             t if t.starts_with("toolpath.") && draw.picked(t) && draw.state.picked.len() > 1 => {
                 let ids = draw.state.picked.clone();
@@ -396,6 +403,15 @@ fn context_menu(row: &egui::Response, node: &OutlineNode, draw: &Draw<'_>, reque
             t if t.starts_with("toolpath.") => {
                 item(ui, requests, "Edit…", run("toolpath.edit", json!({ "id": id })));
                 item(ui, requests, "Simulate", run("sim.start", json!({ "toolpaths": [id] })));
+                let upto: Vec<&str> = session
+                    .job
+                    .toolpaths
+                    .iter()
+                    .map(|t| t.id.as_str())
+                    .take_while(|t| *t != id)
+                    .chain(std::iter::once(id))
+                    .collect();
+                item(ui, requests, "Simulate up to here", run("sim.start", json!({ "toolpaths": upto })));
                 item(ui, requests, "Trim…", run("toolpath.trim", json!({ "ids": [id] })));
                 if session.job.toolpaths.iter().any(|t| t.id == id && !t.trims.is_empty()) {
                     item(ui, requests, "Remove trims", run("toolpath.trim.remove", json!({ "id": id })));
@@ -439,6 +455,13 @@ fn context_menu(row: &egui::Response, node: &OutlineNode, draw: &Draw<'_>, reque
                     requests,
                     if session.prefs.display.stock { "Hide stock" } else { "Show stock" },
                     run("view.display.set", json!({ "stock": !session.prefs.display.stock })),
+                );
+                let in_process = session.prefs.display.in_process;
+                item(
+                    ui,
+                    requests,
+                    if in_process { "Show the stock's outline only" } else { "Show the stock cut so far" },
+                    run("view.display.set", json!({ "in_process": !in_process })),
                 );
             }
             st if st.starts_with("setup.") => {

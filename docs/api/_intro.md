@@ -500,16 +500,43 @@ surface (not just inside or outside), so domes, bores and scallops are drawn smo
 cells; its default cell is a quarter of the smallest tool radius, coarser when the stock would
 need more than about 8 million cells.
 
+Simulating chosen toolpaths starts from the stock the toolpaths before them leave
+(`start_from="previous"`, the default), so a finishing toolpath is seen cutting what the roughing
+left; `start_from="stock"` starts from the raw stock. In the explorer, right-click a toolpath and
+choose **Simulate** (that one alone) or **Simulate up to here**.
+
+In the app the simulation has a timeline of the program, a band per toolpath with collisions
+marked in red (hover for which toolpath runs, click or drag to go there), and under it: start,
+previous toolpath, back a move, play/pause, forward a move, next toolpath, end, the time and a
+playback speed from 0.5× to 1000×. The keys do the same while the pointer is over the view:
+← and → step a move, Page Up and Page Down go by toolpath, Home and End to the ends, Space plays.
+A readout at the top left shows the toolpath and tool, the move with its kind and feed, the tool
+tip's position, the time left, the material removed and the collisions found (click one to go
+there; they are also ringed in the view). Playback stops at a new collision unless told not to.
+**Display…** chooses the toolpaths drawn (none, the current one up to the tool, or all), the
+tool and holder, and the compare tolerance. **Compare** colours the stock by the thickness left
+over the part (height-field simulations): red where it cuts into the part, green on size, yellow
+to purple as more stock is left, with a legend.
+
 ```python
-cc.sim_start(cell=0.25)                 # all toolpaths; or toolpaths=["toolpath.2", ...], mode="voxel"
+cc.sim_start(toolpaths=["toolpath.3"])  # from the stock toolpaths 1 and 2 leave; start_from="stock" for raw
+cc.sim_start(cell=0.25)                 # all toolpaths; mode="voxel" forces voxels
 cc.sim_seek(fraction=0.5)               # or time=seconds
-state = cc.sim_get()                    # time, duration, move, toolpath, removed_volume, events
+cc.sim_jump(to="next_toolpath")         # start, end, previous_toolpath, next/previous_collision
+state = cc.sim_get()                    # time, duration, move, toolpath, segments, removed_volume, events
 cc.sim_speed(speed=50); cc.sim_play()   # plays in the app; sim_pause() stops
-cc.sim_step(moves=10)
+cc.sim_step(moves=-10)                  # back ten moves
+cc.sim_display_set(paths="all", tool=False, stop_on_collision=False)
+print(cc.sim_compare(tolerance=0.02))   # thinnest, thickest, gouged/on-size/stock-left areas
 print(cc.sim_collision_check())         # rapids through material, the shank rubbing
 print(cc.sim_gouge_check(tolerance=0.05))  # cells cut below the part, deepest first
 cc.sim_stop()
 ```
+
+Outside the simulation, selecting a toolpath shows the stock as the program leaves it after
+that toolpath (the in-process stock, in purple), worked out in the background;
+`view_display_set(in_process=False)` shows the stock's outline instead, and
+`setup_stock_in_process_get(id="toolpath.3")` gives its volumes.
 
 Any change to the job ends the simulation; start it again to run the changed program.
 

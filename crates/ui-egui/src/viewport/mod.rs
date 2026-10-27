@@ -3,6 +3,7 @@
 mod gpu;
 mod overlay;
 mod sim;
+mod sim_ui;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -102,6 +103,16 @@ pub struct PickHit {
     pub normal: Option<Vec3>,
 }
 
+/// What an in-process stock was worked out for: (job revision, toolpath, theme).
+type InProcessKey = (u64, String, Theme);
+/// A comparison drawn on the simulated stock: the (stock revision, tolerance bits) it was made
+/// for, and each cell's thickness over the part.
+type Drawn = ((u64, u64), std::sync::Arc<Vec<f32>>);
+/// A comparison being worked out, for that key.
+type DrawnJob = ((u64, u64), std::sync::mpsc::Receiver<Option<Vec<f32>>>);
+/// The trail drawn while simulating: (move it reaches, start, moves).
+type Trail = (usize, Vec3, std::sync::Arc<Vec<CosmicCAM_engine::toolpath::Move>>);
+
 /// Inputs the highlight geometry was last built from.
 type HighlightKey = (Vec<(String, usize)>, Option<(usize, usize, bool)>, u64, Theme);
 
@@ -145,8 +156,20 @@ pub struct Viewport {
     /// Stock being defined, drawn as a see-through box over the scene.
     pub stock_preview: Option<CosmicCAM_geom::Aabb>,
     /// What the simulated stock was last drawn from: (cut revision, marks revision, theme,
-    /// playing).
-    sim_stock_key: Option<(u64, u64, Theme, bool)>,
+    /// playing, the comparison drawn on it).
+    sim_stock_key: Option<(u64, u64, Theme, bool, Option<u64>)>,
+    /// The comparison drawn on the simulated stock: (stock revision, tolerance) it was made
+    /// for and each cell's thickness; and one being worked out.
+    comparison: Option<Drawn>,
+    comparison_job: Option<DrawnJob>,
+    /// The current toolpath up to the tool, drawn while simulating: (move it reaches, start,
+    /// moves).
+    sim_trail: Option<Trail>,
+    /// The in-process stock drawn for the selected toolpath, and one being worked out.
+    in_process: Option<InProcessKey>,
+    in_process_job: Option<(InProcessKey, std::sync::mpsc::Receiver<SceneGeometry>)>,
+    /// The in-process stock is on screen (its outline is then not drawn).
+    in_process_shown: bool,
     /// When the simulated stock was last rebuilt, seconds of app time, and how long to wait
     /// before rebuilding it while playing (longer for a bigger mesh).
     sim_stock_built: f64,
@@ -196,6 +219,12 @@ impl Viewport {
             sim_stock_built: f64::NEG_INFINITY,
             sim_stock_interval: 0.08,
             sim_tool_key: None,
+            comparison: None,
+            comparison_job: None,
+            sim_trail: None,
+            in_process: None,
+            in_process_job: None,
+            in_process_shown: false,
             pending_upload: None,
             animating: false,
         }
@@ -284,12 +313,28 @@ impl Viewport {
             self.paint_stock_preview(&painter, rect, stock, tokens);
         }
         self.paint_edges(&painter, rect, session, tokens);
+        // Where the simulation found collisions, ringed in the error colour.
+        if let Some(sim) = session.sim.as_deref() {
+            let to_screen = self.projector(rect);
+            for p in sim.events.iter().filter_map(|e| to_screen(e.at)) {
+                painter.circle(p, 7.0, tokens.error.gamma_multiply(0.35), egui::Stroke::new(2.0, tokens.error));
+            }
+        }
         if display.wcs {
             self.paint_wcs_labels(&painter, rect, session, tokens);
         }
         view_tools(ui, rect, session, tokens, requests);
         if let Some(sim) = session.sim.as_deref() {
-            playback_bar(ui, rect, sim, session, tokens, requests);
+            let bottom = rect.bottom() - TOOL_MARGIN - TOOL_BUTTON - 10.0;
+            sim_ui::playback(ui, rect, bottom, sim, session.prefs.units, tokens, requests);
+            sim_ui::readout(ui, rect, sim, session, tokens, requests);
+            if sim.compare {
+                let right = if display.view_cube { overlay::cube_rect(rect).left() - 8.0 } else { rect.right() - 10.0 };
+                sim_ui::compare_panel(ui, rect, right, sim, session, tokens, self.comparison_note(sim));
+            }
+            if response.hovered() || response.has_focus() {
+                sim_ui::keys(ui, requests);
+            }
         }
         if display.orientation_triad {
             overlay::paint_triad(&painter, overlay::triad_anchor(rect), &self.shown, tokens);
@@ -552,49 +597,257 @@ impl Viewport {
         }
     }
 
+    /// Colours for the simulated and in-process stock.
+    fn sim_colours(tokens: &Tokens) -> sim::SimColours {
+        sim::SimColours {
+            stock: theme::linear(tokens.stock),
+            cut: theme::linear(theme::blend(tokens.stock, tokens.text, 0.3)),
+            gouge: theme::linear(tokens.error),
+            flutes: theme::linear(tokens.accent),
+            shank: theme::linear(tokens.text_muted),
+            on_size: theme::linear(tokens.success),
+            thin: theme::linear(tokens.warning),
+        }
+    }
+
     /// Uploads the simulated stock when the cut has changed (at most ~12 times a second while
-    /// it plays) and the tool when it has moved; clears both when there is no simulation.
+    /// it plays) and the tool when it has moved. Without a simulation, the in-process stock of
+    /// the selected toolpath takes the stock's place.
     fn update_sim(&mut self, ui: &Ui, session: &Session, tokens: &Tokens) {
-        let Some(gpu) = &mut self.gpu else { return };
+        let colours = Self::sim_colours(tokens);
         let Some(sim) = session.sim.as_deref() else {
-            if self.sim_stock_key.take().is_some() || self.sim_tool_key.take().is_some() {
+            self.sim_trail = None;
+            self.comparison = None;
+            self.comparison_job = None;
+            let had_sim = self.sim_stock_key.take().is_some() | self.sim_tool_key.take().is_some();
+            if had_sim && let Some(gpu) = &mut self.gpu {
                 let empty = SceneGeometry::default();
                 let _ = catch_unwind(AssertUnwindSafe(|| {
                     gpu.set_sim_stock(&empty);
                     gpu.set_sim_tool(&empty);
                 }));
+                self.in_process = None;
+                self.in_process_shown = false;
             }
+            self.update_in_process(ui, session, colours);
             return;
         };
-        let palette = tokens.scene_palette();
-        let colours = sim::SimColours {
-            stock: theme::linear(mix(tokens.part, tokens.warning, 0.35)),
-            cut: palette.part,
-            gouge: theme::linear(tokens.error),
-            flutes: theme::linear(tokens.accent),
-            shank: theme::linear(tokens.text_muted),
-        };
+        if self.in_process.take().is_some() || self.in_process_shown {
+            self.in_process_shown = false;
+            self.in_process_job = None;
+        }
         let now = ui.input(|i| i.time);
-        let key = (sim.stock_revision(), sim.marks_revision, session.prefs.theme, sim.playing);
+        let comparison = self.update_comparison(ui, session, sim);
+        let key = (
+            sim.stock_revision(),
+            sim.marks_revision,
+            session.prefs.theme,
+            sim.playing,
+            comparison.as_ref().map(|c| c.0.0 ^ c.0.1),
+        );
         let due = !sim.playing || now - self.sim_stock_built > self.sim_stock_interval;
+        let Some(gpu) = &mut self.gpu else { return };
         if self.sim_stock_key != Some(key) && due {
-            let g = sim::stock(sim, &colours);
+            let thickness = comparison.as_ref().map(|(k, t)| (t.as_slice(), f64::from_bits(k.1)));
+            let g = sim::stock(sim, &colours, thickness);
             // A big mesh takes a while to build and upload: rebuild it less often while playing.
             self.sim_stock_interval = 0.08 + g.triangles.len() as f64 / 6.0e6;
             let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_stock(&g)));
             self.sim_stock_key = Some(key);
             self.sim_stock_built = now;
         }
-        if let Some((tip, axis, tool)) = sim.pose_at(sim.time) {
-            let tool_key = ((tip + axis * 1000.0) * 1000.0).as_i64vec3().to_array();
-            if self.sim_tool_key != Some(tool_key) {
-                let g = sim::tool(&sim.frame, tip, axis, tool, &colours);
-                let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_tool(&g)));
-                self.sim_tool_key = Some(tool_key);
+        match sim.pose_at(sim.time).filter(|_| sim.show_tool) {
+            Some((tip, axis, tool)) => {
+                let tool_key = ((tip + axis * 1000.0) * 1000.0).as_i64vec3().to_array();
+                if self.sim_tool_key != Some(tool_key) {
+                    let g = sim::tool(&sim.frame, tip, axis, tool, &colours);
+                    let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_tool(&g)));
+                    self.sim_tool_key = Some(tool_key);
+                }
+            }
+            None => {
+                if self.sim_tool_key.take().is_some() {
+                    let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_tool(&SceneGeometry::default())));
+                }
             }
         }
+        self.update_trail(sim, due);
         if sim.playing {
             ui.ctx().request_repaint();
+        }
+    }
+
+    /// The current toolpath's moves up to the tool, when the simulation shows them that way.
+    fn update_trail(&mut self, sim: &CosmicCAM_engine::sim::Sim, due: bool) {
+        use CosmicCAM_engine::toolpath::Move;
+        // The comparison's colours are not hidden under the trail.
+        if sim.show_paths != "done" || sim.compare {
+            self.sim_trail = None;
+            return;
+        }
+        let index = sim.move_at(sim.time);
+        let reached = (index << 8) | ((sim.time.fract() * 255.0) as usize & 0xFF);
+        if self.sim_trail.as_ref().is_some_and(|(r, _, _)| *r == reached) || (!due && self.sim_trail.is_some()) {
+            return;
+        }
+        let Some(current) = sim.moves.get(index) else {
+            self.sim_trail = None;
+            return;
+        };
+        let range = sim.toolpath_moves(current.toolpath);
+        let f = &sim.frame;
+        let start = sim.moves.get(range.start).map_or(Vec3::ZERO, |m| f.world(m.from));
+        let mut moves: Vec<Move> = sim
+            .moves
+            .get(range.start..index)
+            .unwrap_or_default()
+            .iter()
+            .map(|m| Move { kind: m.kind, to: f.world(m.to), feed: 0.0 })
+            .collect();
+        if let Some((tip, _, _)) = sim.pose_at(sim.time) {
+            moves.push(Move { kind: current.kind, to: f.world(tip), feed: 0.0 });
+        }
+        self.sim_trail = Some((reached, start, std::sync::Arc::new(moves)));
+    }
+
+    /// The comparison to draw on the simulated stock, worked out in the background while the
+    /// simulation is paused; None while it is off, playing or not ready.
+    fn update_comparison(&mut self, ui: &Ui, session: &Session, sim: &CosmicCAM_engine::sim::Sim) -> Option<Drawn> {
+        if !sim.compare || sim.voxels.is_some() || sim.playing {
+            return None;
+        }
+        let want = (sim.stock_revision(), sim.compare_tolerance.to_bits());
+        if let Some((key, rx)) = &self.comparison_job {
+            match rx.try_recv() {
+                Ok(found) => {
+                    let key = *key;
+                    self.comparison = found.map(|t| (key, std::sync::Arc::new(t)));
+                    self.comparison_job = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.comparison_job = None,
+            }
+        }
+        if self.comparison.as_ref().is_some_and(|(k, _)| *k == want) {
+            return self.comparison.clone();
+        }
+        if self.comparison_job.is_none() {
+            let trial = session.clone();
+            let work = move || {
+                let sim = trial.sim.as_deref()?;
+                CosmicCAM_engine::sim::compare(&trial, sim).map(|c| c.thickness)
+            };
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let (tx, rx) = std::sync::mpsc::channel();
+                if std::thread::Builder::new()
+                    .name("sim-compare".into())
+                    .spawn(move || {
+                        let _ = tx.send(work());
+                    })
+                    .is_ok()
+                {
+                    self.comparison_job = Some((want, rx));
+                }
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                self.comparison = work().map(|t| (want, std::sync::Arc::new(t)));
+                return self.comparison.clone();
+            }
+        }
+        None
+    }
+
+    /// What the readout says about the comparison while it is not drawn yet.
+    fn comparison_note(&self, sim: &CosmicCAM_engine::sim::Sim) -> Option<&'static str> {
+        let want = (sim.stock_revision(), sim.compare_tolerance.to_bits());
+        if sim.voxels.is_some() {
+            Some("Comparing needs a height-field simulation (toolpaths along one tool axis).")
+        } else if sim.playing {
+            Some("Shown when the simulation is paused.")
+        } else if self.comparison.as_ref().is_some_and(|(k, _)| *k == want) {
+            None
+        } else {
+            Some("Working it out…")
+        }
+    }
+
+    /// The stock as the toolpaths up to the selected one leave it, worked out in the background
+    /// and drawn in the simulated stock's place.
+    fn update_in_process(&mut self, ui: &Ui, session: &Session, colours: sim::SimColours) {
+        let display = session.prefs.display;
+        let want: Option<InProcessKey> = session
+            .view
+            .selection
+            .as_deref()
+            .filter(|_| display.stock && display.in_process && session.job.stock.is_some())
+            .filter(|id| session.job.toolpaths.iter().any(|t| t.id == *id))
+            .map(|id| (session.job.revision, id.to_owned(), session.prefs.theme));
+        let Some(gpu) = &mut self.gpu else { return };
+        let clear = |gpu: &mut gpu::ViewportGpu| {
+            let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_stock(&SceneGeometry::default())));
+        };
+        // A stock worked out for an older job, or for nothing selected now, goes at once.
+        if self.in_process_shown && self.in_process.as_ref().is_none_or(|k| Some(k) != want.as_ref()) {
+            let stale = self.in_process.as_ref().is_none_or(|k| k.0 != session.job.revision) || want.is_none();
+            if stale {
+                clear(gpu);
+                self.in_process_shown = false;
+                self.in_process = None;
+            }
+        }
+        if let Some((key, rx)) = &self.in_process_job {
+            match rx.try_recv() {
+                Ok(g) => {
+                    if Some(key) == want.as_ref() {
+                        let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_stock(&g)));
+                        self.in_process_shown = !g.triangles.is_empty();
+                        self.in_process = Some(key.clone());
+                    }
+                    self.in_process_job = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.in_process_job = None,
+            }
+        }
+        let Some(want) = want else {
+            self.in_process = None;
+            return;
+        };
+        if self.in_process.as_ref() == Some(&want) || self.in_process_job.is_some() {
+            return;
+        }
+        let trial = session.clone();
+        let id = want.1.clone();
+        let work = move || {
+            CosmicCAM_engine::sim::in_process(&trial, &id)
+                .map(|sim| sim::stock(&sim, &colours, None))
+                .unwrap_or_default()
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (tx, rx) = std::sync::mpsc::channel();
+            if std::thread::Builder::new()
+                .name("in-process-stock".into())
+                .spawn(move || {
+                    let _ = tx.send(work());
+                })
+                .is_ok()
+            {
+                self.in_process_job = Some((want, rx));
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let g = work();
+            let _ = catch_unwind(AssertUnwindSafe(|| gpu.set_sim_stock(&g)));
+            self.in_process_shown = !g.triangles.is_empty();
+            self.in_process = Some(want);
         }
     }
 
@@ -678,8 +931,8 @@ impl Viewport {
         ];
         let eye = cam.eye();
         let perspective = cam.projection == CosmicCAM_render::Projection::Perspective;
-        let fill = tokens.accent.gamma_multiply(0.22);
-        let stroke = egui::Stroke::new(1.5, tokens.accent);
+        let fill = tokens.stock.gamma_multiply(0.22);
+        let stroke = egui::Stroke::new(1.5, tokens.stock);
         for (normal, pts) in faces {
             let centre = (pts[0] + pts[2]) * 0.5;
             let towards = if perspective { eye - centre } else { cam.eye_dir() };
@@ -762,7 +1015,8 @@ impl Viewport {
             self.highlight_key = Some(key);
         }
         let preview = self.mode.as_ref().and_then(|m| m.preview);
-        let paths = self.mode.as_ref().map(|m| m.paths.clone()).unwrap_or_default();
+        let mut paths = self.mode.as_ref().map(|m| m.paths.clone()).unwrap_or_default();
+        paths.extend(self.sim_trail.as_ref().map(|(_, start, moves)| (*start, std::sync::Arc::clone(moves))));
         let path_id: Vec<(usize, usize)> =
             paths.iter().map(|(_, moves)| (std::sync::Arc::as_ptr(moves) as usize, moves.len())).collect();
         if preview != self.preview_shown || path_id != self.path_shown {
@@ -852,9 +1106,21 @@ impl Viewport {
             visible_wcs.hash(&mut h);
             h.finish()
         };
-        // While simulating, the cut stock stands in for the part, its box and the toolpaths.
+        // While simulating, the cut stock stands in for the part, its box and the toolpaths
+        // (all the simulated toolpaths are drawn when the simulation asks for them).
         let simulating = session.sim.is_some();
-        let shown_key = shown_key ^ u64::from(simulating);
+        let sim_paths: Vec<&CosmicCAM_engine::toolpath::Toolpath> = session
+            .sim
+            .as_deref()
+            .filter(|sim| sim.show_paths == "all")
+            .map(|sim| {
+                sim.toolpaths.iter().filter_map(|(id, _)| session.job.toolpaths.iter().find(|t| &t.id == id)).collect()
+            })
+            .unwrap_or_default();
+        let shown_key = shown_key
+            ^ u64::from(simulating)
+            ^ (u64::from(self.in_process_shown) << 1)
+            ^ ((sim_paths.len() as u64) << 2);
         let key =
             (session.prefs.theme, session.job.revision, session.job.setup_revision ^ (units << 63), display, shown_key);
         if self.scene_key == Some(key) {
@@ -862,14 +1128,14 @@ impl Viewport {
         }
         let palette = tokens.scene_palette();
         let mut content = SceneGeometry::default();
-        for tp in shown.into_iter().filter(|_| !simulating) {
+        for tp in shown.into_iter().filter(|_| !simulating).chain(sim_paths) {
             content.push_path(tp.start, tp.moves.iter().map(|m| (path_kind(m.kind), m.to)), &palette);
             if tp.multi_axis() {
                 push_tool_axes(&mut content, tp, palette.path_lead);
             }
         }
         if let Some(stock) = session.job.stock {
-            if display.stock && !simulating {
+            if display.stock && !simulating && !self.in_process_shown {
                 content.push_box_edges(&stock, palette.stock_edge);
             }
             content.bounds.include(stock.min);
@@ -1095,96 +1361,6 @@ fn view_tools(ui: &Ui, viewport: Rect, session: &Session, tokens: &Tokens, reque
             });
         }
     }
-}
-
-/// Minutes and seconds.
-fn clock(seconds: f64) -> String {
-    let s = seconds.max(0.0).round() as u64;
-    if s >= 3600 {
-        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
-    } else {
-        format!("{}:{:02}", s / 60, s % 60)
-    }
-}
-
-/// The simulation's controls, floating above the view tools: play or pause, step, a scrubber,
-/// the speed, where it is and what it has found, and close.
-fn playback_bar(
-    ui: &mut Ui,
-    viewport: Rect,
-    sim: &CosmicCAM_engine::sim::Sim,
-    session: &Session,
-    tokens: &Tokens,
-    requests: &mut Vec<Request>,
-) {
-    let size = egui::vec2(640.0_f32.min(viewport.width() - 16.0), 44.0);
-    let at = pos2(viewport.center().x - size.x / 2.0, viewport.bottom() - TOOL_MARGIN - TOOL_BUTTON - 10.0 - size.y);
-    let bar = Rect::from_min_size(at, size);
-    let mut child =
-        ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    crate::ui_kit::Container::new(crate::ui_kit::Surface::Overlay).frame(tokens).show(&mut child, |ui| {
-        ui.set_min_width(size.x - 16.0);
-        ui.spacing_mut().item_spacing.x = 8.0;
-        let icon_button = |ui: &mut Ui, icon: &str, tip: &str| -> bool {
-            let (rect, response) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), Sense::click());
-            if response.hovered() {
-                ui.painter().rect_filled(rect, 4.0, tokens.hover_bg);
-            }
-            crate::ribbon::paint_named_icon(ui, rect.shrink(3.0), icon, tokens, true);
-            response.on_hover_text(tip).clicked()
-        };
-        let (icon, tip, command) = if sim.playing {
-            ("sim_pause", "Pause (Space)", "sim.pause")
-        } else {
-            ("sim_play", "Play (Space)", "sim.play")
-        };
-        if icon_button(ui, icon, tip) {
-            requests.push((command.into(), Value::Null));
-        }
-        if icon_button(ui, "sim_step", "Next move") {
-            requests.push(("sim.step".into(), Value::Null));
-        }
-        let mut time = sim.time;
-        let slider = egui::Slider::new(&mut time, 0.0..=sim.duration.max(1.0e-6)).show_value(false);
-        if ui.add_sized(egui::vec2(220.0, 20.0), slider).changed() {
-            requests.push(("sim.seek".into(), serde_json::json!({ "time": time })));
-        }
-        ui.label(mono(format!("{} / {}", clock(sim.time), clock(sim.duration)), tokens));
-        if ui.button(format!("{}×", trim_speed(sim.speed))).on_hover_text("Playback speed: click for faster").clicked()
-        {
-            requests.push(("sim.speed".into(), Value::Null));
-        }
-        let current = sim.current_toolpath().map_or(String::new(), |(_, name)| name.clone());
-        ui.label(egui::RichText::new(current).color(tokens.text_muted));
-        if !sim.events.is_empty() {
-            let n = sim.events.len();
-            ui.label(
-                egui::RichText::new(format!("{n} collision{}", if n == 1 { "" } else { "s" })).color(tokens.warning),
-            )
-            .on_hover_text("Rapids through material or cuts deeper than the flutes; run Collisions for the list");
-        }
-        if let Some(n) = sim.gouges.as_ref().map(Vec::len).or(sim.voxel_gouges.as_ref().map(Vec::len)) {
-            let colour = if n == 0 { tokens.success } else { tokens.error };
-            let text = if n == 0 { "No gouges".to_owned() } else { format!("{n} gouged cells") };
-            ui.label(egui::RichText::new(text).color(colour));
-        }
-        let _ = session;
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("×").on_hover_text("Close the simulation").clicked() {
-                requests.push(("sim.stop".into(), Value::Null));
-            }
-        });
-    });
-}
-
-/// A speed without needless decimals: 0.5, 2, 25.
-fn trim_speed(v: f64) -> String {
-    if (v - v.round()).abs() < 1.0e-9 { format!("{v:.0}") } else { format!("{v:.1}") }
-}
-
-/// Monospaced text, for clocks that should not jitter as digits change.
-fn mono(text: String, tokens: &Tokens) -> egui::RichText {
-    egui::RichText::new(text).monospace().color(tokens.text)
 }
 
 /// Short lines up the tool axis along a multi-axis toolpath's cuts, spaced so about 800 show,

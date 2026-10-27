@@ -229,11 +229,21 @@ class ClientTests(unittest.TestCase):
         cc = CosmicCAM(app.port, TOKEN, timeout=5)
         cc.sim_seek(fraction=0.5)
         cc.sim_gouge_check(tolerance=0.02)
+        cc.sim_start(toolpaths=["toolpath.3"], start_from="stock")
+        cc.sim_jump(to="next_collision")
+        cc.sim_display_set(paths="all", stop_on_collision=False)
+        cc.sim_compare(tolerance=0.02)
+        cc.setup_stock_in_process_get(id="toolpath.2")
         self.assertEqual(
             [r["params"] for r in app.requests],
             [
                 {"command": "sim.seek", "params": {"fraction": 0.5}},
                 {"command": "sim.gouge.check", "params": {"tolerance": 0.02}},
+                {"command": "sim.start", "params": {"toolpaths": ["toolpath.3"], "start_from": "stock"}},
+                {"command": "sim.jump", "params": {"to": "next_collision"}},
+                {"command": "sim.display.set", "params": {"paths": "all", "stop_on_collision": False}},
+                {"command": "sim.compare", "params": {"tolerance": 0.02}},
+                {"command": "setup.stock.in_process.get", "params": {"id": "toolpath.2"}},
             ],
         )
         cc.close()

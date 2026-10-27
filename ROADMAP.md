@@ -410,3 +410,18 @@ Crash reports, `CosmicCAM-cli`, job file format.
   alike; `split` keeps both sides as two toolpaths. Drilling trims keep whole holes.
 - Trim panel: draw the boundary in the viewport with a live preview of the result, edit or
   remove earlier trims; explorer right-click Trim… / Remove trims, ✂ on trimmed toolpaths.
+## Simulation and in-process stock (2026-10-26)
+
+- In-process stock: selecting a toolpath shows the stock as the program leaves it after that
+  toolpath (worked out in the background); `setup.stock.in_process.get`, display key
+  `in_process`. The stock is purple throughout (outline, in-process, simulation).
+- Simulating chosen toolpaths starts from the stock the earlier toolpaths leave (`start_from`);
+  explorer Simulate and Simulate up to here.
+- Playback: a timeline with a band per toolpath and collision ticks (hover, click, drag), start /
+  previous toolpath / step back / play / step / next toolpath / end, a 0.5×–1000× speed slider,
+  keys (arrows, Page Up/Down, Home/End); `sim.jump`.
+- Readout of toolpath, tool, move kind and feed, tool tip position, time left, material removed
+  and collisions (click to go there, ringed in the view); playback stops at a new collision.
+- `sim.display.set`: toolpaths drawn (none, the current one up to the tool, all), tool and
+  holder, stop at collisions. `sim.compare`: the stock coloured by thickness over the part (cut
+  in, on size, thin to thick stock) with a legend and a summary.

@@ -855,7 +855,7 @@ class Commands:
         params = {"id": id, "visible": visible}
         return self.execute("view.wcs.visibility.set", {k: v for k, v in params.items() if v is not None})
 
-    def view_display_set(self, *, grid: Optional[bool] = None, wcs: Optional[bool] = None, view_cube: Optional[bool] = None, orientation_triad: Optional[bool] = None, stock: Optional[bool] = None, edges: Optional[bool] = None, readout: Optional[bool] = None, origin: Optional[bool] = None) -> Any:
+    def view_display_set(self, *, grid: Optional[bool] = None, wcs: Optional[bool] = None, view_cube: Optional[bool] = None, orientation_triad: Optional[bool] = None, stock: Optional[bool] = None, edges: Optional[bool] = None, readout: Optional[bool] = None, origin: Optional[bool] = None, in_process: Optional[bool] = None) -> Any:
         """Show or hide viewport elements; omitted elements are kept.
 
         Args:
@@ -867,13 +867,14 @@ class Commands:
             edges: Model outline edges.
             readout: Projection and frame-rate readout.
             origin: The model origin's triad (default hidden).
+            in_process: Show the stock as cut by the toolpaths up to the selected one (default on).
 
         Returns:
             display {grid, wcs, view_cube, orientation_triad, stock, edges, readout}
 
         Command: ``view.display.set``
         """
-        params = {"grid": grid, "wcs": wcs, "view_cube": view_cube, "orientation_triad": orientation_triad, "stock": stock, "edges": edges, "readout": readout, "origin": origin}
+        params = {"grid": grid, "wcs": wcs, "view_cube": view_cube, "orientation_triad": orientation_triad, "stock": stock, "edges": edges, "readout": readout, "origin": origin, "in_process": in_process}
         return self.execute("view.display.set", {k: v for k, v in params.items() if v is not None})
 
     def view_display_get(self) -> Any:
@@ -2573,6 +2574,20 @@ class Commands:
         """
         return self.execute("setup.stock.get")
 
+    def setup_stock_in_process_get(self, *, id: str) -> Any:
+        """The stock as the toolpaths up to one leave it; the viewport shows it for the selected toolpath.
+
+        Args:
+            id: Toolpath id: the stock after it, e.g. toolpath.3.
+
+        Returns:
+            {id, removed_volume, remaining_volume, cell, mode, events}
+
+        Command: ``setup.stock.in_process.get``
+        """
+        params = {"id": id}
+        return self.execute("setup.stock.in_process.get", {k: v for k, v in params.items() if v is not None})
+
     def tool_create(self, *, type: Optional[Literal["flat", "ball", "bull", "tapered_ball", "lollipop", "chamfer", "engraving", "dovetail", "slot_mill", "radius_mill", "face_mill", "thread_mill", "drill", "spot_drill", "center_drill", "reamer", "tap", "boring_bar", "counterbore", "countersink"]] = None, number: Optional[int] = None, corner_radius: Optional[float] = None, tip_angle: Optional[float] = None, tip_diameter: Optional[float] = None, tip_length: Optional[float] = None, taper_angle: Optional[float] = None, neck_diameter: Optional[float] = None, shoulder_length: Optional[float] = None, thread_pitch: Optional[float] = None, hand: Optional[Literal["right", "left"]] = None, name: Optional[str] = None, diameter: Optional[float] = None, flutes: Optional[int] = None, flute_length: Optional[float] = None, overall_length: Optional[float] = None, shank_diameter: Optional[float] = None, material: Optional[Literal["carbide", "hss", "cobalt", "ceramic", "diamond", "cbn"]] = None, coating: Optional[str] = None, coolant_through: Optional[bool] = None, vendor: Optional[str] = None, product_id: Optional[str] = None, holder: Optional[str] = None, spindle_rpm: Optional[float] = None, feed: Optional[float] = None, plunge_feed: Optional[float] = None, stepover: Optional[float] = None, stepdown: Optional[float] = None, length_offset: Optional[int] = None, diameter_offset: Optional[int] = None, notes: Optional[str] = None, machine: Optional[str] = None) -> Any:
         """Add a cutting tool to the active machine's library.
 
@@ -3877,20 +3892,21 @@ class Commands:
         params = {"units": units}
         return self.execute("settings.units.set", {k: v for k, v in params.items() if v is not None})
 
-    def sim_start(self, *, toolpaths: Optional[Sequence[str]] = None, cell: Optional[float] = None, mode: Optional[Literal["auto", "height", "voxel"]] = None) -> Any:
+    def sim_start(self, *, toolpaths: Optional[Sequence[str]] = None, cell: Optional[float] = None, mode: Optional[Literal["auto", "height", "voxel"]] = None, start_from: Optional[Literal["previous", "stock"]] = None) -> Any:
         """Start the material removal simulation from the beginning.
 
         Args:
             toolpaths: Toolpaths to run, in order (default: all).
             cell: Stock grid spacing, mm (default: a quarter of the smallest tool radius; voxels: a quarter, coarser for big stock) (0 to 100 mm).
             mode: Stock model: a height field (one tool axis), voxels (any axis), or auto: voxels when the tool tilts — one of auto, height, voxel.
+            start_from: The stock to start from: as the toolpaths before the first chosen leave it (previous, the default) or the raw stock — one of previous, stock.
 
         Returns:
             the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
         Command: ``sim.start``
         """
-        params = {"toolpaths": toolpaths, "cell": cell, "mode": mode}
+        params = {"toolpaths": toolpaths, "cell": cell, "mode": mode, "start_from": start_from}
         return self.execute("sim.start", {k: v for k, v in params.items() if v is not None})
 
     def sim_play(self) -> Any:
@@ -3955,6 +3971,51 @@ class Commands:
         """
         params = {"speed": speed}
         return self.execute("sim.speed", {k: v for k, v in params.items() if v is not None})
+
+    def sim_jump(self, *, to: Literal["start", "end", "next_toolpath", "previous_toolpath", "next_collision", "previous_collision"]) -> Any:
+        """Go to the start or end, the next or previous toolpath, or the next or previous collision.
+
+        Args:
+            to: Where to go — one of start, end, next_toolpath, previous_toolpath, next_collision, previous_collision.
+
+        Returns:
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
+
+        Command: ``sim.jump``
+        """
+        params = {"to": to}
+        return self.execute("sim.jump", {k: v for k, v in params.items() if v is not None})
+
+    def sim_display_set(self, *, paths: Optional[Literal["none", "done", "all"]] = None, tool: Optional[bool] = None, stop_on_collision: Optional[bool] = None) -> Any:
+        """What the simulation shows and when it stops: toolpaths, the tool, stopping at collisions.
+
+        Args:
+            paths: Toolpaths drawn: none, the current one up to the tool (done), or all — one of none, done, all.
+            tool: Draw the tool and holder.
+            stop_on_collision: Pause when playback finds a collision.
+
+        Returns:
+            the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
+
+        Command: ``sim.display.set``
+        """
+        params = {"paths": paths, "tool": tool, "stop_on_collision": stop_on_collision}
+        return self.execute("sim.display.set", {k: v for k, v in params.items() if v is not None})
+
+    def sim_compare(self, *, on: Optional[bool] = None, tolerance: Optional[float] = None) -> Any:
+        """Colour the stock by what is left over the part: on size, stock left, or cut into the part.
+
+        Args:
+            on: Show the comparison (default true); false hides it.
+            tolerance: Stock within this of the part counts as on size, mm (default 0.05) (0 to 100 mm).
+
+        Returns:
+            {tolerance, thinnest, thickest, gouged_area, on_size_area, stock_left_area}, or null when hidden
+
+        Command: ``sim.compare``
+        """
+        params = {"on": on, "tolerance": tolerance}
+        return self.execute("sim.compare", {k: v for k, v in params.items() if v is not None})
 
     def sim_stop(self) -> Any:
         """Leave the simulation and show the part again.

@@ -13,11 +13,13 @@ use crate::sim::{self, Sim};
 const SPEEDS: [f64; 8] = [1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0];
 const STATE: &str = "the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}";
 const MODES: &[&str] = &["auto", "height", "voxel"];
+const STARTS: &[&str] = &["previous", "stock"];
+const JUMPS: &[&str] = &["start", "end", "next_toolpath", "previous_toolpath", "next_collision", "previous_collision"];
 
 /// The simulation, started on all toolpaths if none is open.
 fn ensure(s: &mut Session) -> EngineResult<&mut Sim> {
     if s.sim.is_none() {
-        s.sim = Some(Box::new(Sim::new(s, &[], None, None)?));
+        s.sim = Some(Box::new(Sim::new(s, &[], None, None, false)?));
     }
     s.sim.as_deref_mut().ok_or_else(|| EngineError::Internal("simulation".into()))
 }
@@ -55,6 +57,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamKind::Choice(MODES),
                 "Stock model: a height field (one tool axis), voxels (any axis), or auto: voxels when the tool tilts",
             ),
+            Param::optional(
+                "start_from",
+                ParamKind::Choice(STARTS),
+                "The stock to start from: as the toolpaths before the first chosen leave it (previous, the default) \
+                 or the raw stock",
+            ),
         ],
         returns: STATE,
         enabled: always,
@@ -62,7 +70,15 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             let ids = params::str_list(p, "toolpaths")?;
             let cell = params::opt_f64(p, "cell", 0.0, 100.0)?;
             let mode = params::opt_str(p, "mode")?;
-            s.sim = Some(Box::new(Sim::new(s, &ids, cell, mode)?));
+            let previous = params::opt_str(p, "start_from")?.unwrap_or("previous") == "previous";
+            // Display choices carry over from the simulation open before.
+            let keep = s.sim.as_deref().map(|o| (o.stop_on_collision, o.show_paths, o.show_tool, o.compare_tolerance));
+            let mut sim = Sim::new(s, &ids, cell, mode, previous)?;
+            if let Some((stop, paths, tool, tolerance)) = keep {
+                (sim.stop_on_collision, sim.show_paths, sim.show_tool, sim.compare_tolerance) =
+                    (stop, paths, tool, tolerance);
+            }
+            s.sim = Some(Box::new(sim));
             Ok(state(s))
         },
     },
@@ -169,6 +185,122 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             sim.speed =
                 speed.unwrap_or_else(|| SPEEDS.iter().copied().find(|v| *v > sim.speed + 1.0e-9).unwrap_or(SPEEDS[0]));
             Ok(state(s))
+        },
+    },
+    CommandSpec {
+        id: "sim.jump",
+        label: "Jump",
+        tooltip: "Go to the start or end, the next or previous toolpath, or the next or previous collision",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[Param::required("to", ParamKind::Choice(JUMPS), "Where to go")],
+        returns: STATE,
+        enabled: always,
+        run: |s, p| {
+            let to = params::req_str(p, "to")?.to_owned();
+            let sim = ensure(s)?;
+            sim.playing = false;
+            let now = sim.time;
+            let starts: Vec<f64> = sim.segments().iter().map(|(a, _)| *a).collect();
+            let events: Vec<f64> = sim.events.iter().map(|e| e.time).collect();
+            let after = |times: &[f64]| times.iter().copied().find(|t| *t > now + 1.0e-6);
+            let before = |times: &[f64]| times.iter().rev().copied().find(|t| *t < now - 1.0e-6);
+            let target = match to.as_str() {
+                "start" => Some(0.0),
+                "end" => Some(sim.duration),
+                "next_toolpath" => after(&starts).or(Some(sim.duration)),
+                "previous_toolpath" => before(&starts).or(Some(0.0)),
+                "next_collision" => {
+                    // Collisions ahead are found by cutting on to them.
+                    let mut ahead = sim.clone();
+                    ahead.stop_on_collision = true;
+                    let found = ahead.events.len();
+                    ahead.seek(ahead.duration);
+                    ahead.events.get(found).map(|e| e.time).or_else(|| after(&events))
+                }
+                "previous_collision" => before(&events),
+                _ => None,
+            };
+            match target {
+                Some(t) => sim.seek(t),
+                None => return Err(EngineError::InvalidParams(format!("there is no {}", to.replace('_', " ")))),
+            }
+            Ok(state(s))
+        },
+    },
+    CommandSpec {
+        id: "sim.display.set",
+        label: "Simulation display",
+        tooltip: "What the simulation shows and when it stops: toolpaths, the tool, stopping at collisions",
+        placement: None,
+        icon: None,
+        shortcut: None,
+        params: &[
+            Param::optional(
+                "paths",
+                ParamKind::Choice(sim::PATH_DISPLAYS),
+                "Toolpaths drawn: none, the current one up to the tool (done), or all",
+            ),
+            Param::optional("tool", ParamKind::Bool, "Draw the tool and holder"),
+            Param::optional("stop_on_collision", ParamKind::Bool, "Pause when playback finds a collision"),
+        ],
+        returns: STATE,
+        enabled: always,
+        run: |s, p| {
+            let paths = params::opt_str(p, "paths")?;
+            let tool = params::opt_bool(p, "tool")?;
+            let stop = params::opt_bool(p, "stop_on_collision")?;
+            let sim = ensure(s)?;
+            if let Some(paths) = paths {
+                sim.show_paths = sim::PATH_DISPLAYS.iter().copied().find(|d| *d == paths).unwrap_or("done");
+            }
+            if let Some(tool) = tool {
+                sim.show_tool = tool;
+            }
+            if let Some(stop) = stop {
+                sim.stop_on_collision = stop;
+            }
+            Ok(state(s))
+        },
+    },
+    CommandSpec {
+        id: "sim.compare",
+        label: "Compare",
+        tooltip: "Colour the stock by what is left over the part: on size, stock left, or cut into the part",
+        placement: Some(Placement::large(RibbonTab::Simulation, "Verify")),
+        icon: None,
+        shortcut: None,
+        params: &[
+            Param::optional("on", ParamKind::Bool, "Show the comparison (default true); false hides it"),
+            Param::optional(
+                "tolerance",
+                TOLERANCE,
+                "Stock within this of the part counts as on size, mm (default 0.05)",
+            ),
+        ],
+        returns: "{tolerance, thinnest, thickest, gouged_area, on_size_area, stock_left_area}, or null when hidden",
+        enabled: always,
+        run: |s, p| {
+            let on = params::opt_bool(p, "on")?.unwrap_or(true);
+            let tolerance = params::opt_f64(p, "tolerance", 0.0, 100.0)?;
+            let sim = ensure(s)?;
+            sim.compare = on;
+            if let Some(t) = tolerance {
+                sim.compare_tolerance = t;
+            }
+            if !on {
+                return Ok(Value::Null);
+            }
+            if sim.voxels.is_some() {
+                sim.compare = false;
+                return Err(EngineError::NotSupported(
+                    "comparing voxel stock with the part; simulate with mode \"height\" (one tool axis)".into(),
+                ));
+            }
+            let sim = s.sim.as_deref().ok_or_else(|| EngineError::Internal("simulation".into()))?;
+            let c = sim::compare(s, sim).ok_or_else(|| EngineError::Internal("comparison".into()))?;
+            Ok(sim::comparison_report(sim, &c, sim.compare_tolerance))
         },
     },
     CommandSpec {

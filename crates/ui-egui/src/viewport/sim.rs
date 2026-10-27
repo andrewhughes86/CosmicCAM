@@ -15,12 +15,31 @@ const MAX_DRAWN: usize = 400;
 const MAX_DRAWN_VOXELS: f64 = 8.0e6;
 
 /// Colours for the simulated stock.
+#[derive(Clone, Copy)]
 pub struct SimColours {
     pub stock: Rgba,
     pub cut: Rgba,
     pub gouge: Rgba,
     pub flutes: Rgba,
     pub shank: Rgba,
+    /// Comparing with the part: stock within the tolerance of the part, and a thin skin left.
+    pub on_size: Rgba,
+    pub thin: Rgba,
+}
+
+/// Stock thickness over the part (mm) at which the comparison colour reaches the stock colour.
+const COMPARE_FAR: f64 = 2.0;
+
+/// The comparison colour for `t` mm of stock over the part.
+fn compare_colour(t: f64, tolerance: f64, c: &SimColours) -> Rgba {
+    if t < -tolerance {
+        c.gouge
+    } else if t <= tolerance {
+        c.on_size
+    } else {
+        let k = (((t - tolerance) / (COMPARE_FAR - tolerance).max(1.0e-6)).clamp(0.0, 1.0)) as f32;
+        std::array::from_fn(|i| c.thin[i] + (c.stock[i] - c.thin[i]) * k)
+    }
 }
 
 fn world_normal(f: &SimFrame, n: DVec3) -> Vec3 {
@@ -28,8 +47,9 @@ fn world_normal(f: &SimFrame, n: DVec3) -> Vec3 {
 }
 
 /// The stock as cut so far: a smooth top surface over the height field, the walls around it
-/// and its bottom. Cut areas, uncut stock and gouges get their own colours.
-pub fn stock(sim: &Sim, c: &SimColours) -> SceneGeometry {
+/// and its bottom. Cut areas, uncut stock and gouges get their own colours; with `compare`
+/// (each cell's thickness over the part, and the tolerance) the top is coloured by it instead.
+pub fn stock(sim: &Sim, c: &SimColours, compare: Option<(&[f32], f64)>) -> SceneGeometry {
     if let Some(v) = &sim.voxels {
         return voxel_stock(sim, v, c);
     }
@@ -62,6 +82,7 @@ pub fn stock(sim: &Sim, c: &SimColours) -> SceneGeometry {
                 (cj.saturating_sub(step.max(1)), (cj + step).min(ny).max(cj.saturating_sub(step.max(1)) + 1));
             let (mut low, mut sum, mut count) = (f64::INFINITY, 0.0, 0.0);
             let mut gouge = false;
+            let mut thinnest = f64::INFINITY;
             for j in j0..j1.min(ny) {
                 for i in i0..i1.min(nx) {
                     if let Some(hz) = z.height(i, j) {
@@ -70,6 +91,9 @@ pub fn stock(sim: &Sim, c: &SimColours) -> SceneGeometry {
                         count += 1.0;
                     }
                     gouge |= gouged.get(j * nx + i).copied().unwrap_or(false);
+                    if let Some(t) = compare.and_then(|(t, _)| t.get(j * nx + i)).filter(|t| t.is_finite()) {
+                        thinnest = thinnest.min(f64::from(*t));
+                    }
                 }
             }
             let low = match (step, count > 0.0) {
@@ -81,7 +105,12 @@ pub fn stock(sim: &Sim, c: &SimColours) -> SceneGeometry {
                 *slot = low;
             }
             if let Some(slot) = colour.get_mut(v * w + u) {
-                *slot = if gouge {
+                *slot = if let Some((_, tolerance)) = compare.filter(|_| thinnest.is_finite()) {
+                    compare_colour(thinnest, tolerance, c)
+                } else if compare.is_some() {
+                    // No part below: all of it is stock to remove.
+                    c.stock
+                } else if gouge {
                     c.gouge
                 } else if low < top - 1.0e-3 {
                     c.cut

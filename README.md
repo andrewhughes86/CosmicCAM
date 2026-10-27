@@ -67,8 +67,13 @@ simulation yet, so **check its G-code before running it on a machine**.
 - **2D contour:** follow edges or a face outline at depth with radial and axial
   passes, stock to leave, leads, ramps, feed optimization, an entry point and a tolerance that
   follows true circles; set up in a panel with a live preview.
-- **Simulation:** play the program against the stock in machine time (Simulation tab, or Space),
-  scrub, step and change speed; gouge check (cuts below the part, shown in red) and collision
+- **In-process stock:** select a toolpath to see the stock (in purple) as the program leaves it
+  after that toolpath.
+- **Simulation:** play the program against the stock in machine time (Simulation tab, or Space)
+  on a timeline of its toolpaths with collisions marked; step by move or toolpath, change speed
+  from 0.5× to 1000×, follow the tool in a readout (move, feed, position, time left, material
+  removed), stop at collisions, simulate one toolpath from the stock the earlier ones leave, and
+  compare the result with the part (on size, stock left, cut in); gouge check (cuts below the part, shown in red) and collision
   check (rapids through material, cuts deeper than the flutes, the shank rubbing). A height field
   for one tool axis, voxels when the tool tilts; flat and ball end mills, with round cuts (domes,
   bores, scallops) drawn smooth.

@@ -2186,6 +2186,65 @@ fn copy_and_paste_within_and_between_jobs() {
 }
 
 #[test]
+fn simulating_one_toolpath_starts_from_the_stock_before_it() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("toolpath.face", &json!({"stepover": 4})).is_ok());
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom]})).is_ok());
+    let raw = 106.0 * 66.0 * 45.0;
+    let vol = |v: &Value| v["remaining_volume"].as_f64().unwrap_or(0.0);
+    // From the stock the facing left: the top 3 mm are already gone.
+    let st = s.execute("sim.start", &json!({"toolpaths": ["toolpath.2"]})).unwrap_or_default();
+    assert_eq!(st["toolpaths"], json!(["toolpath.2"]));
+    assert!(((raw - vol(&st)) - 106.0 * 66.0 * 3.0).abs() / raw < 0.02, "{}", vol(&st));
+    // From the raw stock when asked.
+    let st = s.execute("sim.start", &json!({"toolpaths": ["toolpath.2"], "start_from": "stock"})).unwrap_or_default();
+    assert!((vol(&st) - raw).abs() / raw < 0.02);
+    // The in-process stock after each toolpath shrinks as the program goes on.
+    let after = |s: &mut Session, id: &str| {
+        let r = s.execute("setup.stock.in_process.get", &json!({ "id": id }));
+        assert!(r.is_ok(), "{r:?}");
+        vol(&r.unwrap_or_default())
+    };
+    let (one, two) = (after(&mut s, "toolpath.1"), after(&mut s, "toolpath.2"));
+    assert!(one < raw && two < one, "{raw} {one} {two}");
+    assert!(s.execute("setup.stock.in_process.get", &json!({"id": "toolpath.9"})).is_err());
+}
+
+#[test]
+fn simulation_jumps_compares_and_keeps_its_display_choices() {
+    let mut s = sample_with_tool();
+    let bottom = base_bottom(&mut s);
+    assert!(s.execute("toolpath.face", &json!({"stepover": 4})).is_ok());
+    assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom]})).is_ok());
+    let st = s.execute("sim.start", &json!({})).unwrap_or_default();
+    let segments = st["segments"].as_array().cloned().unwrap_or_default();
+    assert_eq!(segments.len(), 2);
+    let second = segments[1][0].as_f64().unwrap_or(0.0);
+    let st = s.execute("sim.jump", &json!({"to": "next_toolpath"})).unwrap_or_default();
+    assert!((st["time"].as_f64().unwrap_or(0.0) - second).abs() < 1e-6);
+    assert_eq!(st["toolpath"], "toolpath.2");
+    let st = s.execute("sim.jump", &json!({"to": "previous_toolpath"})).unwrap_or_default();
+    assert_eq!(st["time"].as_f64(), Some(0.0));
+    let st = s.execute("sim.jump", &json!({"to": "end"})).unwrap_or_default();
+    assert_eq!(st["time"], st["duration"]);
+    assert!(s.execute("sim.jump", &json!({"to": "next_collision"})).is_err(), "nothing collides");
+    assert!(s.execute("sim.jump", &json!({"to": "sideways"})).is_err());
+    // At the end, the comparison: no gouges, stock left on the part (the contour leaves the top).
+    let c = s.execute("sim.compare", &json!({"tolerance": 0.1}));
+    assert!(c.is_ok(), "{c:?}");
+    let c = c.unwrap_or_default();
+    assert!(c["thinnest"].as_f64().unwrap_or(-1.0) >= -0.1, "{c}");
+    assert!(c["stock_left_area"].as_f64().unwrap_or(0.0) > 0.0 && c["on_size_area"].as_f64().unwrap_or(0.0) > 0.0);
+    // Display choices stay when the simulation starts again.
+    let d = s.execute("sim.display.set", &json!({"paths": "all", "tool": false, "stop_on_collision": false}));
+    assert!(d.is_ok());
+    let st = s.execute("sim.start", &json!({"toolpaths": ["toolpath.1"]})).unwrap_or_default();
+    assert_eq!((st["show_paths"].clone(), st["show_tool"].clone()), (json!("all"), json!(false)));
+    assert_eq!(st["stop_on_collision"], false);
+}
+
+#[test]
 fn simulation_plays_seeks_and_removes_material() {
     let mut s = sample_with_tool();
     assert!(s.execute("sim.play", &Value::Null).is_err(), "nothing to simulate yet");
@@ -2273,6 +2332,26 @@ fn simulation_finds_gouges_and_rapids_through_material() {
     let c = s.execute("sim.collision.check", &Value::Null).unwrap_or_default();
     let kinds: Vec<&str> = c["events"].as_array().into_iter().flatten().filter_map(|e| e["kind"].as_str()).collect();
     assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == "rapid_in_material"), "{c}");
+    // Playing stops at the first collision, and the next one can be jumped to.
+    let first = c["events"][0]["time"].as_f64().unwrap_or(0.0);
+    assert!(s.execute("sim.start", &json!({})).is_ok());
+    if let Some(sim) = s.sim.as_deref_mut() {
+        sim.playing = true;
+        sim.speed = 50.0;
+        for _ in 0..100_000 {
+            sim.tick(0.05);
+            if !sim.playing {
+                break;
+            }
+        }
+        assert!(!sim.playing && sim.time < sim.duration, "stopped before the end");
+        assert_eq!(sim.events.len(), 1);
+        assert!((sim.time - first).abs() < 0.05 * 50.0 + 1e-6, "{} {first}", sim.time);
+    }
+    let st = s.execute("sim.jump", &json!({"to": "start"})).unwrap_or_default();
+    assert_eq!(st["events"], json!([]));
+    let st = s.execute("sim.jump", &json!({"to": "next_collision"})).unwrap_or_default();
+    assert!((st["time"].as_f64().unwrap_or(0.0) - first).abs() < 1e-6, "{st}");
     // One deep pass with an 18 mm flute: the shank rubs.
     assert!(s.execute("toolpath.remove", &json!({"id": "toolpath.2"})).is_ok());
     assert!(s.execute("toolpath.contour", &json!({"id": "toolpath.1", "geometry": [bottom]})).is_ok());
@@ -2633,7 +2712,7 @@ fn tilting_tools_are_simulated_in_voxels() {
     );
     assert!(s.execute("toolpath.contour", &json!({"geometry": [bottom], "tool": 1})).is_ok());
     assert!(s.execute("machine.activate", &json!({"id": "machine.2"})).is_ok());
-    let sim = crate::sim::Sim::new(&s, &[], None, None);
+    let sim = crate::sim::Sim::new(&s, &[], None, None, false);
     let tools =
         sim.map(|x| x.tools.iter().map(|t| (t.number, t.ball, t.radius)).collect::<Vec<_>>()).unwrap_or_default();
     assert!(tools.contains(&(1, true, 3.0)) && tools.contains(&(1, false, 5.0)), "{tools:?}");

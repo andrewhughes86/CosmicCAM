@@ -502,16 +502,43 @@ surface (not just inside or outside), so domes, bores and scallops are drawn smo
 cells; its default cell is a quarter of the smallest tool radius, coarser when the stock would
 need more than about 8 million cells.
 
+Simulating chosen toolpaths starts from the stock the toolpaths before them leave
+(`start_from="previous"`, the default), so a finishing toolpath is seen cutting what the roughing
+left; `start_from="stock"` starts from the raw stock. In the explorer, right-click a toolpath and
+choose **Simulate** (that one alone) or **Simulate up to here**.
+
+In the app the simulation has a timeline of the program, a band per toolpath with collisions
+marked in red (hover for which toolpath runs, click or drag to go there), and under it: start,
+previous toolpath, back a move, play/pause, forward a move, next toolpath, end, the time and a
+playback speed from 0.5× to 1000×. The keys do the same while the pointer is over the view:
+← and → step a move, Page Up and Page Down go by toolpath, Home and End to the ends, Space plays.
+A readout at the top left shows the toolpath and tool, the move with its kind and feed, the tool
+tip's position, the time left, the material removed and the collisions found (click one to go
+there; they are also ringed in the view). Playback stops at a new collision unless told not to.
+**Display…** chooses the toolpaths drawn (none, the current one up to the tool, or all), the
+tool and holder, and the compare tolerance. **Compare** colours the stock by the thickness left
+over the part (height-field simulations): red where it cuts into the part, green on size, yellow
+to purple as more stock is left, with a legend.
+
 ```python
-cc.sim_start(cell=0.25)                 # all toolpaths; or toolpaths=["toolpath.2", ...], mode="voxel"
+cc.sim_start(toolpaths=["toolpath.3"])  # from the stock toolpaths 1 and 2 leave; start_from="stock" for raw
+cc.sim_start(cell=0.25)                 # all toolpaths; mode="voxel" forces voxels
 cc.sim_seek(fraction=0.5)               # or time=seconds
-state = cc.sim_get()                    # time, duration, move, toolpath, removed_volume, events
+cc.sim_jump(to="next_toolpath")         # start, end, previous_toolpath, next/previous_collision
+state = cc.sim_get()                    # time, duration, move, toolpath, segments, removed_volume, events
 cc.sim_speed(speed=50); cc.sim_play()   # plays in the app; sim_pause() stops
-cc.sim_step(moves=10)
+cc.sim_step(moves=-10)                  # back ten moves
+cc.sim_display_set(paths="all", tool=False, stop_on_collision=False)
+print(cc.sim_compare(tolerance=0.02))   # thinnest, thickest, gouged/on-size/stock-left areas
 print(cc.sim_collision_check())         # rapids through material, the shank rubbing
 print(cc.sim_gouge_check(tolerance=0.05))  # cells cut below the part, deepest first
 cc.sim_stop()
 ```
+
+Outside the simulation, selecting a toolpath shows the stock as the program leaves it after
+that toolpath (the in-process stock, in purple), worked out in the background;
+`view_display_set(in_process=False)` shows the stock's outline instead, and
+`setup_stock_in_process_get(id="toolpath.3")` gives its volumes.
 
 Any change to the job ends the simulation; start it again to run the changed program.
 
@@ -639,7 +666,7 @@ with cosmiccam.launch(sample=True) as cc:
 
 ## Command reference
 
-191 commands in 17 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
+195 commands in 17 areas. Planned commands are listed so scripts can be written ahead; they raise `disabled` until their phase lands.
 
 - **job**: [`job.new`](#jobnew), [`job.open`](#jobopen), [`job.save`](#jobsave), [`job.save.as`](#jobsaveas), [`job.demo.open`](#jobdemoopen), [`job.clipboard.copy`](#jobclipboardcopy), [`job.clipboard.paste`](#jobclipboardpaste), [`job.tab.list`](#jobtablist), [`job.tab.activate`](#jobtabactivate), [`job.tab.close`](#jobtabclose), [`job.outline.get`](#joboutlineget)
 - **selection**: [`selection.set`](#selectionset), [`selection.get`](#selectionget)
@@ -647,7 +674,7 @@ with cosmiccam.launch(sample=True) as cc:
 - **command**: [`command.list`](#commandlist), [`command.describe`](#commanddescribe)
 - **console**: [`console.clear`](#consoleclear), [`console.log.get`](#consolelogget)
 - **model**: [`model.import`](#modelimport), [`model.formats`](#modelformats), [`model.list`](#modellist), [`model.visibility.set`](#modelvisibilityset), [`model.rename`](#modelrename), [`model.remove`](#modelremove), [`model.faces.list`](#modelfaceslist), [`model.face.get`](#modelfaceget), [`model.pick`](#modelpick), [`model.edges.list`](#modeledgeslist), [`model.edge.get`](#modeledgeget), [`model.edge.pick`](#modeledgepick), [`model.vertices.list`](#modelverticeslist), [`model.vertex.pick`](#modelvertexpick)
-- **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.wcs.rotate`](#setupwcsrotate), [`setup.wcs.rename`](#setupwcsrename), [`setup.wcs.activate`](#setupwcsactivate), [`setup.wcs.remove`](#setupwcsremove), [`setup.wcs.list`](#setupwcslist), [`setup.wcs.get`](#setupwcsget), [`setup.create`](#setupcreate), [`setup.edit`](#setupedit), [`setup.activate`](#setupactivate), [`setup.remove`](#setupremove), [`setup.list`](#setuplist), [`setup.get`](#setupget), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.margins`](#setupstockmargins), [`setup.stock.fit`](#setupstockfit), [`setup.stock.get`](#setupstockget)
+- **setup**: [`setup.wcs.create`](#setupwcscreate), [`setup.wcs.top_center`](#setupwcstop_center), [`setup.wcs.bottom_corner`](#setupwcsbottom_corner), [`setup.wcs.align`](#setupwcsalign), [`setup.wcs.offset`](#setupwcsoffset), [`setup.wcs.rotate`](#setupwcsrotate), [`setup.wcs.rename`](#setupwcsrename), [`setup.wcs.activate`](#setupwcsactivate), [`setup.wcs.remove`](#setupwcsremove), [`setup.wcs.list`](#setupwcslist), [`setup.wcs.get`](#setupwcsget), [`setup.create`](#setupcreate), [`setup.edit`](#setupedit), [`setup.activate`](#setupactivate), [`setup.remove`](#setupremove), [`setup.list`](#setuplist), [`setup.get`](#setupget), [`setup.stock.box`](#setupstockbox), [`setup.stock.cylinder`](#setupstockcylinder), [`setup.stock.margins`](#setupstockmargins), [`setup.stock.fit`](#setupstockfit), [`setup.stock.get`](#setupstockget), [`setup.stock.in_process.get`](#setupstockin_processget)
 - **view**: [`view.fit`](#viewfit), [`view.camera.iso`](#viewcameraiso), [`view.camera.top`](#viewcameratop), [`view.camera.front`](#viewcamerafront), [`view.camera.right`](#viewcameraright), [`view.camera.bottom`](#viewcamerabottom), [`view.camera.back`](#viewcameraback), [`view.camera.left`](#viewcameraleft), [`view.camera.preset`](#viewcamerapreset), [`view.camera.get`](#viewcameraget), [`view.camera.set`](#viewcameraset), [`view.camera.orbit`](#viewcameraorbit), [`view.camera.pan`](#viewcamerapan), [`view.camera.zoom`](#viewcamerazoom), [`view.projection.toggle`](#viewprojectiontoggle), [`view.projection.set`](#viewprojectionset), [`view.theme.toggle`](#viewthemetoggle), [`view.theme.set`](#viewthemeset), [`view.wcs.visibility.set`](#viewwcsvisibilityset), [`view.display.set`](#viewdisplayset), [`view.display.get`](#viewdisplayget), [`view.grid.toggle`](#viewgridtoggle), [`view.layout.reset`](#viewlayoutreset), [`view.fps_limit.set`](#viewfps_limitset)
 - **ui**: [`ui.ribbon.tab.set`](#uiribbontabset), [`ui.pane.show`](#uipaneshow), [`ui.pane.hide`](#uipanehide), [`ui.pane.focus`](#uipanefocus), [`ui.window.size.set`](#uiwindowsizeset), [`ui.window.fullscreen.set`](#uiwindowfullscreenset), [`ui.window.maximize.set`](#uiwindowmaximizeset)
 - **app**: [`app.quit`](#appquit)
@@ -656,7 +683,7 @@ with cosmiccam.launch(sample=True) as cc:
 - **holder**: [`holder.create`](#holdercreate), [`holder.edit`](#holderedit), [`holder.remove`](#holderremove), [`holder.list`](#holderlist)
 - **machine**: [`machine.create`](#machinecreate), [`machine.edit`](#machineedit), [`machine.duplicate`](#machineduplicate), [`machine.remove`](#machineremove), [`machine.activate`](#machineactivate), [`machine.list`](#machinelist), [`machine.get`](#machineget), [`machine.library.open`](#machinelibraryopen)
 - **settings**: [`settings.open`](#settingsopen), [`settings.get`](#settingsget), [`settings.units.set`](#settingsunitsset)
-- **sim**: [`sim.start`](#simstart), [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.seek`](#simseek), [`sim.speed`](#simspeed), [`sim.stop`](#simstop), [`sim.get`](#simget), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
+- **sim**: [`sim.start`](#simstart), [`sim.play`](#simplay), [`sim.pause`](#simpause), [`sim.step`](#simstep), [`sim.seek`](#simseek), [`sim.speed`](#simspeed), [`sim.jump`](#simjump), [`sim.display.set`](#simdisplayset), [`sim.compare`](#simcompare), [`sim.stop`](#simstop), [`sim.get`](#simget), [`sim.collision.check`](#simcollisioncheck), [`sim.gouge.check`](#simgougecheck)
 - **post**: [`post.processor.select`](#postprocessorselect), [`post.gcode.export`](#postgcodeexport), [`post.gcode.get`](#postgcodeget), [`post.processor.list`](#postprocessorlist), [`post.properties.get`](#postpropertiesget), [`post.properties.set`](#postpropertiesset), [`post.processor.folder`](#postprocessorfolder), [`post.limits.check`](#postlimitscheck)
 
 ### job
@@ -1554,6 +1581,21 @@ The job's stock.
 
 Returns: the stock {shape, min, max, size}, or null when none is defined
 
+#### `setup.stock.in_process.get`
+
+```python
+cc.setup_stock_in_process_get(id=…)
+```
+
+The stock as the toolpaths up to one leave it; the viewport shows it for the selected toolpath.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Toolpath id: the stock after it, e.g. toolpath.3 |
+
+Returns: {id, removed_volume, remaining_volume, cell, mode, events}
+
 
 ### view
 
@@ -1821,7 +1863,7 @@ Returns: {"id": id, "visible": bool, "shown": [ids drawn now]}
 #### `view.display.set`
 
 ```python
-cc.view_display_set(grid=None, wcs=None, view_cube=None, orientation_triad=None, stock=None, edges=None, readout=None, origin=None)
+cc.view_display_set(grid=None, wcs=None, view_cube=None, orientation_triad=None, stock=None, edges=None, readout=None, origin=None, in_process=None)
 ```
 
 Show or hide viewport elements; omitted elements are kept.
@@ -1837,6 +1879,7 @@ Show or hide viewport elements; omitted elements are kept.
 | `edges` | bool | no | Model outline edges |
 | `readout` | bool | no | Projection and frame-rate readout |
 | `origin` | bool | no | The model origin's triad (default hidden) |
+| `in_process` | bool | no | Show the stock as cut by the toolpaths up to the selected one (default on) |
 
 Returns: display {grid, wcs, view_cube, orientation_triad, stock, edges, readout}
 
@@ -4876,7 +4919,7 @@ Returns: {units, theme, fps_limit}
 #### `sim.start`
 
 ```python
-cc.sim_start(toolpaths=None, cell=None, mode=None)
+cc.sim_start(toolpaths=None, cell=None, mode=None, start_from=None)
 ```
 
 Start the material removal simulation from the beginning.
@@ -4887,6 +4930,7 @@ Start the material removal simulation from the beginning.
 | `toolpaths` | list | no | Toolpaths to run, in order (default: all) |
 | `cell` | number | no | Stock grid spacing, mm (default: a quarter of the smallest tool radius; voxels: a quarter, coarser for big stock) (0 to 100 mm) |
 | `mode` | choice | no | Stock model: a height field (one tool axis), voxels (any axis), or auto: voxels when the tool tilts — one of auto, height, voxel |
+| `start_from` | choice | no | The stock to start from: as the toolpaths before the first chosen leave it (previous, the default) or the raw stock — one of previous, stock |
 
 Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
@@ -4965,6 +5009,56 @@ Playback speed: machine seconds per second (the button steps through 1× to 250�
 Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
 
 <sub>ribbon: Simulation › Playback</sub>
+
+#### `sim.jump`
+
+```python
+cc.sim_jump(to=…)
+```
+
+Go to the start or end, the next or previous toolpath, or the next or previous collision.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `to` | choice | yes | Where to go — one of start, end, next_toolpath, previous_toolpath, next_collision, previous_collision |
+
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
+
+#### `sim.display.set`
+
+```python
+cc.sim_display_set(paths=None, tool=None, stop_on_collision=None)
+```
+
+What the simulation shows and when it stops: toolpaths, the tool, stopping at collisions.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `paths` | choice | no | Toolpaths drawn: none, the current one up to the tool (done), or all — one of none, done, all |
+| `tool` | bool | no | Draw the tool and holder |
+| `stop_on_collision` | bool | no | Pause when playback finds a collision |
+
+Returns: the simulation {time, duration, playing, speed, move, moves, toolpath, toolpaths, removed_volume, remaining_volume, cell, mode, events}
+
+#### `sim.compare`
+
+```python
+cc.sim_compare(on=None, tolerance=None)
+```
+
+Colour the stock by what is left over the part: on size, stock left, or cut into the part.
+
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `on` | bool | no | Show the comparison (default true); false hides it |
+| `tolerance` | number | no | Stock within this of the part counts as on size, mm (default 0.05) (0 to 100 mm) |
+
+Returns: {tolerance, thinnest, thickest, gouged_area, on_size_area, stock_left_area}, or null when hidden
+
+<sub>ribbon: Simulation › Verify</sub>
 
 #### `sim.stop`
 

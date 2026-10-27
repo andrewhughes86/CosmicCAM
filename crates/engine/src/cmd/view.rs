@@ -62,6 +62,11 @@ const DISPLAY_PARAMS: &[Param] = &[
     Param::optional("edges", ParamKind::Bool, "Model outline edges"),
     Param::optional("readout", ParamKind::Bool, "Projection and frame-rate readout"),
     Param::optional("origin", ParamKind::Bool, "The model origin's triad (default hidden)"),
+    Param::optional(
+        "in_process",
+        ParamKind::Bool,
+        "Show the stock as cut by the toolpaths up to the selected one (default on)",
+    ),
 ];
 
 macro_rules! preset_command {

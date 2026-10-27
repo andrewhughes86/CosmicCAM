@@ -59,11 +59,13 @@ pub struct Display {
     pub readout: bool,
     /// The model origin's triad (hidden by default).
     pub origin: bool,
+    /// The stock as cut by the toolpaths up to the selected one, instead of its outline.
+    pub in_process: bool,
 }
 
 impl Display {
     pub const KEYS: &'static [&'static str] =
-        &["grid", "wcs", "view_cube", "orientation_triad", "stock", "edges", "readout", "origin"];
+        &["grid", "wcs", "view_cube", "orientation_triad", "stock", "edges", "readout", "origin", "in_process"];
 
     pub fn get(&self, key: &str) -> Option<bool> {
         Some(match key {
@@ -75,6 +77,7 @@ impl Display {
             "edges" => self.edges,
             "readout" => self.readout,
             "origin" => self.origin,
+            "in_process" => self.in_process,
             _ => return None,
         })
     }
@@ -89,6 +92,7 @@ impl Display {
             "edges" => &mut self.edges,
             "readout" => &mut self.readout,
             "origin" => &mut self.origin,
+            "in_process" => &mut self.in_process,
             _ => return false,
         };
         *slot = on;
@@ -111,6 +115,7 @@ impl Default for Display {
             edges: true,
             readout: true,
             origin: false,
+            in_process: true,
         }
     }
 }

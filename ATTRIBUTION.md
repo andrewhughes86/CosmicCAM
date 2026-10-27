@@ -38,11 +38,17 @@ another project (MIT OR Apache-2.0 compatible only) and every asset file in the 
 | `assets/icons/ui/design/svg/setup_wcs_create.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/setup_wcs_offset.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/sim_collision_check.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/sim_compare.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/sim_gouge_check.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/sim_jump_end.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/sim_jump_next.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/sim_jump_previous.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/sim_jump_start.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/sim_pause.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/sim_play.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/sim_speed.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/sim_step.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
+| `assets/icons/ui/design/svg/sim_step_back.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/tool_create.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/tool_feeds.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |
 | `assets/icons/ui/design/svg/tool_library_export.svg` | CosmicCAM contributors (original) | MIT OR Apache-2.0 |

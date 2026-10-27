@@ -180,20 +180,62 @@ pub struct Sim {
     voxel_stock: Option<Voxels>,
     /// Voxel cells cut inside the part, after a gouge check.
     pub voxel_gouges: Option<Vec<[usize; 3]>>,
+    /// Pause when a new collision is found while playing.
+    pub stop_on_collision: bool,
+    /// The toolpaths drawn while simulating: one of [`PATH_DISPLAYS`].
+    pub show_paths: &'static str,
+    /// Draw the tool and holder.
+    pub show_tool: bool,
+    /// Colour the stock by how much is left over the part.
+    pub compare: bool,
+    /// Thickness within this of the part (mm) counts as on size when comparing.
+    pub compare_tolerance: f64,
+}
+
+/// What the viewport draws of the toolpaths while simulating: none, the current toolpath up to
+/// the tool, or every simulated toolpath.
+pub const PATH_DISPLAYS: &[&str] = &["none", "done", "all"];
+
+/// The stock compared with the part, one value per height-field cell: the stock's thickness over
+/// the part's surface, mm (negative: cut into the part); NaN where no part lies below.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Comparison {
+    pub thickness: Vec<f32>,
+    /// The stock revision it was worked out for.
+    pub stock_revision: u64,
 }
 
 impl Sim {
     /// A simulation of `ids` (all toolpaths when empty), in order, on the job's stock. `mode`
     /// is "height", "voxel" or "auto" (None): voxels when the tool tilts.
-    pub fn new(s: &Session, ids: &[String], cell: Option<f64>, mode: Option<&str>) -> EngineResult<Self> {
+    ///
+    /// With `previous`, the stock starts as the toolpaths before the first of `ids` (in program
+    /// order) leave it, so a finishing toolpath is seen cutting what the roughing left.
+    pub fn new(
+        s: &Session,
+        ids: &[String],
+        cell: Option<f64>,
+        mode: Option<&str>,
+        previous: bool,
+    ) -> EngineResult<Self> {
         let job = &s.job;
-        let chosen: Vec<&crate::toolpath::Toolpath> = if ids.is_empty() {
+        let mut chosen: Vec<&crate::toolpath::Toolpath> = if ids.is_empty() {
             job.toolpaths.iter().collect()
         } else {
             ids.iter()
                 .map(|id| job.toolpaths.iter().find(|t| &t.id == id).ok_or_else(|| bad(format!("no toolpath `{id}`"))))
                 .collect::<EngineResult<_>>()?
         };
+        let prior = match chosen.first() {
+            Some(first) if previous && !ids.is_empty() => {
+                job.toolpaths.iter().take_while(|t| t.id != first.id).collect::<Vec<_>>()
+            }
+            _ => Vec::new(),
+        };
+        let prior_count = prior.len();
+        if prior_count > 0 {
+            chosen = prior.into_iter().chain(chosen).collect();
+        }
         let first = chosen.first().ok_or_else(|| bad("there are no toolpaths to simulate; create one first"))?;
         let stock = job.stock.ok_or_else(|| bad("there is no stock to cut; create a setup or fit the stock first"))?;
         let frame_of = |wcs: &Option<String>| -> EngineResult<SimFrame> {
@@ -331,7 +373,7 @@ impl Sim {
                 .ok_or_else(|| bad("the stock is too small to simulate"))?;
             (z, None)
         };
-        Ok(Self {
+        let mut sim = Self {
             frame,
             toolpaths: chosen.iter().map(|t| (t.id.clone(), t.name.clone())).collect(),
             tools,
@@ -350,7 +392,53 @@ impl Sim {
             voxel_stock: voxels.clone(),
             voxels,
             voxel_gouges: None,
-        })
+            stop_on_collision: true,
+            show_paths: "done",
+            show_tool: true,
+            compare: false,
+            compare_tolerance: 0.05,
+        };
+        if prior_count > 0 {
+            sim.rebase(prior_count);
+        }
+        Ok(sim)
+    }
+
+    /// Cuts the stock with the first `count` toolpaths and starts the simulation after them.
+    fn rebase(&mut self, count: usize) {
+        let first = self.moves.iter().position(|m| m.toolpath >= count).unwrap_or(self.moves.len());
+        let t0 = self.moves.get(first).map_or(self.duration, |m| m.start);
+        self.seek(t0);
+        self.stock = self.zmap.clone();
+        self.voxel_stock = self.voxels.clone();
+        self.moves.drain(..first);
+        for m in &mut self.moves {
+            m.start -= t0;
+            m.toolpath = m.toolpath.saturating_sub(count);
+        }
+        self.toolpaths.drain(..count.min(self.toolpaths.len()));
+        self.duration = (self.duration - t0).max(0.0);
+        self.time = 0.0;
+        self.applied = (0, 0.0);
+        self.removed = 0.0;
+        self.events.clear();
+    }
+
+    /// The moves of toolpath `k` (its number in running order).
+    pub fn toolpath_moves(&self, k: usize) -> std::ops::Range<usize> {
+        self.moves.partition_point(|m| m.toolpath < k)..self.moves.partition_point(|m| m.toolpath <= k)
+    }
+
+    /// When each toolpath starts and ends, seconds.
+    pub fn segments(&self) -> Vec<(f64, f64)> {
+        (0..self.toolpaths.len())
+            .map(|k| {
+                let r = self.toolpath_moves(k);
+                let start = self.moves.get(r.start).map_or(self.duration, |m| m.start);
+                let end = r.end.checked_sub(1).and_then(|i| self.moves.get(i)).map_or(start, |m| m.start + m.duration);
+                (start, end)
+            })
+            .collect()
     }
 
     /// Bumped whenever the stock changes, so the display rebuilds.
@@ -508,8 +596,13 @@ impl Sim {
             return;
         }
         let next = self.time + dt.clamp(0.0, 0.25) * self.speed;
+        let found = self.events.len();
         self.seek(next);
         if self.time >= self.duration {
+            self.playing = false;
+        }
+        // A new collision stops playback there, so it can be looked at.
+        if self.stop_on_collision && self.events.len() > found {
             self.playing = false;
         }
     }
@@ -535,6 +628,12 @@ impl Sim {
             "cell": self.cell(),
             "mode": if self.voxels.is_some() { "voxel" } else { "height" },
             "events": self.events.iter().map(event_json).collect::<Vec<_>>(),
+            "segments": self.segments().iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(),
+            "stop_on_collision": self.stop_on_collision,
+            "show_paths": self.show_paths,
+            "show_tool": self.show_tool,
+            "compare": self.compare,
+            "compare_tolerance": self.compare_tolerance,
         })
     }
 }
@@ -656,5 +755,84 @@ pub fn gouge_report(sim: &Sim, found: &[(usize, usize, f64)], tolerance: f64) ->
             let z = sim.zmap.height(*i, *j).unwrap_or(0.0);
             json!({ "at": sim.frame.world(c.extend(z)).to_array(), "depth": d })
         }).collect::<Vec<_>>(),
+    })
+}
+
+/// The stock as the toolpaths up to and including `id` (in program order) leave it.
+pub fn in_process(s: &Session, id: &str) -> EngineResult<Sim> {
+    let upto = s.job.toolpaths.iter().position(|t| t.id == id).ok_or_else(|| bad(format!("no toolpath `{id}`")))?;
+    let ids: Vec<String> = s.job.toolpaths.iter().take(upto + 1).map(|t| t.id.clone()).collect();
+    let mut sim = Sim::new(s, &ids, None, None, false)?;
+    sim.seek(sim.duration);
+    Ok(sim)
+}
+
+/// The stock compared with the part, for a height-field simulation: each cell's thickness over
+/// the part's surface (see [`Comparison`]); None for voxel stock.
+pub fn compare(s: &Session, sim: &Sim) -> Option<Comparison> {
+    if sim.voxels.is_some() {
+        return None;
+    }
+    let f = sim.frame;
+    let tris: Vec<[DVec3; 3]> = s
+        .job
+        .models
+        .iter()
+        .flat_map(|m| m.mesh.triangles().iter().map(|t| m.mesh.corners(*t).map(|p| f.local(p))).collect::<Vec<_>>())
+        .collect();
+    let part = DropCutter::new(tris, 1.0e-4);
+    let reach = sim.zmap.cell();
+    let around = [DVec2::new(reach, 0.0), DVec2::new(-reach, 0.0), DVec2::new(0.0, reach), DVec2::new(0.0, -reach)];
+    let (nx, ny) = sim.zmap.size();
+    let mut thickness = Vec::with_capacity(nx * ny);
+    for j in 0..ny {
+        for i in 0..nx {
+            let (Some(z), c) = (sim.zmap.height(i, j), sim.zmap.centre(i, j)) else {
+                thickness.push(f32::NAN);
+                continue;
+            };
+            let Some(surface) = part.height(c) else {
+                thickness.push(f32::NAN);
+                continue;
+            };
+            let mut t = z - surface;
+            // Beside a wall the cell's centre may sit on the wall's top while the cell is the
+            // floor beside it: not a gouge when the lowest surface around is not cut into.
+            if t < 0.0 {
+                let low = around.iter().filter_map(|d| part.height(c + *d)).fold(surface, f64::min);
+                if z - low >= -sim.compare_tolerance {
+                    t = 0.0;
+                }
+            }
+            thickness.push(t as f32);
+        }
+    }
+    Some(Comparison { thickness, stock_revision: sim.stock_revision() })
+}
+
+/// A comparison's summary for the API: thinnest and thickest stock, and the area gouged, on
+/// size (within `tolerance`) and with stock left.
+pub fn comparison_report(sim: &Sim, c: &Comparison, tolerance: f64) -> Value {
+    let area = sim.zmap.cell() * sim.zmap.cell();
+    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut gouged, mut on_size, mut left) = (0usize, 0usize, 0usize);
+    for t in c.thickness.iter().filter(|t| t.is_finite()).map(|t| f64::from(*t)) {
+        lo = lo.min(t);
+        hi = hi.max(t);
+        if t < -tolerance {
+            gouged += 1;
+        } else if t <= tolerance {
+            on_size += 1;
+        } else {
+            left += 1;
+        }
+    }
+    json!({
+        "tolerance": tolerance,
+        "thinnest": if lo.is_finite() { lo } else { 0.0 },
+        "thickest": if hi.is_finite() { hi } else { 0.0 },
+        "gouged_area": gouged as f64 * area,
+        "on_size_area": on_size as f64 * area,
+        "stock_left_area": left as f64 * area,
     })
 }
